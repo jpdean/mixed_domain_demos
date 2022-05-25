@@ -124,13 +124,11 @@ u.x.scatter_forward()
 lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
-with io.XDMFFile(msh.comm, "poisson_lm_u.xdmf", "w") as file:
-    file.write_mesh(msh)
-    file.write_function(u)
+with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
+    f.write(0.0)
 
-with io.XDMFFile(submesh.comm, "poisson_lm_lmbda.xdmf", "w") as file:
-    file.write_mesh(submesh)
-    file.write_function(lmbda)
+with io.VTXWriter(submesh.comm, "poisson_lm_lmbda.bp", lmbda) as f:
+    f.write(0.0)
 
 x = ufl.SpatialCoordinate(msh)
 u_e = x[0] * (1 - x[0])
