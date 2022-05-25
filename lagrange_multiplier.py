@@ -28,8 +28,9 @@ with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
 with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
     file.write_mesh(submesh)
 
-V = fem.FunctionSpace(msh, ("Lagrange", 1))
-W = fem.FunctionSpace(submesh, ("Lagrange", 1))
+k = 1
+V = fem.FunctionSpace(msh, ("Lagrange", k))
+W = fem.FunctionSpace(submesh, ("Lagrange", k))
 
 dirichlet_facets = mesh.locate_entities_boundary(
     msh, facet_dim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
