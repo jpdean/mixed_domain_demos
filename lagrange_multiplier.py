@@ -12,25 +12,16 @@ def norm_L2(comm, v):
 
 
 # NOTE n must be even
-n = 32
+n = 2
 msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 tdim = msh.topology.dim
 facet_dim = tdim - 1
 
-entities = mesh.locate_entities(
-    msh, facet_dim, lambda x: np.isclose(x[0], 0.5))
-submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    msh, facet_dim, entities)
-
 with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
     file.write_mesh(msh)
 
-with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
-    file.write_mesh(submesh)
-
 k = 1
 V = fem.FunctionSpace(msh, ("Lagrange", k))
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
 
 dirichlet_facets = mesh.locate_entities_boundary(
     msh, facet_dim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
@@ -41,9 +32,6 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 
-lmbda = ufl.TrialFunction(W)
-eta = ufl.TestFunction(W)
-
 # FIXME Need to use this clumsy method until we have better support for one
 # sided integrals
 left_cells = mesh.locate_entities(
@@ -53,7 +41,6 @@ submesh_lc, entity_map_lc, vertex_map_lc, geom_map_lc = mesh.create_submesh(
 with io.XDMFFile(submesh_lc.comm, "submesh_lc.xdmf", "w") as file:
     file.write_mesh(submesh_lc)
 
-num_facets = submesh_lc.topology.create_entities(facet_dim)
 submesh_lc.topology.create_connectivity(tdim - 1, 0)
 sm_lc_f_to_v = submesh_lc.topology.connectivity(tdim - 1, 0)
 sm_lc_num_facets = sm_lc_f_to_v.num_nodes
@@ -68,29 +55,23 @@ sm_lc_facet_mt = mesh.meshtags_from_entities(
 
 ds = ufl.Measure("ds", domain=submesh_lc, subdomain_data=sm_lc_facet_mt)
 
-# mp = [entity_map.index(entity) if entity in entity_map else -1
-#       for entity in range(num_facets)]
-mp = []
-msh_c_to_f = msh.topology.connectivity(tdim, facet_dim)
-sm_lc_c_to_f = submesh_lc.topology.connectivity(tdim, facet_dim)
-sm_lc_f_to_c = submesh_lc.topology.connectivity(facet_dim, tdim)
-for f in range(num_facets):
-    c = sm_lc_f_to_c.links(f)
-    if len(c) == 1:
-        cell_facets = sm_lc_c_to_f.links(c)
-        local_f = np.where(cell_facets == f)[0][0]
-        c_m = entity_map_lc[c[0]]
-        f_msh = msh_c_to_f.links(c_m)[local_f]
-        if f_msh in entity_map:
-            mp.append(entity_map.index(f_msh))
-        else:
-            mp.append(-1)
-    else:
-        mp.append(-1)
+# TODO Rename
+submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
+    submesh_lc, facet_dim, submesh_lc_right_facets)
+with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
+    file.write_mesh(submesh)
+
+mp = [entity_map.index(entity) if entity in entity_map else -1
+      for entity in range(sm_lc_num_facets)]
 
 entity_maps = {msh: entity_map_lc,
                submesh: mp}
 # END OF CLUMSY METHOD
+
+W = fem.FunctionSpace(submesh, ("Lagrange", k))
+
+lmbda = ufl.TrialFunction(W)
+eta = ufl.TestFunction(W)
 
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
@@ -99,6 +80,8 @@ f = fem.Constant(msh, PETSc.ScalarType(2.0))
 L_0 = fem.form(inner(f, v) * ufl.dx)
 c = fem.Constant(submesh, PETSc.ScalarType(0.25))
 L_1 = fem.form(inner(c, eta) * ufl.dx)
+# x = ufl.SpatialCoordinate(submesh)
+# L_1 = fem.form(inner(- 0.1 * ufl.sin(ufl.pi * x[1]), eta) * ufl.dx)
 
 a = [[a_00, a_01],
      [a_10, None]]
