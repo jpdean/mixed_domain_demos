@@ -12,15 +12,17 @@ def norm_L2(comm, v):
 
 
 # NOTE n must be even
-n = 2
-msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
+n = 4
+k = 1
+# msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
+msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
+
 tdim = msh.topology.dim
 facet_dim = tdim - 1
 
 with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
     file.write_mesh(msh)
 
-k = 1
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 
 dirichlet_facets = mesh.locate_entities_boundary(
@@ -111,11 +113,15 @@ lmbda.x.scatter_forward()
 with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
     f.write(0.0)
 
-with io.VTXWriter(submesh.comm, "poisson_lm_lmbda.bp", lmbda) as f:
-    f.write(0.0)
+# FIXME Writing to file fails on 4 processes in 3D for some reason
+# with io.VTXWriter(submesh.comm, "poisson_lm_lmbda.bp", lmbda) as f:
+#     f.write(0.0)
 
 x = ufl.SpatialCoordinate(msh)
 u_e = x[0] * (1 - x[0])
 
 e_L2 = norm_L2(msh.comm, u - u_e)
-print(e_L2)
+
+rank = msh.comm.Get_rank()
+if rank == 0:
+    print(f"e_L2 = {e_L2}")
