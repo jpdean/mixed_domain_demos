@@ -68,9 +68,7 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
     entity_maps_sm = {msh: entity_map}
 
     # TODO Check I'm not missing conductivity terms in solid region
-    # TODO MAKE CONSTANT
-    # delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-    delta_t = t_end / num_time_steps
+    delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
     a_00 = fem.form(inner(u / delta_t, v) * dx_sm
                     + inner(grad(u), grad(v)) * dx_sm
                     + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx_sm,
@@ -162,8 +160,7 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
     offset_0 = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     offset_1 = offset_0 + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
     for n in range(num_time_steps):
-        t += delta_t
-        # t += delta_t.value
+        t += delta_t.value
 
         u_bc_expr.t = t
         u_bc.interpolate(u_bc_expr)
@@ -241,8 +238,8 @@ if __name__ == "__main__":
     # NOTE n must be even
     n = 4
     k = 2
-    t_end = 2
-    num_time_steps = 80
+    t_end = 0.5
+    num_time_steps = 20
 
     u_expr = TimeDependentExpression(
         lambda x, t:
@@ -288,3 +285,12 @@ if __name__ == "__main__":
     u_h, p_h, A_h = solve_mhd(
         msh, submesh, k, boundary_marker_msh, boundary_marker_sm, f_expr, u_expr,
         t_end, num_time_steps, A_expr, J_p_expr, entity_map)
+
+    u_h_norm = norm_L2(msh.comm, u_h)
+    p_h_norm = norm_L2(msh.comm, p_h)
+    A_h_norm = norm_L2(msh.comm, A_h)
+
+    if msh.comm.Get_rank() == 0:
+        print(u_h_norm)
+        print(p_h_norm)
+        print(A_h_norm)
