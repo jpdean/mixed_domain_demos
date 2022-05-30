@@ -63,24 +63,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
 
     u_n = fem.Function(V)
 
-    # TODO Tidy this part
-    # tdim = mesh.topology.dim
-    # upper_cells = mesh.locate_entities(
-    #     msh, tdim, lambda x: x[1] <= 1)
-    # c_to_v = mesh.topology.connectivity(tdim, 0)
-    # num_cells = c_to_v.num_nodes
-    # cells = graph.create_adjacencylist([c_to_v.links(c)
-    #                                     for c in range(num_cells)])
-    # cell_values = np.zeros((num_cells), dtype=np.int32)
-    # cell_values[upper_cells] = 1
-    # cell_mt = mesh.meshtags_from_entities(msh, tdim, cells, cell_values)
-
-    # dx_m = Measure("dx", domain=msh, subdomain_data=cell_mt)
     dx_sm = Measure("dx", domain=submesh)
 
-    # entity_maps_m = {submesh: [entity_map.index(entity)
-    #                            if entity in entity_map else -1
-    #                            for entity in range(num_cells)]}
     entity_maps_sm = {msh: entity_map}
 
     # TODO MAKE CONSTANT
