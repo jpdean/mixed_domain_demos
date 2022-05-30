@@ -2,10 +2,10 @@
 # uses Stokes instead of Navier-Stokes. NOTE: Extra terms arise due to
 # prescribed current density that Hiptmair doesn't include
 
-from dolfinx import mesh, fem
+from dolfinx import mesh, fem, graph
 from mpi4py import MPI
-from ufl import (TrialFunction, TestFunction, inner, grad, div, dx,
-                 curl, cross)
+from ufl import (TrialFunction, TestFunction, inner, grad, div,
+                 curl, cross, Measure, dx)
 from petsc4py import PETSc
 import numpy as np
 from dolfinx.io import VTXWriter, XDMFFile
@@ -27,10 +27,11 @@ def domain_average(msh, v):
 
 
 def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
-              f_expr, u_bc_expr, t_end, num_time_steps, A_expr, J_p_expr):
+              f_expr, u_bc_expr, t_end, num_time_steps, A_expr, J_p_expr,
+              entity_map):
 
-    V = fem.VectorFunctionSpace(msh, ("Lagrange", k))
-    Q = fem.FunctionSpace(msh, ("Lagrange", k - 1))
+    V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
+    Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
 
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
@@ -62,37 +63,66 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
 
     u_n = fem.Function(V)
 
-    delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-    a_00 = inner(u / delta_t, v) * dx + inner(grad(u), grad(v)) * dx \
-        + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx
-    a_01 = - inner(p, div(v)) * dx
-    a_02 = inner(A / delta_t, cross(curl(A_n), v)) * dx
-    a_10 = - inner(div(u), q) * dx
-    a_11 = fem.Constant(msh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
-    a_20 = inner(cross(curl(A_n), u), phi) * dx
-    a_22 = inner(A / delta_t, phi) * dx + inner(curl(A), curl(phi)) * dx
+    # TODO Tidy this part
+    # tdim = mesh.topology.dim
+    # upper_cells = mesh.locate_entities(
+    #     msh, tdim, lambda x: x[1] <= 1)
+    # c_to_v = mesh.topology.connectivity(tdim, 0)
+    # num_cells = c_to_v.num_nodes
+    # cells = graph.create_adjacencylist([c_to_v.links(c)
+    #                                     for c in range(num_cells)])
+    # cell_values = np.zeros((num_cells), dtype=np.int32)
+    # cell_values[upper_cells] = 1
+    # cell_mt = mesh.meshtags_from_entities(msh, tdim, cells, cell_values)
+
+    # dx_m = Measure("dx", domain=msh, subdomain_data=cell_mt)
+    dx_sm = Measure("dx", domain=submesh)
+
+    # entity_maps_m = {submesh: [entity_map.index(entity)
+    #                            if entity in entity_map else -1
+    #                            for entity in range(num_cells)]}
+    entity_maps_sm = {msh: entity_map}
+
+    # TODO MAKE CONSTANT
+    # delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
+    delta_t = t_end / num_time_steps
+    a_00 = fem.form(inner(u / delta_t, v) * dx_sm
+                    + inner(grad(u), grad(v)) * dx_sm
+                    + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx_sm,
+                    entity_maps=entity_maps_sm)
+    a_01 = fem.form(- inner(p, div(v)) * dx_sm)
+    a_02 = fem.form(inner(A / delta_t, cross(curl(A_n), v)) * dx_sm,
+                    entity_maps=entity_maps_sm)
+    a_10 = fem.form(- inner(div(u), q) * dx_sm)
+    a_11 = fem.form(fem.Constant(submesh, PETSc.ScalarType(0.0))
+                    * inner(p, q) * dx_sm)
+    a_20 = fem.form(inner(cross(curl(A_n), u), phi) * dx_sm,
+                    entity_maps=entity_maps_sm)
+    a_22 = fem.form(inner(A / delta_t, phi) * dx
+                    + inner(curl(A), curl(phi)) * dx)
 
     f = fem.Function(V)
     f.interpolate(f_expr)
-    L_0 = inner(u_n / delta_t + f, v) * dx \
-        + inner(A_n / delta_t + J_p, cross(curl(A_n), v)) * dx
-    L_1 = inner(fem.Constant(msh, PETSc.ScalarType(0.0)), q) * dx
-    L_2 = inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx
+    L_0 = fem.form(inner(u_n / delta_t + f, v) * dx_sm
+                   + inner(A_n / delta_t + J_p, cross(curl(A_n), v)) * dx_sm,
+                   entity_maps=entity_maps_sm)
+    L_1 = fem.form(inner(fem.Constant(submesh, PETSc.ScalarType(0.0)), q) * dx_sm)
+    L_2 = fem.form(inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
 
-    a = fem.form([[a_00, a_01, a_02],
-                  [a_10, a_11, None],
-                  [a_20, None, a_22]])
+    a = [[a_00, a_01, a_02],
+         [a_10, a_11, None],
+         [a_20, None, a_22]]
 
-    L = fem.form([L_0,
-                  L_1,
-                  L_2])
+    L = [L_0,
+         L_1,
+         L_2]
 
     u_bc = fem.Function(V)
     u_bc.interpolate(u_bc_expr)
-    boundary_facets = mesh.locate_entities_boundary(
-        msh, msh.topology.dim - 1, boundary_marker)
+    boundary_facets_sm = mesh.locate_entities_boundary(
+        submesh, submesh.topology.dim - 1, boundary_marker_sm)
     boundary_vel_dofs = fem.locate_dofs_topological(
-        V, msh.topology.dim - 1, boundary_facets)
+        V, submesh.topology.dim - 1, boundary_facets_sm)
     bc_u = fem.dirichletbc(u_bc, boundary_vel_dofs)
 
     pressure_dof = fem.locate_dofs_geometrical(
@@ -101,8 +131,10 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
                                     np.isclose(x[2], 0.0)))
     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
+    boundary_facets_m = mesh.locate_entities_boundary(
+        msh, msh.topology.dim - 1, boundary_marker_msh)
     boundary_A_dofs = fem.locate_dofs_topological(
-        X, msh.topology.dim - 1, boundary_facets)
+        X, msh.topology.dim - 1, boundary_facets_m)
     A_bc = fem.Function(X)
     A_bc.interpolate(A_expr)
     bc_A = fem.dirichletbc(A_bc, boundary_A_dofs)
@@ -132,8 +164,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
     A_Z.interpolate(A_h)
 
     # TODO Write in one file
-    u_file = VTXWriter(msh.comm, "u.bp", [u._cpp_object])
-    p_file = VTXWriter(msh.comm, "p.bp", [p._cpp_object])
+    u_file = VTXWriter(submesh.comm, "u.bp", [u._cpp_object])
+    p_file = VTXWriter(submesh.comm, "p.bp", [p._cpp_object])
     A_file = VTXWriter(msh.comm, "A.bp", [A_Z._cpp_object])
 
     t = 0.0
@@ -143,7 +175,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
     offset_0 = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     offset_1 = offset_0 + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
     for n in range(num_time_steps):
-        t += delta_t.value
+        t += delta_t
+        # t += delta_t.value
 
         u_bc_expr.t = t
         u_bc.interpolate(u_bc_expr)
@@ -218,6 +251,7 @@ if __name__ == "__main__":
         def __call__(self, x):
             return self.expression(x, self.t)
 
+    # NOTE n must be even
     n = 4
     k = 2
     t_end = 0.1
@@ -271,32 +305,32 @@ if __name__ == "__main__":
 
     u_h, p_h, A_h = solve_mhd(
         msh, submesh, k, boundary_marker_msh, boundary_marker_sm, f_expr, u_expr,
-        t_end, num_time_steps, A_expr, J_p_expr)
+        t_end, num_time_steps, A_expr, J_p_expr, entity_map)
 
-    V = fem.VectorFunctionSpace(submesh, ("Discontinuous Lagrange", k + 3))
-    Q = fem.FunctionSpace(submesh, ("Lagrange", k + 2))
+    # V = fem.VectorFunctionSpace(submesh, ("Discontinuous Lagrange", k + 3))
+    # Q = fem.FunctionSpace(submesh, ("Lagrange", k + 2))
 
-    u = fem.Function(V)
-    u_expr.t = t_end
-    u.interpolate(u_expr)
+    # u = fem.Function(V)
+    # u_expr.t = t_end
+    # u.interpolate(u_expr)
 
-    p = fem.Function(Q)
-    p_expr.t = t_end
-    p.interpolate(p_expr)
+    # p = fem.Function(Q)
+    # p_expr.t = t_end
+    # p.interpolate(p_expr)
 
-    A = fem.Function(V)
-    A_expr.t = t_end
-    A.interpolate(A_expr)
+    # A = fem.Function(V)
+    # A_expr.t = t_end
+    # A.interpolate(A_expr)
 
-    e_u = norm_L2(submesh.comm, u_h - u)
-    e_div_u = norm_L2(submesh.comm, div(u_h))
-    p_h_avg = domain_average(submesh, p_h)
-    p_e_avg = domain_average(submesh, p)
-    e_p = norm_L2(submesh.comm, (p_h - p_h_avg) - (p - p_e_avg))
-    e_A = norm_L2(submesh.comm, A - A_h)
+    # e_u = norm_L2(submesh.comm, u_h - u)
+    # e_div_u = norm_L2(submesh.comm, div(u_h))
+    # p_h_avg = domain_average(submesh, p_h)
+    # p_e_avg = domain_average(submesh, p)
+    # e_p = norm_L2(submesh.comm, (p_h - p_h_avg) - (p - p_e_avg))
+    # e_A = norm_L2(submesh.comm, A - A_h)
 
-    if msh.comm.Get_rank() == 0:
-        print(f"e_u = {e_u}")
-        print(f"e_div_u = {e_div_u}")
-        print(f"e_p = {e_p}")
-        print(f"e_A = {e_A}")
+    # if msh.comm.Get_rank() == 0:
+    #     print(f"e_u = {e_u}")
+    #     print(f"e_div_u = {e_div_u}")
+    #     print(f"e_p = {e_p}")
+    #     print(f"e_A = {e_A}")
