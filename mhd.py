@@ -67,6 +67,7 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
 
     entity_maps_sm = {msh: entity_map}
 
+    # TODO Check I'm not missing conductivity terms in solid region
     # TODO MAKE CONSTANT
     # delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
     delta_t = t_end / num_time_steps
@@ -142,6 +143,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
 
     # Create Functions and scatter x solution
     u, p = fem.Function(V), fem.Function(Q)
+    u.name = "u"
+    p.name = "p"
 
     A_Z = fem.Function(Z)
     A_Z.name = "A"
@@ -238,39 +241,34 @@ if __name__ == "__main__":
     # NOTE n must be even
     n = 4
     k = 2
-    t_end = 0.1
-    num_time_steps = 5
+    t_end = 2
+    num_time_steps = 80
 
-    # Analytical solution from sol_gen.py
     u_expr = TimeDependentExpression(
         lambda x, t:
             np.vstack(
-                (np.sin(x[1]*np.pi)*np.sin(np.pi*t),
+                (np.zeros_like(x[0]),
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0]))))
-
-    p_expr = TimeDependentExpression(
-        lambda x, t: np.sin(x[0]*np.pi)*np.sin(x[1]*np.pi)*np.sin(x[2]*np.pi)*np.sin(np.pi*t))
 
     f_expr = TimeDependentExpression(
         lambda x, t:
             np.vstack(
-                (np.pi*(-np.pi**2*np.sin(x[0]*np.pi)*np.sin(np.pi*t)**2*np.cos(x[0]*np.pi) + np.sin(x[1]*np.pi)*np.sin(x[2]*np.pi)*np.sin(np.pi*t)*np.cos(x[0]*np.pi) + np.pi*np.sin(x[1]*np.pi)*np.sin(np.pi*t) + np.sin(x[1]*np.pi)*np.cos(np.pi*t)),
-                 np.pi*np.sin(x[0]*np.pi)*np.sin(x[2]*np.pi) *
-                 np.sin(np.pi*t)*np.cos(x[1]*np.pi),
-                 np.pi*np.sin(x[0]*np.pi)*np.sin(x[1]*np.pi)*np.sin(np.pi*t)*np.cos(x[2]*np.pi))))
+                (np.zeros_like(x[0]),
+                 np.zeros_like(x[0]),
+                 np.zeros_like(x[0]))))
 
     A_expr = TimeDependentExpression(
         expression=lambda x, t:
-        np.vstack((np.zeros_like(x[0]),
-                   np.sin(x[0]*np.pi)*np.sin(np.pi*t),
-                   np.zeros_like(x[0]))))
+            np.vstack(
+                (np.zeros_like(x[0]),
+                 np.zeros_like(x[0]),
+                 np.zeros_like(x[0]))))
 
     J_p_expr = TimeDependentExpression(
         expression=lambda x, t:
         np.vstack((np.zeros_like(x[0]),
-                   np.pi**2*np.sin(x[0]*np.pi)*np.sin(np.pi*t) + np.pi*np.sin(x[0]*np.pi)*np.cos(
-                       np.pi*t) + np.pi*np.sin(x[1]*np.pi)*np.sin(np.pi*t)**2*np.cos(x[0]*np.pi),
+                   np.sin(np.pi * t) * np.cos(np.pi * x[1]),
                    np.zeros_like(x[0]))))
 
     cube_msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
@@ -290,31 +288,3 @@ if __name__ == "__main__":
     u_h, p_h, A_h = solve_mhd(
         msh, submesh, k, boundary_marker_msh, boundary_marker_sm, f_expr, u_expr,
         t_end, num_time_steps, A_expr, J_p_expr, entity_map)
-
-    # V = fem.VectorFunctionSpace(submesh, ("Discontinuous Lagrange", k + 3))
-    # Q = fem.FunctionSpace(submesh, ("Lagrange", k + 2))
-
-    # u = fem.Function(V)
-    # u_expr.t = t_end
-    # u.interpolate(u_expr)
-
-    # p = fem.Function(Q)
-    # p_expr.t = t_end
-    # p.interpolate(p_expr)
-
-    # A = fem.Function(V)
-    # A_expr.t = t_end
-    # A.interpolate(A_expr)
-
-    # e_u = norm_L2(submesh.comm, u_h - u)
-    # e_div_u = norm_L2(submesh.comm, div(u_h))
-    # p_h_avg = domain_average(submesh, p_h)
-    # p_e_avg = domain_average(submesh, p)
-    # e_p = norm_L2(submesh.comm, (p_h - p_h_avg) - (p - p_e_avg))
-    # e_A = norm_L2(submesh.comm, A - A_h)
-
-    # if msh.comm.Get_rank() == 0:
-    #     print(f"e_u = {e_u}")
-    #     print(f"e_div_u = {e_div_u}")
-    #     print(f"e_p = {e_p}")
-    #     print(f"e_A = {e_A}")
