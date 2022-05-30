@@ -108,10 +108,21 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
         V, submesh.topology.dim - 1, boundary_facets_sm)
     bc_u = fem.dirichletbc(u_bc, boundary_vel_dofs)
 
-    pressure_dof = fem.locate_dofs_geometrical(
-        Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
-                                                   np.isclose(x[1], 0.0)),
-                                    np.isclose(x[2], 0.0)))
+    # NOTE Can't use locate_dofs_geometrical on a submesh in parallel as
+    # it gives incorrect results due to tabulate_dof_coordinates not working
+    # properly.
+    # pressure_dof = fem.locate_dofs_geometrical(
+    #     Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
+    #                                                np.isclose(x[1], 0.0)),
+    #                                 np.isclose(x[2], 0.0)))
+    # HACK Temporary hack to pin a single dof. Note that the dof chosen will
+    # depend on the partition so the pressure field will differ by a constant
+    # when on different meshes / numbers of processes
+    # FIXME This HACK is problematic if rank 0 owns no dofs
+    if submesh.comm.Get_rank() == 0:
+        pressure_dof = np.array([0], dtype=np.int32)
+    else:
+        pressure_dof = np.array([], dtype=np.int32)
     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
     boundary_facets_m = mesh.locate_entities_boundary(
@@ -241,6 +252,7 @@ if __name__ == "__main__":
     t_end = 0.5
     num_time_steps = 20
 
+    # NOTE Interpolating non-zero functions may fail on a submesh in parallel
     u_expr = TimeDependentExpression(
         lambda x, t:
             np.vstack(
@@ -287,7 +299,8 @@ if __name__ == "__main__":
         t_end, num_time_steps, A_expr, J_p_expr, entity_map)
 
     u_h_norm = norm_L2(msh.comm, u_h)
-    p_h_norm = norm_L2(msh.comm, p_h)
+    p_h_average = domain_average(submesh, p_h)
+    p_h_norm = norm_L2(msh.comm, p_h - p_h_average)
     A_h_norm = norm_L2(msh.comm, A_h)
 
     if msh.comm.Get_rank() == 0:
