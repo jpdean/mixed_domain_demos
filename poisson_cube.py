@@ -39,6 +39,22 @@ v_sm = ufl.TestFunction(W)
 f_sm = fem.Function(W)
 f_sm.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]))
 
+sm_facet_dim = submesh.topology.dim - 1
+sm_boundary_facets = mesh.locate_entities_boundary(
+    submesh, sm_facet_dim,
+    lambda x: np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
+                                          np.isclose(x[0], 1.0)),
+                            np.logical_or(np.isclose(x[1], 0.0),
+                                          np.isclose(x[1], 1.0))))
+submesh_1, entity_map_1, vertex_map_1, geom_map_1 = mesh.create_submesh(
+    submesh, sm_facet_dim, sm_boundary_facets)
+X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
+g = fem.Function(X)
+g.interpolate(lambda x: x[0]**2)
+with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
+    file.write_mesh(submesh_1)
+    file.write_function(g)
+
 a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
 L_sm = fem.form(inner(f_sm, v_sm) * dx)
 
