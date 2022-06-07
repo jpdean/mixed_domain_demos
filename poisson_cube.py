@@ -40,6 +40,7 @@ f_sm = fem.Function(W)
 f_sm.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]))
 
 sm_facet_dim = submesh.topology.dim - 1
+num_facets_sm = submesh.topology.create_entities(sm_facet_dim)
 sm_boundary_facets = mesh.locate_entities_boundary(
     submesh, sm_facet_dim,
     lambda x: np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
@@ -50,13 +51,20 @@ submesh_1, entity_map_1, vertex_map_1, geom_map_1 = mesh.create_submesh(
     submesh, sm_facet_dim, sm_boundary_facets)
 X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
 g = fem.Function(X)
-g.interpolate(lambda x: x[0]**2)
+g.interpolate(lambda x: x[1]**2)
 with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
     file.write_mesh(submesh_1)
     file.write_function(g)
 
+submesh_to_submesh_1 = [entity_map_1.index(entity)
+                        if entity in entity_map_1 else -1
+                        for entity in range(num_facets_sm)]
+entity_maps_sm = {submesh_1: submesh_to_submesh_1}
+
+ds_sm = ufl.Measure("ds", domain=submesh)
 a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
-L_sm = fem.form(inner(f_sm, v_sm) * dx)
+L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(g, v_sm) * ds_sm,
+                entity_maps=entity_maps_sm)
 
 A_sm = fem.petsc.assemble_matrix(a_sm)
 A_sm.assemble()
