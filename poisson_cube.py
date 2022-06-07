@@ -56,6 +56,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 
 u_sm = fem.Function(W)
 ksp.solve(b_sm, u_sm.vector)
+u_sm.x.scatter_forward()
 
 with io.XDMFFile(submesh.comm, "u_sm.xdmf", "w") as file:
     file.write_mesh(submesh)
