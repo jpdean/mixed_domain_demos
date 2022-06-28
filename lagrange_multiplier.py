@@ -4,6 +4,39 @@ from dolfinx import fem, io, mesh, graph
 from ufl import grad, inner
 from mpi4py import MPI
 from petsc4py import PETSc
+import random
+
+
+def create_random_mesh(corners, n, ghost_mode):
+    """Create a rectangular mesh made of randomly ordered simplices"""
+    if MPI.COMM_WORLD.rank == 0:
+        h_x = (corners[1][0] - corners[0][0]) / n[0]
+        h_y = (corners[1][1] - corners[0][1]) / n[1]
+
+        points = [(i * h_x, j * h_y)
+                  for i in range(n[0] + 1) for j in range(n[1] + 1)]
+
+        random.seed(6)
+
+        cells = []
+        for i in range(n[0]):
+            for j in range(n[1]):
+                v = (n[1] + 1) * i + j
+                cell_0 = [v, v + 1, v + n[1] + 2]
+                random.shuffle(cell_0)
+                cells.append(cell_0)
+
+                cell_1 = [v, v + n[1] + 1, v + n[1] + 2]
+                random.shuffle(cell_1)
+                cells.append(cell_1)
+        cells = np.array(cells)
+        points = np.array(points)
+    else:
+        cells, points = np.empty([0, 3]), np.empty([0, 2])
+
+    domain = ufl.Mesh(ufl.VectorElement("Lagrange", "triangle", 1))
+    return mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain,
+                            ghost_mode=ghost_mode)
 
 
 def norm_L2(comm, v):
@@ -15,7 +48,9 @@ def norm_L2(comm, v):
 n = 16
 k = 1
 # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
-msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
+msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n),
+                         mesh.GhostMode.shared_facet)
+# msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
 
 tdim = msh.topology.dim
 facet_dim = tdim - 1
