@@ -4,8 +4,10 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
+from dolfinx.mesh import meshtags
 
-n = 8
+
+n = 2
 msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
 facet_dim = msh.topology.dim - 1
 num_facets = msh.topology.create_entities(facet_dim)
@@ -63,7 +65,10 @@ entity_maps_sm = {submesh_1: submesh_to_submesh_1}
 
 ds_sm = ufl.Measure("ds", domain=submesh)
 a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
-L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(g, v_sm) * ds_sm,
+# FIXME This packing is wrong
+# L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(g, v_sm) * ds_sm,
+#                 entity_maps=entity_maps_sm)
+L_sm = fem.form(inner(g, v_sm) * ds_sm,
                 entity_maps=entity_maps_sm)
 
 A_sm = fem.petsc.assemble_matrix(a_sm)
@@ -90,10 +95,13 @@ msh_to_submesh = [entity_map.index(entity) if entity in entity_map else -1
                   for entity in range(num_facets)]
 entity_maps = {submesh: msh_to_submesh}
 
-ds = ufl.Measure("ds", domain=msh)
+mt = meshtags(msh, facet_dim, sm_entities, np.ones_like(sm_entities))
+ds = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
 a = fem.form(inner(grad(u), grad(v)) * dx)
-L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds,
+# L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds,
+#              entity_maps=entity_maps)
+L = fem.form(inner(u_sm, v) * ds(1),
              entity_maps=entity_maps)
 
 A = fem.petsc.assemble_matrix(a, bcs=[bc])
