@@ -74,28 +74,28 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 # sided integrals
 left_cells = mesh.locate_entities(
     msh, tdim, lambda x: x[0] <= 0.5)
-submesh_lc, entity_map_lc, vertex_map_lc, geom_map_lc = mesh.create_submesh(
-    msh, tdim, left_cells)
-with io.XDMFFile(submesh_lc.comm, "submesh_lc.xdmf", "w") as file:
-    file.write_mesh(submesh_lc)
+submesh_left_cells, entity_map_left_cells = mesh.create_submesh(
+    msh, tdim, left_cells)[0:2]
+with io.XDMFFile(submesh_left_cells.comm, "submesh_left_cells.xdmf", "w") as file:
+    file.write_mesh(submesh_left_cells)
 
 submesh_lc_right_facets = mesh.locate_entities_boundary(
-    submesh_lc, facet_dim, lambda x: np.isclose(x[0], 0.5))
+    submesh_left_cells, facet_dim, lambda x: np.isclose(x[0], 0.5))
 sm_lc_facet_mt = mesh.meshtags(
-    submesh_lc, facet_dim, submesh_lc_right_facets, 1)
+    submesh_left_cells, facet_dim, submesh_lc_right_facets, 1)
 
-ds = ufl.Measure("ds", domain=submesh_lc, subdomain_data=sm_lc_facet_mt)
+ds = ufl.Measure("ds", domain=submesh_left_cells, subdomain_data=sm_lc_facet_mt)
 
 # TODO Rename
 submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    submesh_lc, facet_dim, submesh_lc_right_facets)
+    submesh_left_cells, facet_dim, submesh_lc_right_facets)
 with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
     file.write_mesh(submesh)
 
-sm_lc_num_facets = submesh_lc.topology.index_map(facet_dim).size_local \
-    + submesh_lc.topology.index_map(facet_dim).num_ghosts
+sm_lc_num_facets = submesh_left_cells.topology.index_map(facet_dim).size_local \
+    + submesh_left_cells.topology.index_map(facet_dim).num_ghosts
 
-entity_maps = {msh: entity_map_lc,
+entity_maps = {msh: entity_map_left_cells,
                submesh: [entity_map.index(entity)
                          if entity in entity_map else -1
                          for entity in range(sm_lc_num_facets)]}
