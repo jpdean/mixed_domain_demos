@@ -35,8 +35,9 @@ def create_random_mesh(corners, n, ghost_mode):
         cells, points = np.empty([0, 3]), np.empty([0, 2])
 
     domain = ufl.Mesh(ufl.VectorElement("Lagrange", "triangle", 1))
+    partitioner = mesh.create_cell_partitioner(ghost_mode)
     return mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain,
-                            ghost_mode=ghost_mode)
+                            partitioner=partitioner)
 
 
 def norm_L2(comm, v):
