@@ -94,11 +94,11 @@ with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
 
 sm_lc_num_facets = submesh_lc.topology.index_map(facet_dim).size_local \
     + submesh_lc.topology.index_map(facet_dim).num_ghosts
-mp = [entity_map.index(entity) if entity in entity_map else -1
-      for entity in range(sm_lc_num_facets)]
 
 entity_maps = {msh: entity_map_lc,
-               submesh: mp}
+               submesh: [entity_map.index(entity)
+                         if entity in entity_map else -1
+                         for entity in range(sm_lc_num_facets)]}
 # END OF CLUMSY METHOD
 
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
