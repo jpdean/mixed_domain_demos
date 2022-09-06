@@ -72,6 +72,7 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
 # FIXME Need to use this clumsy method until we have better support for one
 # sided integrals
+# Create a submesh of the cells on the left side of the mesh
 left_cells = mesh.locate_entities(
     msh, tdim, lambda x: x[0] <= 0.5)
 submesh_left_cells, entity_map_left_cells = mesh.create_submesh(
@@ -79,24 +80,30 @@ submesh_left_cells, entity_map_left_cells = mesh.create_submesh(
 with io.XDMFFile(submesh_left_cells.comm, "submesh_left_cells.xdmf", "w") as file:
     file.write_mesh(submesh_left_cells)
 
+# Tag the facets on the right boundary of the submesh. These correspond to
+# the centre facets of the original mesh
 # NOTE Numbered with respect to submesh_left_cells
 centre_facets = mesh.locate_entities_boundary(
     submesh_left_cells, facet_dim, lambda x: np.isclose(x[0], 0.5))
 mt = mesh.meshtags(
     submesh_left_cells, facet_dim, centre_facets, 1)
 
+# Create an exterior facet measure on the submesh using the meshtags. Forms
+# with ds(1) therefore integrates over the centre facets of the orignial mesh
 ds = ufl.Measure("ds", domain=submesh_left_cells, subdomain_data=mt)
 
-# TODO Rename
+# Create a submesh of the centre facets of the mesh to define the function space
+# for the Lagrange multiplier
 submesh_centre_facets, entity_map_centre_facets = mesh.create_submesh(
     submesh_left_cells, facet_dim, centre_facets)[0:2]
 with io.XDMFFile(submesh_centre_facets.comm,
                  "submesh_centre_facets.xdmf", "w") as file:
     file.write_mesh(submesh_centre_facets)
 
+# We need to provide entitiy maps for both the original mesh and the submesh
+# of the centre facets
 facet_imap = submesh_left_cells.topology.index_map(facet_dim)
 sm_lc_num_facets = facet_imap.size_local + facet_imap.num_ghosts
-
 entity_maps = {msh: entity_map_left_cells,
                submesh_centre_facets: [entity_map_centre_facets.index(entity)
                                        if entity in entity_map_centre_facets else -1
