@@ -79,29 +79,31 @@ submesh_left_cells, entity_map_left_cells = mesh.create_submesh(
 with io.XDMFFile(submesh_left_cells.comm, "submesh_left_cells.xdmf", "w") as file:
     file.write_mesh(submesh_left_cells)
 
-submesh_lc_right_facets = mesh.locate_entities_boundary(
+# NOTE Numbered with respect to submesh_left_cells
+centre_facets = mesh.locate_entities_boundary(
     submesh_left_cells, facet_dim, lambda x: np.isclose(x[0], 0.5))
-sm_lc_facet_mt = mesh.meshtags(
-    submesh_left_cells, facet_dim, submesh_lc_right_facets, 1)
+mt = mesh.meshtags(
+    submesh_left_cells, facet_dim, centre_facets, 1)
 
-ds = ufl.Measure("ds", domain=submesh_left_cells, subdomain_data=sm_lc_facet_mt)
+ds = ufl.Measure("ds", domain=submesh_left_cells, subdomain_data=mt)
 
 # TODO Rename
-submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    submesh_left_cells, facet_dim, submesh_lc_right_facets)
-with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
-    file.write_mesh(submesh)
+submesh_centre_facets, entity_map_centre_facets = mesh.create_submesh(
+    submesh_left_cells, facet_dim, centre_facets)[0:2]
+with io.XDMFFile(submesh_centre_facets.comm,
+                 "submesh_centre_facets.xdmf", "w") as file:
+    file.write_mesh(submesh_centre_facets)
 
-sm_lc_num_facets = submesh_left_cells.topology.index_map(facet_dim).size_local \
-    + submesh_left_cells.topology.index_map(facet_dim).num_ghosts
+facet_imap = submesh_left_cells.topology.index_map(facet_dim)
+sm_lc_num_facets = facet_imap.size_local + facet_imap.num_ghosts
 
 entity_maps = {msh: entity_map_left_cells,
-               submesh: [entity_map.index(entity)
-                         if entity in entity_map else -1
-                         for entity in range(sm_lc_num_facets)]}
+               submesh_centre_facets: [entity_map_centre_facets.index(entity)
+                                       if entity in entity_map_centre_facets else -1
+                                       for entity in range(sm_lc_num_facets)]}
 # END OF CLUMSY METHOD
 
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
+W = fem.FunctionSpace(submesh_centre_facets, ("Lagrange", k))
 
 lmbda = ufl.TrialFunction(W)
 eta = ufl.TestFunction(W)
@@ -111,7 +113,7 @@ a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
 a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
 f = fem.Constant(msh, PETSc.ScalarType(2.0))
 L_0 = fem.form(inner(f, v) * ufl.dx)
-c = fem.Constant(submesh, PETSc.ScalarType(0.25))
+c = fem.Constant(submesh_centre_facets, PETSc.ScalarType(0.25))
 L_1 = fem.form(inner(c, eta) * ufl.dx)
 # x = ufl.SpatialCoordinate(submesh)
 # L_1 = fem.form(inner(- 0.1 * ufl.sin(ufl.pi * x[1]), eta) * ufl.dx)
@@ -144,7 +146,7 @@ lmbda.x.scatter_forward()
 with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
     f.write(0.0)
 
-with io.VTXWriter(submesh.comm, "poisson_lm_lmbda.bp", lmbda) as f:
+with io.VTXWriter(submesh_centre_facets.comm, "poisson_lm_lmbda.bp", lmbda) as f:
     f.write(0.0)
 
 x = ufl.SpatialCoordinate(msh)
