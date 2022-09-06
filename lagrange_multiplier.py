@@ -79,17 +79,10 @@ submesh_lc, entity_map_lc, vertex_map_lc, geom_map_lc = mesh.create_submesh(
 with io.XDMFFile(submesh_lc.comm, "submesh_lc.xdmf", "w") as file:
     file.write_mesh(submesh_lc)
 
-submesh_lc.topology.create_connectivity(tdim - 1, 0)
-sm_lc_f_to_v = submesh_lc.topology.connectivity(tdim - 1, 0)
-sm_lc_num_facets = sm_lc_f_to_v.num_nodes
-sm_lc_facets = graph.create_adjacencylist([sm_lc_f_to_v.links(f)
-                                           for f in range(sm_lc_num_facets)])
-sm_lc_facet_values = np.zeros((sm_lc_num_facets), dtype=np.int32)
 submesh_lc_right_facets = mesh.locate_entities_boundary(
     submesh_lc, facet_dim, lambda x: np.isclose(x[0], 0.5))
-sm_lc_facet_values[submesh_lc_right_facets] = 1
-sm_lc_facet_mt = mesh.meshtags_from_entities(
-    submesh_lc, facet_dim, sm_lc_facets, sm_lc_facet_values)
+sm_lc_facet_mt = mesh.meshtags(
+    submesh_lc, facet_dim, submesh_lc_right_facets, 1)
 
 ds = ufl.Measure("ds", domain=submesh_lc, subdomain_data=sm_lc_facet_mt)
 
@@ -99,6 +92,8 @@ submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
 with io.XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
     file.write_mesh(submesh)
 
+sm_lc_num_facets = submesh_lc.topology.index_map(facet_dim).size_local \
+    + submesh_lc.topology.index_map(facet_dim).num_ghosts
 mp = [entity_map.index(entity) if entity in entity_map else -1
       for entity in range(sm_lc_num_facets)]
 
