@@ -110,11 +110,12 @@ entity_maps = {msh: entity_map_left_cells,
                                        for entity in range(sm_lc_num_facets)]}
 # END OF CLUMSY METHOD
 
+# Create function space for the Lagrange multiplier
 W = fem.FunctionSpace(submesh_centre_facets, ("Lagrange", k))
-
 lmbda = ufl.TrialFunction(W)
 eta = ufl.TestFunction(W)
 
+# Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
 a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
@@ -129,10 +130,12 @@ a = [[a_00, a_01],
      [a_10, None]]
 L = [L_0, L_1]
 
+# Use block assembly
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
+# Configure solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -143,6 +146,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecLeft()
 ksp.solve(b, x)
 
+# Recover solution
 u, lmbda = fem.Function(V), fem.Function(W)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
@@ -150,17 +154,16 @@ u.x.scatter_forward()
 lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
+# Write to file
 with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
     f.write(0.0)
-
 with io.VTXWriter(submesh_centre_facets.comm, "poisson_lm_lmbda.bp", lmbda) as f:
     f.write(0.0)
 
+# Compute L^2-norm of error
 x = ufl.SpatialCoordinate(msh)
 u_e = x[0] * (1 - x[0])
-
 e_L2 = norm_L2(msh.comm, u - u_e)
-
 rank = msh.comm.Get_rank()
 if rank == 0:
     print(f"e_L2 = {e_L2}")
