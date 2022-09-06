@@ -45,30 +45,30 @@ def norm_L2(comm, v):
         fem.form(inner(v, v) * ufl.dx)), op=MPI.SUM))
 
 
-# NOTE n must be even
 n = 16
+assert n % 2 == 0  # NOTE n must be even
 k = 1
 # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n),
                          mesh.GhostMode.shared_facet)
 # msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
 
-tdim = msh.topology.dim
-facet_dim = tdim - 1
 
 with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
     file.write_mesh(msh)
 
 V = fem.FunctionSpace(msh, ("Lagrange", k))
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
 
+# Create Dirichlet boundary condition
+tdim = msh.topology.dim
+facet_dim = tdim - 1
 dirichlet_facets = mesh.locate_entities_boundary(
     msh, facet_dim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
                                             np.isclose(x[0], 1.0)))
 dirichlet_dofs = fem.locate_dofs_topological(V, facet_dim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
-
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
 
 # FIXME Need to use this clumsy method until we have better support for one
 # sided integrals
