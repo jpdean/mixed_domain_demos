@@ -48,7 +48,7 @@ num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
 
 # NOTE Despite all facets being present in the submesh, the entity map isn't
-# necessarily the identity in parallels
+# necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
 k = 1
@@ -60,10 +60,9 @@ v = ufl.TestFunction(V)
 ubar = ufl.TrialFunction(Vbar)
 vbar = ufl.TestFunction(Vbar)
 
-# FIXME Use CellDiameter
-h = 1 / n
-gamma = 10.0 * k**2 / h
+h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
+gamma = 16.0 * k**2 / h
 
 facet_integration_entities = {1: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
@@ -155,4 +154,6 @@ with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
 
 e_L2 = norm_L2(msh.comm, u - u_e)
 out_str += f"e_L2 = {e_L2}\n"
-print(out_str)
+
+if rank == 0:
+    print(out_str)
