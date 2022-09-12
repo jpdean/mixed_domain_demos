@@ -17,10 +17,10 @@ rank = comm.rank
 out_str = f"rank {rank}:\n"
 
 n = 4
-# msh = mesh.create_unit_square(
-#     comm, n, n, ghost_mode=mesh.GhostMode.none)
-msh = mesh.create_unit_cube(
-    comm, n, n, n, ghost_mode=mesh.GhostMode.none)
+msh = mesh.create_unit_square(
+    comm, n, n, ghost_mode=mesh.GhostMode.none)
+# msh = mesh.create_unit_cube(
+#     comm, n, n, n, ghost_mode=mesh.GhostMode.none)
 
 
 # Currently, permutations are not working in parallel, so reorder the
