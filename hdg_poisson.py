@@ -4,6 +4,7 @@ import ufl
 from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
+from dolfinx.cpp.mesh import cell_num_entities
 
 
 def norm_L2(comm, v):
@@ -21,14 +22,13 @@ n = 4
 msh = mesh.create_unit_cube(
     comm, n, n, n, ghost_mode=mesh.GhostMode.none)
 
-# TODO Don't hardcode
-num_cell_vertices = 4
-num_cell_facets = 4
 
 # Currently, permutations are not working in parallel, so reorder the
 # mesh
+# FIXME Check this is correct
 # FIXME For a high-order mesh, the geom has more dofs so need to modify this
 tdim = msh.topology.dim
+num_cell_vertices = cell_num_entities(msh.topology.cell_type, 0)
 c_to_v = msh.topology.connectivity(tdim, 0)
 geom_dofmap = msh.geometry.dofmap
 vertex_imap = msh.topology.index_map(0)
@@ -41,6 +41,7 @@ for i in range(0, len(c_to_v.array), num_cell_vertices):
     geom_dofmap.array[i:i+num_cell_vertices] = geom_dofmap.array[i:i+num_cell_vertices][geom_perm]
 
 fdim = tdim - 1
+num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
 msh.topology.create_entities(fdim)
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
