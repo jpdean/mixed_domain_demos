@@ -23,6 +23,7 @@ msh = mesh.create_unit_cube(
 
 # TODO Don't hardcode
 num_cell_vertices = 4
+num_cell_facets = 4
 
 # Currently, permutations are not working in parallel, so reorder the
 # mesh
@@ -41,16 +42,13 @@ for i in range(0, len(c_to_v.array), num_cell_vertices):
 
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
-
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
-# out_str += f"facets = {facets}\n"
 
-# TODO Figure out why entity_map isn't the identity and if this is
-# an issue or not
+# NOTE Despite all facets being present in the submesh, the entity map isn't
+# necessarily the identity in parallels
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
-# out_str += f"entity_map = {entity_map}\n"
 
 k = 1
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
@@ -68,10 +66,8 @@ n = ufl.FacetNormal(msh)
 
 facet_integration_entities = {1: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
-    # TODO Don't hardcode number of facets per cell
-    for local_facet in range(4):
+    for local_facet in range(num_cell_facets):
         facet_integration_entities[1].extend([cell, local_facet])
-# out_str += f"facet_integration_entities = {facet_integration_entities}\n"
 
 dx_c = ufl.Measure("dx", domain=msh)
 ds_c = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
@@ -79,7 +75,6 @@ dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
-# out_str += f"entity_maps = {entity_maps}\n"
 
 a_00 = fem.form(inner(grad(u), grad(v)) * dx_c -
                 (inner(u, dot(grad(v), n)) * ds_c(1) +
@@ -89,10 +84,8 @@ a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, vbar) * ds_c(1),
                 entity_maps=entity_maps)
 a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, ubar) * ds_c(1),
                 entity_maps=entity_maps)
-# TODO Check below
 a_11 = fem.form(gamma * inner(ubar, vbar) * ds_c(1),
                 entity_maps=entity_maps)
-# a_11 = fem.form(2 * gamma * inner(ubar, vbar) * dx_f)
 
 x = ufl.SpatialCoordinate(msh)
 u_e = 1
@@ -111,17 +104,18 @@ L = [L_0, L_1]
 def boundary(x):
     lr = np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
     tb = np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0))
-    fb = np.logical_or(np.isclose(x[2], 0.0), np.isclose(x[2], 1.0))
-    return np.logical_or(np.logical_or(lr, tb), fb)
+    lrtb = np.logical_or(lr, tb)
+    if tdim == 2:
+        return lrtb
+    else:
+        assert tdim == 3
+        fb = np.logical_or(np.isclose(x[2], 0.0), np.isclose(x[2], 1.0))
+        return np.logical_or(lrtb, fb)
 
 
-# NOTE Locating boundary facets on the mesh to ensure we don't hit
-# bug caused by strange ghosting on the facet mesh
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = [inv_entity_map[facet]
                               for facet in msh_boundary_facets]
-# out_str += f"facet_mesh_boundary_facets = {facet_mesh_boundary_facets}\n"
-
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 
@@ -155,13 +149,9 @@ ubar.x.scatter_forward()
 
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
-
-# FIXME Why are there extra facets?
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
 e_L2 = norm_L2(msh.comm, u - u_e)
-
 out_str += f"e_L2 = {e_L2}\n"
-
 print(out_str)
