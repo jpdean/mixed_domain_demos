@@ -21,20 +21,23 @@ n = 4
 msh = mesh.create_unit_cube(
     comm, n, n, n, ghost_mode=mesh.GhostMode.none)
 
-# msh = create_ordered_cube(comm, n, mesh.GhostMode.none)
+# TODO Don't hardcode
+num_cell_vertices = 4
 
+# Currently, permutations are not working in parallel, so reorder the
+# mesh
+# FIXME For a high-order mesh, the geom has more dofs so need to modify this
 tdim = msh.topology.dim
-
 c_to_v = msh.topology.connectivity(tdim, 0)
-c_to_xdof = msh.geometry.dofmap
+geom_dofmap = msh.geometry.dofmap
 vertex_imap = msh.topology.index_map(0)
 geom_imap = msh.geometry.index_map()
-for i in range(0, len(c_to_v.array), 4):
-    topo_perm = np.argsort(vertex_imap.local_to_global(c_to_v.array[i:i+4]))
-    geom_perm = np.argsort(geom_imap.local_to_global(c_to_xdof.array[i:i+4]))
+for i in range(0, len(c_to_v.array), num_cell_vertices):
+    topo_perm = np.argsort(vertex_imap.local_to_global(c_to_v.array[i:i+num_cell_vertices]))
+    geom_perm = np.argsort(geom_imap.local_to_global(geom_dofmap.array[i:i+num_cell_vertices]))
 
-    c_to_v.array[i:i+4] = c_to_v.array[i:i+4][topo_perm]
-    c_to_xdof.array[i:i+4] = c_to_xdof.array[i:i+4][geom_perm]
+    c_to_v.array[i:i+num_cell_vertices] = c_to_v.array[i:i+num_cell_vertices][topo_perm]
+    geom_dofmap.array[i:i+num_cell_vertices] = geom_dofmap.array[i:i+num_cell_vertices][geom_perm]
 
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
