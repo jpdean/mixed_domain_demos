@@ -6,6 +6,7 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
+from utils import norm_L2
 
 
 def boundary_marker(x):
@@ -94,3 +95,8 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
     f.write(0.0)
+
+e_L2 = norm_L2(msh.comm, u - u_e)
+
+if msh.comm.rank == 0:
+    print(f"e_L2 = {e_L2}")
