@@ -1,9 +1,6 @@
-# TODO This probably needs dof without cell fix
-
-from threading import local
 import numpy as np
 import ufl
-from dolfinx import fem, io, mesh, graph
+from dolfinx import fem, io, mesh
 from ufl import grad, inner
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -21,6 +18,7 @@ k = 1
 msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
 # msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
 
+# Currently, permutations are not working in parallel, so reorder the mesh
 reorder_mesh(msh)
 
 V = fem.FunctionSpace(msh, ("Lagrange", k))
@@ -39,54 +37,10 @@ dirichlet_facets = mesh.locate_entities_boundary(
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
-# # FIXME Need to use this clumsy method until we have better support for one
-# # sided integrals
-# # Create a submesh of the cells on the left side of the mesh
-# left_cells = mesh.locate_entities(
-#     msh, tdim, lambda x: x[0] <= 0.5)
-# submesh_left_cells, entity_map_left_cells = mesh.create_submesh(
-#     msh, tdim, left_cells)[0:2]
-# with io.XDMFFile(submesh_left_cells.comm, "submesh_left_cells.xdmf", "w") as file:
-#     file.write_mesh(submesh_left_cells)
-
-# # Tag the facets on the right boundary of the submesh. These correspond to
-# # the centre facets of the original mesh
-# # NOTE Numbered with respect to submesh_left_cells
-# centre_facets = mesh.locate_entities_boundary(
-#     submesh_left_cells, fdim, lambda x: np.isclose(x[0], 0.5))
-# mt = mesh.meshtags(
-#     submesh_left_cells, fdim, centre_facets, 1)
-
-# # Create an exterior facet measure on the submesh using the meshtags. Forms
-# # with ds(1) therefore integrates over the centre facets of the orignial mesh
-# ds = ufl.Measure("ds", domain=submesh_left_cells, subdomain_data=mt)
-
-# # Create a submesh of the centre facets of the mesh to define the function space
-# # for the Lagrange multiplier
-# submesh_centre_facets, entity_map_centre_facets = mesh.create_submesh(
-#     submesh_left_cells, fdim, centre_facets)[0:2]
-# with io.XDMFFile(submesh_centre_facets.comm,
-#                  "submesh_centre_facets.xdmf", "w") as file:
-#     file.write_mesh(submesh_centre_facets)
-
-# # We need to provide entitiy maps for both the original mesh and the submesh
-# # of the centre facets
-# facet_imap = submesh_left_cells.topology.index_map(fdim)
-# sm_lc_num_facets = facet_imap.size_local + facet_imap.num_ghosts
-# entity_maps = {msh: entity_map_left_cells,
-#                submesh_centre_facets: [entity_map_centre_facets.index(entity)
-#                                        if entity in entity_map_centre_facets else -1
-#                                        for entity in range(sm_lc_num_facets)]}
-# # END OF CLUMSY METHOD
-
+# Create submesh of centre facets
 centre_facets = mesh.locate_entities(
     msh, fdim, lambda x: np.isclose(x[0], 0.5))
 submesh, entity_map = mesh.create_submesh(msh, fdim, centre_facets)[0:2]
-
-# with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-# with io.XDMFFile(msh.comm, "submesh.xdmf", "w") as file:
-#     file.write_mesh(submesh)
 
 # Create function space for the Lagrange multiplier
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
@@ -97,6 +51,7 @@ entity_maps = {submesh: [entity_map.index(entity)
                          if entity in entity_map else -1
                          for entity in range(num_facets)]}
 
+# Create measure for integration
 facet_integration_entities = {1: []}
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
@@ -109,7 +64,6 @@ for facet in centre_facets:
         cell = f_to_c.links(facet)[0]
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities[1].extend([cell, local_facet])
-
 ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 
 # Define forms
