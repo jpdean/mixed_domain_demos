@@ -48,7 +48,7 @@ x = ufl.SpatialCoordinate(msh)
 u_e = 1
 for i in range(tdim):
     u_e *= ufl.cos(ufl.pi * x[i])
-f = - div(grad(u_e))
+f = u_e - div(grad(u_e))
 
 # Dirichlet boundary condition (enforced through Lagrange multiplier)
 u_d = u_e
