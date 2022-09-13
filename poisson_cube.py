@@ -67,7 +67,8 @@ submesh_1, entity_map_1 = mesh.create_submesh(
     submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a functions space on submesh_1 and interpolate a function
-V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
+k = 2
+V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k))
 u_sm_1 = fem.Function(V_sm_1)
 u_sm_1.name = "u_sm_1"
 u_sm_1.interpolate(lambda x: x[1]**2)
@@ -78,7 +79,7 @@ with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1) as f:
 
 # Create a function space over submesh_0, and define trial and test
 # functions
-V_sm_0 = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
+V_sm_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k))
 u_sm_0 = ufl.TrialFunction(V_sm_0)
 v_sm_0 = ufl.TestFunction(V_sm_0)
 
@@ -127,7 +128,7 @@ with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0) as f:
     f.write(0.0)
 
 # Create function spaces over the mesh, and define trial and test functions
-V_msh = fem.FunctionSpace(msh, ("Lagrange", 2))
+V_msh = fem.FunctionSpace(msh, ("Lagrange", k))
 u_msh = ufl.TrialFunction(V_msh)
 v_msh = ufl.TestFunction(V_msh)
 
