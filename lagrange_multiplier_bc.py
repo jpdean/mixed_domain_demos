@@ -59,7 +59,6 @@ a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
 a_10 = fem.form(- inner(u, mu) * ds, entity_maps=entity_maps)
 a_11 = None
-
 L_0 = fem.form(inner(f, v) * ufl.dx)
 L_1 = fem.form(- inner(u_d, mu) * ds, entity_maps=entity_maps)
 
@@ -67,10 +66,12 @@ a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
 
+# Assemble matrices
 A = fem.petsc.assemble_matrix_block(a)
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a)
 
+# Solve
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -81,6 +82,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecLeft()
 ksp.solve(b, x)
 
+# Recover solution
 u, lmbda = fem.Function(V), fem.Function(W)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
@@ -88,10 +90,7 @@ u.x.scatter_forward()
 lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
-with io.XDMFFile(msh.comm, "poisson_u.xdmf", "w") as file:
-    file.write_mesh(msh)
-    file.write_function(u)
-
-with io.XDMFFile(submesh.comm, "poisson_lmbda.xdmf", "w") as file:
-    file.write_mesh(submesh)
-    file.write_function(lmbda)
+with io.VTXWriter(msh.comm, "u.bp", u) as f:
+    f.write(0.0)
+with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
+    f.write(0.0)
