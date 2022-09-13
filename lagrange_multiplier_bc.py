@@ -8,23 +8,24 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 
+def boundary_marker(x):
+    return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
+                                       np.isclose(x[0], l_x)),
+                         np.logical_or(np.isclose(x[1], 0.0),
+                                       np.isclose(x[1], l_y)))
+
+
 l_x = 2.0
 l_y = 1.0
 n_x = 32
 n_y = 16
-msh = mesh.create_rectangle(comm=MPI.COMM_WORLD,
-                            points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y),
-                            cell_type=mesh.CellType.triangle,)
-edim = msh.topology.dim - 1
-num_facets = msh.topology.create_entities(edim)
-entities = mesh.locate_entities_boundary(
-    msh, edim,
-    lambda x: np.logical_or(np.logical_or(np.isclose(x[0], l_x),
-                                          np.isclose(x[0], 0.0)),
-                            np.logical_or(np.isclose(x[1], l_y),
-                                          np.isclose(x[1], 0.0))))
-submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    msh, edim, entities)
+msh = mesh.create_rectangle(
+    comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
+fdim = msh.topology.dim - 1
+num_facets = msh.topology.create_entities(fdim)
+boundary_facets = mesh.locate_entities_boundary(
+    msh, fdim, boundary_marker)
+submesh, entity_map = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 V = fem.FunctionSpace(msh, ("Lagrange", 1))
 # TODO Should this be discontinuous Lagrange?
