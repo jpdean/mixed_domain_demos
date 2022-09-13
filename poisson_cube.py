@@ -54,14 +54,6 @@ sm_entities = mesh.locate_entities_boundary(
 submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
     msh, fdim, sm_entities)
 
-W = fem.FunctionSpace(submesh, ("Lagrange", 1))
-
-u_sm = ufl.TrialFunction(W)
-v_sm = ufl.TestFunction(W)
-
-f_sm = fem.Function(W)
-f_sm.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
-
 sm_facet_dim = submesh.topology.dim - 1
 num_facets_sm = submesh.topology.create_entities(sm_facet_dim)
 # sm_boundary_facets = mesh.locate_entities_boundary(
@@ -81,6 +73,15 @@ g.interpolate(lambda x: x[1]**2)
 with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
     file.write_mesh(submesh_1)
     file.write_function(g)
+
+
+W = fem.FunctionSpace(submesh, ("Lagrange", 1))
+
+u_sm = ufl.TrialFunction(W)
+v_sm = ufl.TestFunction(W)
+
+f_sm = fem.Function(W)
+f_sm.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
 submesh_to_submesh_1 = [entity_map_1.index(entity)
                         if entity in entity_map_1 else -1
