@@ -3,7 +3,7 @@
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner
+from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -24,7 +24,8 @@ msh = mesh.create_rectangle(
     comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
 
 # Create submesh of the boundary
-fdim = msh.topology.dim - 1
+tdim = msh.topology.dim
+fdim = tdim - 1
 num_facets = msh.topology.create_entities(fdim)
 boundary_facets = mesh.locate_entities_boundary(
     msh, fdim, boundary_marker)
@@ -41,21 +42,26 @@ mu = ufl.TestFunction(W)
 # Create measure for integral over boundary
 ds = ufl.Measure("ds", domain=msh)
 
+# Create manufactured solution
 x = ufl.SpatialCoordinate(msh)
-f = 50 * ufl.exp(-((x[0] - 0.5) ** 2 + (x[1] - 0.5) ** 2) / 0.02)
-g = ufl.sin(ufl.pi * x[0])
+u_e = 1
+for i in range(tdim):
+    u_e *= ufl.sin(ufl.pi * x[i])
+f = - div(grad(u_e))
 
-mp = [entity_map.index(entity) if entity in entity_map else -1
-      for entity in range(num_facets)]
-entity_maps = {submesh: mp}
+# Dirichlet boundary condition (enforced through Lagrange multiplier)
+u_d = u_e
 
+# Define entity maps and forms
+entity_maps = {submesh: [entity_map.index(entity) if entity in entity_map else -1
+                         for entity in range(num_facets)]}
 a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
 a_10 = fem.form(- inner(u, mu) * ds, entity_maps=entity_maps)
 a_11 = None
 
 L_0 = fem.form(inner(f, v) * ufl.dx)
-L_1 = fem.form(- inner(g, mu) * ds, entity_maps=entity_maps)
+L_1 = fem.form(- inner(u_d, mu) * ds, entity_maps=entity_maps)
 
 a = [[a_00, a_01],
      [a_10, a_11]]
