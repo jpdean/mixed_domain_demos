@@ -1,5 +1,3 @@
-# TODO Check solution is correct
-
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
@@ -19,8 +17,8 @@ def boundary_marker(x):
 # Create mesh
 l_x = 2.0
 l_y = 1.0
-n_x = 32
-n_y = 16
+n_x = 16
+n_y = 8
 msh = mesh.create_rectangle(
     comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
 
@@ -33,8 +31,9 @@ boundary_facets = mesh.locate_entities_boundary(
 submesh, entity_map = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces on the mesh and submesh
-V = fem.FunctionSpace(msh, ("Lagrange", 1))
-W = fem.FunctionSpace(submesh, ("Lagrange", 1))
+k = 1
+V = fem.FunctionSpace(msh, ("Lagrange", k))
+W = fem.FunctionSpace(submesh, ("Lagrange", k))
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 lmbda = ufl.TrialFunction(W)
