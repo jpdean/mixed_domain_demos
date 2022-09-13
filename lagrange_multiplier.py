@@ -1,5 +1,6 @@
 # TODO This probably needs dof without cell fix
 
+from threading import local
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh, graph
@@ -17,8 +18,8 @@ def norm_L2(comm, v):
 n = 4
 assert n % 2 == 0  # NOTE n must be even
 k = 1
-msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
-# msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
+msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
+# msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
 
 reorder_mesh(msh)
 
@@ -97,10 +98,17 @@ entity_maps = {submesh: [entity_map.index(entity)
                          for entity in range(num_facets)]}
 
 facet_integration_entities = {1: []}
+msh.topology.create_connectivity(tdim, fdim)
+msh.topology.create_connectivity(fdim, tdim)
+c_to_f = msh.topology.connectivity(tdim, fdim)
+f_to_c = msh.topology.connectivity(fdim, tdim)
 for facet in centre_facets:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
-        print(facet)
+        # Get a cell
+        cell = f_to_c.links(facet)[0]
+        local_facet = c_to_f.links(cell).tolist().index(facet)
+        facet_integration_entities[1].extend([cell, local_facet])
 
 # # Define forms
 # a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
