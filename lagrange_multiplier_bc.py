@@ -1,3 +1,7 @@
+# Solves u - div(grad(u)) = f, where the Dirichlet boundary condition is
+# enforced via a Lagrange multiplier. See "The finite element method with
+# Lagrangian multipliers" by Babuška (1973)
+
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
