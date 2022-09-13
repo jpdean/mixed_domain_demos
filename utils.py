@@ -1,4 +1,7 @@
 import numpy as np
+from dolfinx import fem
+import ufl
+from mpi4py import MPI
 from dolfinx.cpp.mesh import cell_num_entities
 
 
@@ -18,3 +21,8 @@ def reorder_mesh(msh):
 
         c_to_v.array[i:i+num_cell_vertices] = c_to_v.array[i:i+num_cell_vertices][topo_perm]
         geom_dofmap.array[i:i+num_cell_vertices] = geom_dofmap.array[i:i+num_cell_vertices][geom_perm]
+
+
+def norm_L2(comm, v):
+    return np.sqrt(comm.allreduce(fem.assemble_scalar(
+        fem.form(ufl.inner(v, v) * ufl.dx)), op=MPI.SUM))
