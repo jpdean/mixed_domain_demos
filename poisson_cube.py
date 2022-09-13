@@ -69,6 +69,7 @@ submesh_1, entity_map_1 = mesh.create_submesh(
 # Create a functions space on submesh_1 and interpolate a function
 V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
 u_sm_1 = fem.Function(V_sm_1)
+u_sm_1.name = "u_sm_1"
 u_sm_1.interpolate(lambda x: x[1]**2)
 
 # Write the function to file
@@ -118,6 +119,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 
 # Solve
 u_sm_0 = fem.Function(V_sm_0)
+u_sm_0.name = "u_sm_0"
 ksp.solve(b_sm_0, u_sm_0.vector)
 u_sm_0.x.scatter_forward()
 
@@ -174,6 +176,7 @@ ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("superlu_dist")
 
 u_msh = fem.Function(V_msh)
+u_msh.name = "u_msh"
 ksp.solve(b_msh, u_msh.vector)
 
 # Write to file
