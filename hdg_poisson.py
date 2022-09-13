@@ -5,6 +5,7 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
+from utils import reorder_mesh
 
 
 def norm_L2(comm, v):
@@ -16,7 +17,7 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-n = 4
+n = 8
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none)
 # msh = mesh.create_unit_cube(
@@ -25,21 +26,9 @@ msh = mesh.create_unit_square(
 
 # Currently, permutations are not working in parallel, so reorder the
 # mesh
-# FIXME Check this is correct
-# FIXME For a high-order mesh, the geom has more dofs so need to modify this
+reorder_mesh(msh)
+
 tdim = msh.topology.dim
-num_cell_vertices = cell_num_entities(msh.topology.cell_type, 0)
-c_to_v = msh.topology.connectivity(tdim, 0)
-geom_dofmap = msh.geometry.dofmap
-vertex_imap = msh.topology.index_map(0)
-geom_imap = msh.geometry.index_map()
-for i in range(0, len(c_to_v.array), num_cell_vertices):
-    topo_perm = np.argsort(vertex_imap.local_to_global(c_to_v.array[i:i+num_cell_vertices]))
-    geom_perm = np.argsort(geom_imap.local_to_global(geom_dofmap.array[i:i+num_cell_vertices]))
-
-    c_to_v.array[i:i+num_cell_vertices] = c_to_v.array[i:i+num_cell_vertices][topo_perm]
-    geom_dofmap.array[i:i+num_cell_vertices] = geom_dofmap.array[i:i+num_cell_vertices][geom_perm]
-
 fdim = tdim - 1
 num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
 msh.topology.create_entities(fdim)
