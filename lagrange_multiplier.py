@@ -110,55 +110,57 @@ for facet in centre_facets:
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities[1].extend([cell, local_facet])
 
-# # Define forms
-# a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
-# a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
-# a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
-# f = fem.Constant(msh, PETSc.ScalarType(2.0))
-# L_0 = fem.form(inner(f, v) * ufl.dx)
-# c = fem.Constant(submesh_centre_facets, PETSc.ScalarType(0.25))
-# L_1 = fem.form(inner(c, eta) * ufl.dx)
-# # x = ufl.SpatialCoordinate(submesh)
-# # L_1 = fem.form(inner(- 0.1 * ufl.sin(ufl.pi * x[1]), eta) * ufl.dx)
+ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 
-# a = [[a_00, a_01],
-#      [a_10, None]]
-# L = [L_0, L_1]
+# Define forms
+a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
+a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
+a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
+f = fem.Constant(msh, PETSc.ScalarType(2.0))
+L_0 = fem.form(inner(f, v) * ufl.dx)
+c = fem.Constant(submesh, PETSc.ScalarType(0.25))
+L_1 = fem.form(inner(c, eta) * ufl.dx)
+# x = ufl.SpatialCoordinate(submesh)
+# L_1 = fem.form(inner(- 0.1 * ufl.sin(ufl.pi * x[1]), eta) * ufl.dx)
 
-# # Use block assembly
-# A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
-# A.assemble()
-# b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
+a = [[a_00, a_01],
+     [a_10, None]]
+L = [L_0, L_1]
 
-# # Configure solver
-# ksp = PETSc.KSP().create(msh.comm)
-# ksp.setOperators(A)
-# ksp.setType("preonly")
-# ksp.getPC().setType("lu")
-# ksp.getPC().setFactorSolverType("superlu_dist")
+# Use block assembly
+A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
+A.assemble()
+b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
-# # Compute solution
-# x = A.createVecLeft()
-# ksp.solve(b, x)
+# Configure solver
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+ksp.getPC().setFactorSolverType("superlu_dist")
 
-# # Recover solution
-# u, lmbda = fem.Function(V), fem.Function(W)
-# offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-# u.x.array[:offset] = x.array_r[:offset]
-# u.x.scatter_forward()
-# lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-# lmbda.x.scatter_forward()
+# Compute solution
+x = A.createVecLeft()
+ksp.solve(b, x)
 
-# # Write to file
-# with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
-#     f.write(0.0)
-# with io.VTXWriter(submesh_centre_facets.comm, "poisson_lm_lmbda.bp", lmbda) as f:
-#     f.write(0.0)
+# Recover solution
+u, lmbda = fem.Function(V), fem.Function(W)
+offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+u.x.array[:offset] = x.array_r[:offset]
+u.x.scatter_forward()
+lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+lmbda.x.scatter_forward()
 
-# # Compute L^2-norm of error
-# x = ufl.SpatialCoordinate(msh)
-# u_e = x[0] * (1 - x[0])
-# e_L2 = norm_L2(msh.comm, u - u_e)
-# rank = msh.comm.Get_rank()
-# if rank == 0:
-#     print(f"e_L2 = {e_L2}")
+# Write to file
+with io.VTXWriter(msh.comm, "poisson_lm_u.bp", u) as f:
+    f.write(0.0)
+with io.VTXWriter(msh.comm, "poisson_lm_lmbda.bp", lmbda) as f:
+    f.write(0.0)
+
+# Compute L^2-norm of error
+x = ufl.SpatialCoordinate(msh)
+u_e = x[0] * (1 - x[0])
+e_L2 = norm_L2(msh.comm, u - u_e)
+rank = msh.comm.Get_rank()
+if rank == 0:
+    print(f"e_L2 = {e_L2}")
