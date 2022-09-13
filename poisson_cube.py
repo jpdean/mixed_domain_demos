@@ -9,27 +9,28 @@ from dolfinx.io import gmshio
 from dolfinx.mesh import meshtags, exterior_facet_indices
 
 
+# Create some geometry with gmsh
 gmsh.initialize()
-mesh_comm = MPI.COMM_WORLD
+comm = MPI.COMM_WORLD
 model_rank = 0
 model = gmsh.model()
-if mesh_comm.rank == model_rank:
+model_name = "Hemisphere"
+if comm.rank == model_rank:
     # Generate a mesh
-    model.add("Sphere minus box")
-    model.setCurrent("Sphere minus box")
+    model.add(model_name)
+    model.setCurrent(model_name)
 
-    sphere_dim_tags = model.occ.addSphere(0, 0, 0, 1)
-    box_dim_tags = model.occ.addBox(-1, -1, 0, 2, 2, 1)
-    box_dim_tags_2 = model.occ.addBox(-1, -1, -0.75, 2, 2, -1)
-    box_dim_tags_3 = model.occ.addCylinder(0, 0, 0, 0, 0, -1, 0.25)
-    model_dim_tags = model.occ.cut([(3, sphere_dim_tags)], [(3, box_dim_tags),
-                                                            (3, box_dim_tags_2),
-                                                            (3, box_dim_tags_3)])
-
+    sphere = model.occ.addSphere(0, 0, 0, 1)
+    box_0 = model.occ.addBox(-1, -1, 0, 2, 2, 1)
+    box_1 = model.occ.addBox(-1, -1, -0.75, 2, 2, -1)
+    cylinder = model.occ.addCylinder(0, 0, 0, 0, 0, -1, 0.25)
+    cut = model.occ.cut([(3, sphere)], [(3, box_0),
+                                        (3, box_1),
+                                        (3, cylinder)])
     model.occ.synchronize()
 
     # Add physical tag 1 for exterior surfaces
-    boundary = model.getBoundary(model_dim_tags[0], oriented=False)
+    boundary = model.getBoundary(cut[0], oriented=False)
     boundary_ids = [b[1] for b in boundary]
     model.addPhysicalGroup(2, boundary_ids, tag=1)
     model.setPhysicalName(2, 1, "Sphere surface")
@@ -39,11 +40,13 @@ if mesh_comm.rank == model_rank:
     model.addPhysicalGroup(3, volume_entities, tag=2)
     model.setPhysicalName(3, 2, "Sphere volume")
 
+    # Generate the mesh
     model.mesh.generate(3)
+    # Use second-order geometry
     model.mesh.setOrder(2)
 
-msh = gmshio.model_to_mesh(model, mesh_comm, model_rank)[0]
-msh.name = "ball_d1"
+msh = gmshio.model_to_mesh(model, comm, model_rank)[0]
+msh.name = model_name
 
 with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
     file.write_mesh(msh)
