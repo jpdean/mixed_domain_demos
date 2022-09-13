@@ -48,7 +48,7 @@ if comm.rank == model_rank:
 msh = gmshio.model_to_mesh(model, comm, model_rank)[0]
 msh.name = model_name
 
-# Create a submesh part of the boundary of the original mesh to
+# Create a submesh of part of the boundary of the original mesh to
 # get a disk
 msh_fdim = msh.topology.dim - 1
 submesh_0_entities = mesh.locate_entities_boundary(
@@ -56,17 +56,17 @@ submesh_0_entities = mesh.locate_entities_boundary(
 submesh_0, entity_map_0 = mesh.create_submesh(
     msh, msh_fdim, submesh_0_entities)[0:2]
 
-submesh_0_fdim = submesh_0.topology.dim - 1
+# Create a submesh of the boundary of submesh_0 to get some concentric
+# circles
+submesh_0_tdim = submesh_0.topology.dim
+submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
-# sm_boundary_facets = mesh.locate_entities_boundary(
-#     submesh, sm_facet_dim,
-#     lambda x: np.logical_or(np.isclose(x[0]**2 + x[1]**2, 1.0),
-#                             np.isclose(x[0]**2 + x[1]**2, 0.25)))
-submesh_0.topology.create_connectivity(
-    submesh_0.topology.dim - 1, submesh_0.topology.dim)
+submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, entity_map_1, vertex_map_1, geom_map_1 = mesh.create_submesh(
-    submesh_0, submesh_0_fdim, sm_boundary_facets)
+submesh_1, entity_map_1 = mesh.create_submesh(
+    submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
+
+# Create a functions space on submesh_1 and interpolate a function
 X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
 g = fem.Function(X)
 g.interpolate(lambda x: x[1]**2)
