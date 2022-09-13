@@ -168,7 +168,7 @@ b_msh.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 fem.petsc.set_bc(b_msh, [bc])
 
 # Solve
-ksp = PETSc.KSP().create(msh.comm)
+ksp = PETSc.KSP().create(comm)
 ksp.setOperators(A_msh)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
