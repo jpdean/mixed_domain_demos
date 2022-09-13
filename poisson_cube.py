@@ -131,16 +131,13 @@ dirichlet_facets = mesh.locate_entities_boundary(
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
 
-# TODO USE f
 f = fem.Function(V)
 f.interpolate(lambda x: np.sin(np.pi * x[0])
               * np.sin(np.pi * x[1])
               * np.sin(np.pi * x[2]))
 
 a = fem.form(inner(grad(u), grad(v)) * dx)
-# L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds(1),
-#              entity_maps=entity_maps)
-L = fem.form(inner(u_sm, v) * ds(1),
+L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds(1),
              entity_maps=entity_maps)
 A = fem.petsc.assemble_matrix(a, bcs=[bc])
 A.assemble()
