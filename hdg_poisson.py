@@ -76,22 +76,23 @@ dx_f = ufl.Measure("dx", domain=facet_mesh)
 inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
 
-a_00 = fem.form(inner(grad(u), grad(v)) * dx_c -
-                (inner(u, dot(grad(v), n)) * ds_c(1) +
-                 inner(v, dot(grad(u), n)) * ds_c(1)) +
-                gamma * inner(u, v) * ds_c(1))
-a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, vbar) * ds_c(1),
+x = ufl.SpatialCoordinate(msh)
+c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
+                (inner(c * u, dot(grad(v), n)) * ds_c(1) +
+                 inner(c * v, dot(grad(u), n)) * ds_c(1)) +
+                gamma * inner(c * u, v) * ds_c(1))
+a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(1),
                 entity_maps=entity_maps)
-a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, ubar) * ds_c(1),
+a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(1),
                 entity_maps=entity_maps)
-a_11 = fem.form(gamma * inner(ubar, vbar) * ds_c(1),
+a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(1),
                 entity_maps=entity_maps)
 
-x = ufl.SpatialCoordinate(msh)
 u_e = 1
 for i in range(tdim):
     u_e *= ufl.sin(ufl.pi * x[i])
-f = - div(grad(u_e))
+f = - div(c * grad(u_e))
 
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
