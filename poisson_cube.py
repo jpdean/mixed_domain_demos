@@ -126,51 +126,57 @@ with io.XDMFFile(comm, "u_sm_0.xdmf", "w") as file:
     file.write_mesh(submesh_0)
     file.write_function(u_sm_0)
 
-num_facets = msh.topology.index_map(msh_fdim).size_local + \
-    msh.topology.index_map(msh_fdim).num_ghosts
-msh_to_submesh = [entity_map_0.index(entity) if entity in entity_map_0 else -1
-                  for entity in range(num_facets)]
-entity_maps = {submesh_0: msh_to_submesh}
-# print(f"msh_to_submesh = {msh_to_submesh}")
+# Create function spaces over the mesh, and define trial and test functions
+V_msh = fem.FunctionSpace(msh, ("Lagrange", 2))
+u_msh = ufl.TrialFunction(V_msh)
+v_msh = ufl.TestFunction(V_msh)
 
-mt = meshtags(msh, msh_fdim, submesh_0_entities,
-              np.ones_like(submesh_0_entities))
-ds = ufl.Measure("ds", subdomain_data=mt, domain=msh)
-
-V = fem.FunctionSpace(msh, ("Lagrange", 2))
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-
+# Create Dirichlet boundary condition
 dirichlet_facets = mesh.locate_entities_boundary(
     msh, msh_fdim, lambda x: np.isclose(x[2], -0.75))
-dirichlet_dofs = fem.locate_dofs_topological(V, msh_fdim, dirichlet_facets)
-bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
+dirichlet_dofs = fem.locate_dofs_topological(V_msh, msh_fdim, dirichlet_facets)
+bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V_msh)
 
-f = fem.Function(V)
-f.interpolate(lambda x: np.sin(np.pi * x[0])
-              * np.sin(np.pi * x[1])
-              * np.sin(np.pi * x[2]))
+# Create a function to represent the forcing term
+f_msh = fem.Function(V_msh)
+f_msh.interpolate(lambda x: np.sin(np.pi * x[0])
+                  * np.sin(np.pi * x[1])
+                  * np.sin(np.pi * x[2]))
 
-a = fem.form(inner(grad(u), grad(v)) * dx)
-L = fem.form(inner(f, v) * dx + inner(u_sm_0, v) * ds(1),
-             entity_maps=entity_maps)
-A = fem.petsc.assemble_matrix(a, bcs=[bc])
-A.assemble()
+# Create entity maps
+msh_num_facets = msh.topology.index_map(msh_fdim).size_local + \
+    msh.topology.index_map(msh_fdim).num_ghosts
+entity_maps_msh = {submesh_0: [entity_map_0.index(entity) if entity in entity_map_0 else -1
+                               for entity in range(msh_num_facets)]}
 
-b = fem.petsc.assemble_vector(L)
-fem.petsc.apply_lifting(b, [a], bcs=[[bc]])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-fem.petsc.set_bc(b, [bc])
+# Create meshtags to mark the Neumann boundary
+mt = meshtags(msh, msh_fdim, submesh_0_entities,
+              np.ones_like(submesh_0_entities))
+ds_msh = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
+a_msh = fem.form(inner(grad(u_msh), grad(v_msh)) * dx)
+L_msh = fem.form(inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1),
+                 entity_maps=entity_maps_msh)
+
+# Assemble matrix and vector
+A_msh = fem.petsc.assemble_matrix(a_msh, bcs=[bc])
+A_msh.assemble()
+b_msh = fem.petsc.assemble_vector(L_msh)
+fem.petsc.apply_lifting(b_msh, [a_msh], bcs=[[bc]])
+b_msh.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+fem.petsc.set_bc(b_msh, [bc])
+
+# Solve
 ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
+ksp.setOperators(A_msh)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("superlu_dist")
 
-u = fem.Function(V)
-ksp.solve(b, u.vector)
+u_msh = fem.Function(V_msh)
+ksp.solve(b_msh, u_msh.vector)
 
-with io.XDMFFile(msh.comm, "u.xdmf", "w") as file:
+# Write to file
+with io.XDMFFile(comm, "u_msh.xdmf", "w") as file:
     file.write_mesh(msh)
-    file.write_function(u)
+    file.write_function(u_msh)
