@@ -73,9 +73,8 @@ u_sm_1.name = "u_sm_1"
 u_sm_1.interpolate(lambda x: x[1]**2)
 
 # Write the function to file
-with io.XDMFFile(comm, "u_sm_1.xdmf", "w") as file:
-    file.write_mesh(submesh_1)
-    file.write_function(u_sm_1)
+with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1) as f:
+    f.write(0.0)
 
 # Create a function space over submesh_0, and define trial and test
 # functions
@@ -123,10 +122,9 @@ u_sm_0.name = "u_sm_0"
 ksp.solve(b_sm_0, u_sm_0.vector)
 u_sm_0.x.scatter_forward()
 
-# TODO USE VTX
-with io.XDMFFile(comm, "u_sm_0.xdmf", "w") as file:
-    file.write_mesh(submesh_0)
-    file.write_function(u_sm_0)
+# Write to file
+with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0) as f:
+    f.write(0.0)
 
 # Create function spaces over the mesh, and define trial and test functions
 V_msh = fem.FunctionSpace(msh, ("Lagrange", 2))
@@ -178,8 +176,8 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 u_msh = fem.Function(V_msh)
 u_msh.name = "u_msh"
 ksp.solve(b_msh, u_msh.vector)
+u_msh.x.scatter_forward()
 
 # Write to file
-with io.XDMFFile(comm, "u_msh.xdmf", "w") as file:
-    file.write_mesh(msh)
-    file.write_function(u_msh)
+with io.VTXWriter(comm, "u_msh.bp", u_msh) as f:
+    f.write(0.0)
