@@ -15,29 +15,30 @@ def boundary_marker(x):
                                        np.isclose(x[1], l_y)))
 
 
+# Create mesh
 l_x = 2.0
 l_y = 1.0
 n_x = 32
 n_y = 16
 msh = mesh.create_rectangle(
     comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
+
+# Create submesh of the boundary
 fdim = msh.topology.dim - 1
 num_facets = msh.topology.create_entities(fdim)
 boundary_facets = mesh.locate_entities_boundary(
     msh, fdim, boundary_marker)
 submesh, entity_map = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
+# Create function spaces on the mesh and submesh
 V = fem.FunctionSpace(msh, ("Lagrange", 1))
-# TODO Should this be discontinuous Lagrange?
 W = fem.FunctionSpace(submesh, ("Lagrange", 1))
-
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 lmbda = ufl.TrialFunction(W)
 mu = ufl.TestFunction(W)
 
-# NOTE: Probably don't need to define dx
-dx = ufl.Measure("dx", domain=msh)
+# Create measure for integral over boundary
 ds = ufl.Measure("ds", domain=msh)
 
 x = ufl.SpatialCoordinate(msh)
@@ -48,12 +49,12 @@ mp = [entity_map.index(entity) if entity in entity_map else -1
       for entity in range(num_facets)]
 entity_maps = {submesh: mp}
 
-a_00 = fem.form(inner(u, v) * dx + inner(grad(u), grad(v)) * dx)
+a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
 a_10 = fem.form(- inner(u, mu) * ds, entity_maps=entity_maps)
 a_11 = None
 
-L_0 = fem.form(inner(f, v) * dx)
+L_0 = fem.form(inner(f, v) * ufl.dx)
 L_1 = fem.form(- inner(g, mu) * ds, entity_maps=entity_maps)
 
 a = [[a_00, a_01],
