@@ -4,17 +4,60 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
+import gmsh
+from dolfinx.io import gmshio
+from dolfinx.mesh import meshtags, exterior_facet_indices
 
-n = 8
-msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
+
+gmsh.initialize()
+mesh_comm = MPI.COMM_WORLD
+model_rank = 0
+model = gmsh.model()
+if mesh_comm.rank == model_rank:
+    # Generate a mesh
+    model.add("Sphere minus box")
+    model.setCurrent("Sphere minus box")
+
+    sphere_dim_tags = model.occ.addSphere(0, 0, 0, 1)
+    box_dim_tags = model.occ.addBox(-1, -1, 0, 2, 2, 1)
+    box_dim_tags_2 = model.occ.addBox(-1, -1, -0.75, 2, 2, -1)
+    box_dim_tags_3 = model.occ.addCylinder(0, 0, 0, 0, 0, -1, 0.25)
+    model_dim_tags = model.occ.cut([(3, sphere_dim_tags)], [(3, box_dim_tags),
+                                                            (3, box_dim_tags_2),
+                                                            (3, box_dim_tags_3)])
+
+    model.occ.synchronize()
+
+    # Add physical tag 1 for exterior surfaces
+    boundary = model.getBoundary(model_dim_tags[0], oriented=False)
+    boundary_ids = [b[1] for b in boundary]
+    model.addPhysicalGroup(2, boundary_ids, tag=1)
+    model.setPhysicalName(2, 1, "Sphere surface")
+
+    # Add physical tag 2 for the volume
+    volume_entities = [model[1] for model in model.getEntities(3)]
+    model.addPhysicalGroup(3, volume_entities, tag=2)
+    model.setPhysicalName(3, 2, "Sphere volume")
+
+    model.mesh.generate(3)
+    model.mesh.setOrder(2)
+
+msh = gmshio.model_to_mesh(model, mesh_comm, model_rank)[0]
+msh.name = "ball_d1"
+
+with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
+    file.write_mesh(msh)
+
 facet_dim = msh.topology.dim - 1
-num_facets = msh.topology.create_entities(facet_dim)
+# num_facets = msh.topology.create_entities(facet_dim)
+# TODO Check if this is right in parallel
+num_facets = msh.topology.index_map(
+    facet_dim).size_local + msh.topology.index_map(facet_dim).num_ghosts
 
-V = fem.FunctionSpace(msh, ("Lagrange", 1))
+V = fem.FunctionSpace(msh, ("Lagrange", 2))
 
 dirichlet_facets = mesh.locate_entities_boundary(
-    msh, facet_dim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
-                                            np.isclose(x[0], 1.0)))
+    msh, facet_dim, lambda x: np.isclose(x[2], -0.75))
 dirichlet_dofs = fem.locate_dofs_topological(V, facet_dim, dirichlet_facets)
 bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
 
@@ -22,6 +65,9 @@ sm_entities = mesh.locate_entities_boundary(
     msh, facet_dim, lambda x: np.isclose(x[2], 0.0))
 submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
     msh, facet_dim, sm_entities)
+
+with io.XDMFFile(msh.comm, "submesh.xdmf", "w") as file:
+    file.write_mesh(submesh)
 
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
@@ -37,21 +83,24 @@ u_sm = ufl.TrialFunction(W)
 v_sm = ufl.TestFunction(W)
 
 f_sm = fem.Function(W)
-f_sm.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]))
+f_sm.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
 sm_facet_dim = submesh.topology.dim - 1
 num_facets_sm = submesh.topology.create_entities(sm_facet_dim)
-sm_boundary_facets = mesh.locate_entities_boundary(
-    submesh, sm_facet_dim,
-    lambda x: np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
-                                          np.isclose(x[0], 1.0)),
-                            np.logical_or(np.isclose(x[1], 0.0),
-                                          np.isclose(x[1], 1.0))))
+# sm_boundary_facets = mesh.locate_entities_boundary(
+#     submesh, sm_facet_dim,
+#     lambda x: np.logical_or(np.isclose(x[0]**2 + x[1]**2, 1.0),
+#                             np.isclose(x[0]**2 + x[1]**2, 0.25)))
+submesh.topology.create_entities(submesh.topology.dim - 1)
+submesh.topology.create_connectivity(
+    submesh.topology.dim - 1, submesh.topology.dim)
+sm_boundary_facets = exterior_facet_indices(submesh.topology)
 submesh_1, entity_map_1, vertex_map_1, geom_map_1 = mesh.create_submesh(
     submesh, sm_facet_dim, sm_boundary_facets)
 X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
 g = fem.Function(X)
 g.interpolate(lambda x: x[1]**2)
+
 with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
     file.write_mesh(submesh_1)
     file.write_function(g)
@@ -89,13 +138,16 @@ with io.XDMFFile(submesh.comm, "u_sm.xdmf", "w") as file:
 msh_to_submesh = [entity_map.index(entity) if entity in entity_map else -1
                   for entity in range(num_facets)]
 entity_maps = {submesh: msh_to_submesh}
+# print(f"msh_to_submesh = {msh_to_submesh}")
 
-ds = ufl.Measure("ds", domain=msh)
+mt = meshtags(msh, facet_dim, sm_entities, np.ones_like(sm_entities))
+ds = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
 a = fem.form(inner(grad(u), grad(v)) * dx)
-L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds,
+# L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds(1),
+#              entity_maps=entity_maps)
+L = fem.form(inner(u_sm, v) * ds(1),
              entity_maps=entity_maps)
-
 A = fem.petsc.assemble_matrix(a, bcs=[bc])
 A.assemble()
 
