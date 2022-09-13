@@ -76,46 +76,55 @@ with io.XDMFFile(comm, "u_sm_1.xdmf", "w") as file:
     file.write_mesh(submesh_1)
     file.write_function(u_sm_1)
 
+# Create a function space over submesh_0, and define trial and test
+# functions
+V_sm_0 = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
+u_sm_0 = ufl.TrialFunction(V_sm_0)
+v_sm_0 = ufl.TestFunction(V_sm_0)
 
-W = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
+# Create a function to represent the forcing term
+f_sm_0 = fem.Function(V_sm_0)
+f_sm_0.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
-u_sm = ufl.TrialFunction(W)
-v_sm = ufl.TestFunction(W)
-
-f_sm = fem.Function(W)
-f_sm.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
-
+# Create the entity maps and an integration measure
 submesh_0_facet_imap = submesh_0.topology.index_map(submesh_0_fdim)
 submesh_0_num_facets = submesh_0_facet_imap.size_local + \
     submesh_0_facet_imap.num_ghosts
-entity_maps_sm = {submesh_1: [entity_map_1.index(entity)
-                              if entity in entity_map_1 else -1
-                              for entity in range(submesh_0_num_facets)]}
+entity_maps_sm_0 = {submesh_1: [entity_map_1.index(entity)
+                                if entity in entity_map_1 else -1
+                                for entity in range(submesh_0_num_facets)]}
+ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 
-ds_sm = ufl.Measure("ds", domain=submesh_0)
-a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
-L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(u_sm_1, v_sm) * ds_sm,
-                entity_maps=entity_maps_sm)
+# Define forms, using the function interpolated on the concentric circle mesh
+# as the Neumann boundary condition
+a_sm_0 = fem.form(inner(u_sm_0, v_sm_0) * dx +
+                  inner(grad(u_sm_0), grad(v_sm_0)) * dx)
+L_sm_0 = fem.form(inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0,
+                  entity_maps=entity_maps_sm_0)
 
-A_sm = fem.petsc.assemble_matrix(a_sm)
-A_sm.assemble()
-b_sm = fem.petsc.assemble_vector(L_sm)
-b_sm.ghostUpdate(addv=PETSc.InsertMode.ADD,
-                 mode=PETSc.ScatterMode.REVERSE)
+# Assemble matrix and vector
+A_sm_0 = fem.petsc.assemble_matrix(a_sm_0)
+A_sm_0.assemble()
+b_sm_0 = fem.petsc.assemble_vector(L_sm_0)
+b_sm_0.ghostUpdate(addv=PETSc.InsertMode.ADD,
+                   mode=PETSc.ScatterMode.REVERSE)
 
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A_sm)
+# Configure solver
+ksp = PETSc.KSP().create(comm)
+ksp.setOperators(A_sm_0)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("superlu_dist")
 
-u_sm = fem.Function(W)
-ksp.solve(b_sm, u_sm.vector)
-u_sm.x.scatter_forward()
+# Solve
+u_sm_0 = fem.Function(V_sm_0)
+ksp.solve(b_sm_0, u_sm_0.vector)
+u_sm_0.x.scatter_forward()
 
-with io.XDMFFile(submesh_0.comm, "u_sm.xdmf", "w") as file:
+# TODO USE VTX
+with io.XDMFFile(comm, "u_sm_0.xdmf", "w") as file:
     file.write_mesh(submesh_0)
-    file.write_function(u_sm)
+    file.write_function(u_sm_0)
 
 num_facets = msh.topology.index_map(msh_fdim).size_local + \
     msh.topology.index_map(msh_fdim).num_ghosts
@@ -143,7 +152,7 @@ f.interpolate(lambda x: np.sin(np.pi * x[0])
               * np.sin(np.pi * x[2]))
 
 a = fem.form(inner(grad(u), grad(v)) * dx)
-L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds(1),
+L = fem.form(inner(f, v) * dx + inner(u_sm_0, v) * ds(1),
              entity_maps=entity_maps)
 A = fem.petsc.assemble_matrix(a, bcs=[bc])
 A.assemble()
