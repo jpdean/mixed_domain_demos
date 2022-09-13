@@ -29,8 +29,6 @@ v = ufl.TestFunction(V)
 tdim = msh.topology.dim
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
 dirichlet_facets = mesh.locate_entities_boundary(
     msh, fdim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
                                        np.isclose(x[0], 1.0)))
@@ -47,6 +45,8 @@ W = fem.FunctionSpace(submesh, ("Lagrange", k))
 lmbda = ufl.TrialFunction(W)
 eta = ufl.TestFunction(W)
 
+facet_imap = msh.topology.index_map(fdim)
+num_facets = facet_imap.size_local + facet_imap.num_ghosts
 entity_maps = {submesh: [entity_map.index(entity)
                          if entity in entity_map else -1
                          for entity in range(num_facets)]}
@@ -60,7 +60,7 @@ f_to_c = msh.topology.connectivity(fdim, tdim)
 for facet in centre_facets:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
-        # Get a cell
+        # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities[1].extend([cell, local_facet])
