@@ -48,24 +48,25 @@ if comm.rank == model_rank:
 msh = gmshio.model_to_mesh(model, comm, model_rank)[0]
 msh.name = model_name
 
-fdim = msh.topology.dim - 1
-sm_entities = mesh.locate_entities_boundary(
-    msh, fdim, lambda x: np.isclose(x[2], 0.0))
-submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    msh, fdim, sm_entities)
+# Create a submesh part of the boundary of the original mesh to
+# get a disk
+msh_fdim = msh.topology.dim - 1
+submesh_0_entities = mesh.locate_entities_boundary(
+    msh, msh_fdim, lambda x: np.isclose(x[2], 0.0))
+submesh_0, entity_map_0 = mesh.create_submesh(
+    msh, msh_fdim, submesh_0_entities)[0:2]
 
-sm_facet_dim = submesh.topology.dim - 1
-num_facets_sm = submesh.topology.create_entities(sm_facet_dim)
+submesh_0_fdim = submesh_0.topology.dim - 1
+submesh_0.topology.create_entities(submesh_0_fdim)
 # sm_boundary_facets = mesh.locate_entities_boundary(
 #     submesh, sm_facet_dim,
 #     lambda x: np.logical_or(np.isclose(x[0]**2 + x[1]**2, 1.0),
 #                             np.isclose(x[0]**2 + x[1]**2, 0.25)))
-submesh.topology.create_entities(submesh.topology.dim - 1)
-submesh.topology.create_connectivity(
-    submesh.topology.dim - 1, submesh.topology.dim)
-sm_boundary_facets = exterior_facet_indices(submesh.topology)
+submesh_0.topology.create_connectivity(
+    submesh_0.topology.dim - 1, submesh_0.topology.dim)
+sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
 submesh_1, entity_map_1, vertex_map_1, geom_map_1 = mesh.create_submesh(
-    submesh, sm_facet_dim, sm_boundary_facets)
+    submesh_0, submesh_0_fdim, sm_boundary_facets)
 X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
 g = fem.Function(X)
 g.interpolate(lambda x: x[1]**2)
@@ -75,7 +76,7 @@ with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
     file.write_function(g)
 
 
-W = fem.FunctionSpace(submesh, ("Lagrange", 1))
+W = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
 
 u_sm = ufl.TrialFunction(W)
 v_sm = ufl.TestFunction(W)
@@ -83,12 +84,14 @@ v_sm = ufl.TestFunction(W)
 f_sm = fem.Function(W)
 f_sm.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
-submesh_to_submesh_1 = [entity_map_1.index(entity)
-                        if entity in entity_map_1 else -1
-                        for entity in range(num_facets_sm)]
-entity_maps_sm = {submesh_1: submesh_to_submesh_1}
+submesh_0_facet_imap = submesh_0.topology.index_map(submesh_0_fdim)
+submesh_0_num_facets = submesh_0_facet_imap.size_local + \
+    submesh_0_facet_imap.num_ghosts
+entity_maps_sm = {submesh_1: [entity_map_1.index(entity)
+                              if entity in entity_map_1 else -1
+                              for entity in range(submesh_0_num_facets)]}
 
-ds_sm = ufl.Measure("ds", domain=submesh)
+ds_sm = ufl.Measure("ds", domain=submesh_0)
 a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
 L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(g, v_sm) * ds_sm,
                 entity_maps=entity_maps_sm)
@@ -109,18 +112,19 @@ u_sm = fem.Function(W)
 ksp.solve(b_sm, u_sm.vector)
 u_sm.x.scatter_forward()
 
-with io.XDMFFile(submesh.comm, "u_sm.xdmf", "w") as file:
-    file.write_mesh(submesh)
+with io.XDMFFile(submesh_0.comm, "u_sm.xdmf", "w") as file:
+    file.write_mesh(submesh_0)
     file.write_function(u_sm)
 
-num_facets = msh.topology.index_map(fdim).size_local + \
-    msh.topology.index_map(fdim).num_ghosts
-msh_to_submesh = [entity_map.index(entity) if entity in entity_map else -1
+num_facets = msh.topology.index_map(msh_fdim).size_local + \
+    msh.topology.index_map(msh_fdim).num_ghosts
+msh_to_submesh = [entity_map_0.index(entity) if entity in entity_map_0 else -1
                   for entity in range(num_facets)]
-entity_maps = {submesh: msh_to_submesh}
+entity_maps = {submesh_0: msh_to_submesh}
 # print(f"msh_to_submesh = {msh_to_submesh}")
 
-mt = meshtags(msh, fdim, sm_entities, np.ones_like(sm_entities))
+mt = meshtags(msh, msh_fdim, submesh_0_entities,
+              np.ones_like(submesh_0_entities))
 ds = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
 V = fem.FunctionSpace(msh, ("Lagrange", 2))
@@ -128,8 +132,8 @@ u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 
 dirichlet_facets = mesh.locate_entities_boundary(
-    msh, fdim, lambda x: np.isclose(x[2], -0.75))
-dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
+    msh, msh_fdim, lambda x: np.isclose(x[2], -0.75))
+dirichlet_dofs = fem.locate_dofs_topological(V, msh_fdim, dirichlet_facets)
 bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
 
 f = fem.Function(V)
