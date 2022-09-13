@@ -67,13 +67,14 @@ submesh_1, entity_map_1 = mesh.create_submesh(
     submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a functions space on submesh_1 and interpolate a function
-X = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
-g = fem.Function(X)
-g.interpolate(lambda x: x[1]**2)
+V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 1))
+u_sm_1 = fem.Function(V_sm_1)
+u_sm_1.interpolate(lambda x: x[1]**2)
 
-with io.XDMFFile(submesh_1.comm, "g.xdmf", "w") as file:
+# Write the function to file
+with io.XDMFFile(comm, "u_sm_1.xdmf", "w") as file:
     file.write_mesh(submesh_1)
-    file.write_function(g)
+    file.write_function(u_sm_1)
 
 
 W = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
@@ -93,7 +94,7 @@ entity_maps_sm = {submesh_1: [entity_map_1.index(entity)
 
 ds_sm = ufl.Measure("ds", domain=submesh_0)
 a_sm = fem.form(inner(u_sm, v_sm) * dx + inner(grad(u_sm), grad(v_sm)) * dx)
-L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(g, v_sm) * ds_sm,
+L_sm = fem.form(inner(f_sm, v_sm) * dx + inner(u_sm_1, v_sm) * ds_sm,
                 entity_maps=entity_maps_sm)
 
 A_sm = fem.petsc.assemble_matrix(a_sm)
