@@ -48,37 +48,11 @@ if comm.rank == model_rank:
 msh = gmshio.model_to_mesh(model, comm, model_rank)[0]
 msh.name = model_name
 
-with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
-    file.write_mesh(msh)
-
-facet_dim = msh.topology.dim - 1
-# num_facets = msh.topology.create_entities(facet_dim)
-# TODO Check if this is right in parallel
-num_facets = msh.topology.index_map(
-    facet_dim).size_local + msh.topology.index_map(facet_dim).num_ghosts
-
-V = fem.FunctionSpace(msh, ("Lagrange", 2))
-
-dirichlet_facets = mesh.locate_entities_boundary(
-    msh, facet_dim, lambda x: np.isclose(x[2], -0.75))
-dirichlet_dofs = fem.locate_dofs_topological(V, facet_dim, dirichlet_facets)
-bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
-
+fdim = msh.topology.dim - 1
 sm_entities = mesh.locate_entities_boundary(
-    msh, facet_dim, lambda x: np.isclose(x[2], 0.0))
+    msh, fdim, lambda x: np.isclose(x[2], 0.0))
 submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-    msh, facet_dim, sm_entities)
-
-with io.XDMFFile(msh.comm, "submesh.xdmf", "w") as file:
-    file.write_mesh(submesh)
-
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-
-f = fem.Function(V)
-f.interpolate(lambda x: np.sin(np.pi * x[0])
-              * np.sin(np.pi * x[1])
-              * np.sin(np.pi * x[2]))
+    msh, fdim, sm_entities)
 
 W = fem.FunctionSpace(submesh, ("Lagrange", 1))
 
@@ -138,13 +112,30 @@ with io.XDMFFile(submesh.comm, "u_sm.xdmf", "w") as file:
     file.write_mesh(submesh)
     file.write_function(u_sm)
 
+num_facets = msh.topology.index_map(fdim).size_local + \
+    msh.topology.index_map(fdim).num_ghosts
 msh_to_submesh = [entity_map.index(entity) if entity in entity_map else -1
                   for entity in range(num_facets)]
 entity_maps = {submesh: msh_to_submesh}
 # print(f"msh_to_submesh = {msh_to_submesh}")
 
-mt = meshtags(msh, facet_dim, sm_entities, np.ones_like(sm_entities))
+mt = meshtags(msh, fdim, sm_entities, np.ones_like(sm_entities))
 ds = ufl.Measure("ds", subdomain_data=mt, domain=msh)
+
+V = fem.FunctionSpace(msh, ("Lagrange", 2))
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
+
+dirichlet_facets = mesh.locate_entities_boundary(
+    msh, fdim, lambda x: np.isclose(x[2], -0.75))
+dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
+bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V)
+
+# TODO USE f
+f = fem.Function(V)
+f.interpolate(lambda x: np.sin(np.pi * x[0])
+              * np.sin(np.pi * x[1])
+              * np.sin(np.pi * x[2]))
 
 a = fem.form(inner(grad(u), grad(v)) * dx)
 # L = fem.form(inner(f, v) * dx + inner(u_sm, v) * ds(1),
