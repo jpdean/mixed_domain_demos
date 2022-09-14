@@ -8,7 +8,6 @@ from dolfinx.cpp.mesh import cell_num_entities
 from utils import reorder_mesh, norm_L2
 
 
-
 comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
