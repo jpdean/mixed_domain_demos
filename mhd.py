@@ -109,21 +109,11 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     bc_u = fem.dirichletbc(u_bc, boundary_vel_dofs)
 
     # Pressure boundary condition
-    # NOTE Can't use locate_dofs_geometrical on a submesh in parallel as
-    # it gives incorrect results due to tabulate_dof_coordinates not working
-    # properly.
-    # pressure_dof = fem.locate_dofs_geometrical(
-    #     Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
-    #                                                np.isclose(x[1], 0.0)),
-    #                                 np.isclose(x[2], 0.0)))
-    # HACK Temporary hack to pin a single dof. Note that the dof chosen will
-    # depend on the partition so the pressure field will differ by a constant
-    # when on different meshes / numbers of processes
-    # FIXME This HACK is problematic if rank 0 owns no dofs
-    if submesh.comm.Get_rank() == 0:
-        pressure_dof = np.array([0], dtype=np.int32)
-    else:
-        pressure_dof = np.array([], dtype=np.int32)
+    pressure_dof = fem.locate_dofs_geometrical(
+        Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
+                                                   np.isclose(x[1], 0.0)),
+                                    np.isclose(x[2], 0.0)))
+    print(pressure_dof)
     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
     # Collect boundary conditions
@@ -263,7 +253,6 @@ if __name__ == "__main__":
     t_end = 0.1
     num_time_steps = 5
 
-    # NOTE Interpolating non-zero functions may fail on a submesh in parallel
     # Boundary condition for the velocity field
     u_expr = TimeDependentExpression(
         lambda x, t:
