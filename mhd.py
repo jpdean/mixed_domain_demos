@@ -26,9 +26,9 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
-def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
-              f_expr, u_bc_expr, t_end, num_time_steps, A_expr, J_p_expr,
-              entity_map):
+def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
+              entity_map, A_expr, u_bc_expr, J_p_expr, f_expr, t_end,
+              num_time_steps):
 
     V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
     Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
@@ -89,7 +89,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
     L_0 = fem.form(inner(u_n / delta_t + f, v) * dx_sm
                    + inner(A_n / delta_t + J_p, cross(curl(A_n), v)) * dx_sm,
                    entity_maps=entity_maps_sm)
-    L_1 = fem.form(inner(fem.Constant(submesh, PETSc.ScalarType(0.0)), q) * dx_sm)
+    L_1 = fem.form(
+        inner(fem.Constant(submesh, PETSc.ScalarType(0.0)), q) * dx_sm)
     L_2 = fem.form(inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
 
     a = [[a_00, a_01, a_02],
@@ -298,8 +299,9 @@ if __name__ == "__main__":
         msh, msh.topology.dim, fluid_cells)[0:2]
 
     u_h, p_h, A_h = solve_mhd(
-        msh, submesh, k, boundary_marker_msh, boundary_marker_sm, f_expr, u_expr,
-        t_end, num_time_steps, A_expr, J_p_expr, entity_map)
+        k, msh, boundary_marker_msh, submesh, boundary_marker_sm,
+        entity_map, A_expr, u_expr, J_p_expr, f_expr, t_end,
+        num_time_steps)
 
     u_h_norm = norm_L2(msh.comm, u_h)
     p_h_average = domain_average(submesh, p_h)
