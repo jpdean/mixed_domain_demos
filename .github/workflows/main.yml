@@ -23,23 +23,25 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
-
-      - name: Flake8
-        run: flake8 .
-
       - uses: actions/checkout@v3
         with:
           repository: FEniCS/basix
           ref: main
 
       # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Install basix
+        run: |
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} -B build-dir -S ./cpp
+          cmake --build build-dir && cmake --install build-dir && python3 -m pip install ./python
 
       # Runs a set of commands using the runners shell
       - name: Run a multi-line script
         run: |
           pwd
           ls $GITHUB_WORKSPACE
+
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      - name: Flake8
+        run: flake8 .
