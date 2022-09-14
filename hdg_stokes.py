@@ -5,7 +5,7 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import reorder_mesh, norm_L2
+from utils import reorder_mesh, norm_L2, domain_average
 
 
 comm = MPI.COMM_WORLD
@@ -143,26 +143,31 @@ ksp.solve(b, x)
 
 out_str += f"x.norm() = {x.norm()}\n"
 
-u = fem.Function(V)
-p = fem.Function(Q)
+u_h = fem.Function(V)
+p_h = fem.Function(Q)
 ubar = fem.Function(Vbar)
 pbar = fem.Function(Qbar)
 
 u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-u.x.array[:u_offset] = x.array_r[:u_offset]
-u.x.scatter_forward()
-p.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
-p.x.scatter_forward()
+u_h.x.array[:u_offset] = x.array_r[:u_offset]
+u_h.x.scatter_forward()
+p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+p_h.x.scatter_forward()
 
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u_h) as f:
     f.write(0.0)
 
-with io.VTXWriter(msh.comm, "p.bp", p) as f:
+with io.VTXWriter(msh.comm, "p.bp", p_h) as f:
     f.write(0.0)
 
-e_L2 = norm_L2(msh.comm, u - u_e)
-out_str += f"e_L2 = {e_L2}\n"
+e_u = norm_L2(msh.comm, u_h - u_e)
+e_div_u = norm_L2(msh.comm, div(u_h))
+p_h_avg = domain_average(msh, p_h)
+p_e_avg = domain_average(msh, p_e)
+e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e - p_e_avg))
 
 if rank == 0:
-    print(out_str)
+    print(f"e_u = {e_u}")
+    print(f"e_div_u = {e_div_u}")
+    print(f"e_p = {e_p}")
