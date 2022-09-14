@@ -65,3 +65,6 @@ jobs:
 
       - name: Flake8
         run: flake8 .
+
+      - name: Run demos (serial)
+        run: python3 hdg_poisson.py
