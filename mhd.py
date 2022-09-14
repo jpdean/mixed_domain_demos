@@ -9,21 +9,7 @@ from ufl import (TrialFunction, TestFunction, inner, grad, div,
 from petsc4py import PETSc
 import numpy as np
 from dolfinx.io import VTXWriter
-
-
-def norm_L2(comm, v):
-    """Compute the L2(Ω)-norm of v"""
-    return np.sqrt(comm.allreduce(
-        fem.assemble_scalar(fem.form(inner(v, v) * dx)), op=MPI.SUM))
-
-
-def domain_average(msh, v):
-    """Compute the average of a function over the domain"""
-    vol = msh.comm.allreduce(
-        fem.assemble_scalar(fem.form(
-            fem.Constant(msh, PETSc.ScalarType(1.0)) * dx)), op=MPI.SUM)
-    return 1 / vol * msh.comm.allreduce(
-        fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
+from utils import norm_L2, domain_average
 
 
 def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
