@@ -1,7 +1,8 @@
-# Simplified version of the fully coupled MHD scheme from Hiptmair2018 eq. (3.5).and
-# Here we solve Stokes using a Taylor-Hood scheme instead of Navier-Stokes.
-# NOTE: Extra terms arise due to prescribed current density that Hiptmair doesn't
-# include
+# Simplified version of the fully coupled MHD scheme from Hiptmair2018
+# eq. (3.5).and Here we solve Stokes using a Taylor-Hood scheme instead of
+# Navier-Stokes.
+# NOTE: Extra terms arise due to prescribed current density that Hiptmair
+# doesn't include
 
 from dolfinx import mesh, fem
 from mpi4py import MPI

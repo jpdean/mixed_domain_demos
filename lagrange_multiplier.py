@@ -15,8 +15,10 @@ def norm_L2(comm, v):
 n = 4
 assert n % 2 == 0  # NOTE n must be even
 k = 1
-msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
-# msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
+msh = mesh.create_unit_square(
+    MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
+# msh = mesh.create_unit_cube(
+#     MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
 
 # Currently, permutations are not working in parallel, so reorder the mesh
 reorder_mesh(msh)

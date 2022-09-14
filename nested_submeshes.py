@@ -147,7 +147,8 @@ f_msh.interpolate(lambda x: np.sin(np.pi * x[0])
 # Create entity maps
 msh_num_facets = msh.topology.index_map(msh_fdim).size_local + \
     msh.topology.index_map(msh_fdim).num_ghosts
-entity_maps_msh = {submesh_0: [entity_map_0.index(entity) if entity in entity_map_0 else -1
+entity_maps_msh = {submesh_0: [entity_map_0.index(entity)
+                               if entity in entity_map_0 else -1
                                for entity in range(msh_num_facets)]}
 
 # Create meshtags to mark the Neumann boundary

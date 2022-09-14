@@ -8,7 +8,8 @@ from dolfinx.cpp.mesh import cell_num_entities
 
 def reorder_mesh(msh):
     # FIXME Check this is correct
-    # FIXME For a high-order mesh, the geom has more dofs so need to modify this
+    # FIXME For a high-order mesh, the geom has more dofs so need to modify
+    # this
     # FIXME What about quads / hexes?
     tdim = msh.topology.dim
     num_cell_vertices = cell_num_entities(msh.topology.cell_type, 0)

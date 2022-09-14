@@ -57,7 +57,8 @@ f = u_e - div(grad(u_e))
 u_d = u_e
 
 # Define entity maps and forms
-entity_maps = {submesh: [entity_map.index(entity) if entity in entity_map else -1
+entity_maps = {submesh: [entity_map.index(entity)
+                         if entity in entity_map else -1
                          for entity in range(num_facets)]}
 a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
