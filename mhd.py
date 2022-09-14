@@ -18,8 +18,6 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
     X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
-    # H(div; Ω)-conforming space for the magnetic flux density
-    # Y = fem.FunctionSpace(msh, ("Raviart-Thomas", k))
     # [L^2(Ω)]^d-conforming function space for visualisation.
     Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
 
@@ -152,16 +150,22 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     A_Z = fem.Function(Z)
     A_Z.name = "A"
     A_Z.interpolate(A_h)
+    # Magnetic flux density (curl of magnetic vector potential)
+    B = curl(A_h)
+    B_expr = fem.Expression(B, Z.element.interpolation_points())
+    B_Z = fem.Function(Z)
+    B_Z.interpolate(B_expr)
 
-    # TODO Write in one file
     u_file = VTXWriter(submesh.comm, "u.bp", [u_h._cpp_object])
     p_file = VTXWriter(submesh.comm, "p.bp", [p_h._cpp_object])
     A_file = VTXWriter(msh.comm, "A.bp", [A_Z._cpp_object])
+    B_file = VTXWriter(msh.comm, "B.bp", [B_Z._cpp_object])
 
     t = 0.0
     u_file.write(t)
     p_file.write(t)
     A_file.write(t)
+    B_file.write(t)
     offset_0 = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     offset_1 = offset_0 + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
     for n in range(num_time_steps):
@@ -198,11 +202,13 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
 
         # Interpolate for file output
         A_Z.interpolate(A_h)
+        B_Z.interpolate(B_expr)
 
         # Save to file
         u_file.write(t)
         p_file.write(t)
         A_file.write(t)
+        B_file.write(t)
 
         # Update
         u_n.x.array[:] = u_h.x.array
@@ -211,6 +217,7 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     u_file.close()
     p_file.close()
     A_file.close()
+    B_file.close()
 
     return u_h, p_h, A_h
 
