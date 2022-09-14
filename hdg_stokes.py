@@ -145,20 +145,24 @@ out_str += f"x.norm() = {x.norm()}\n"
 
 u_h = fem.Function(V)
 p_h = fem.Function(Q)
-ubar = fem.Function(Vbar)
-pbar = fem.Function(Qbar)
+ubar_h = fem.Function(Vbar)
+pbar_h = fem.Function(Qbar)
 
 u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+ubar_offset = p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
 u_h.x.array[:u_offset] = x.array_r[:u_offset]
 u_h.x.scatter_forward()
 p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
 p_h.x.scatter_forward()
+ubar_h.x.array[:ubar_offset - p_offset] = x.array_r[p_offset:ubar_offset]
+ubar_h.x.scatter_forward()
 
 with io.VTXWriter(msh.comm, "u.bp", u_h) as f:
     f.write(0.0)
-
 with io.VTXWriter(msh.comm, "p.bp", p_h) as f:
+    f.write(0.0)
+with io.VTXWriter(msh.comm, "ubar.bp", ubar_h) as f:
     f.write(0.0)
 
 e_u = norm_L2(msh.comm, u_h - u_e)
