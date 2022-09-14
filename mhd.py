@@ -114,7 +114,6 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
         Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
                                                    np.isclose(x[1], 0.0)),
                                     np.isclose(x[2], 0.0)))
-    print(pressure_dof)
     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
     # Collect boundary conditions
