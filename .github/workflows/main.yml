@@ -73,4 +73,4 @@ jobs:
           python3 lagrange_multiplier_bc.py
           python3 mhd.py
           python3 nested_submeshes.py
-          neumann_bc.py
+          python3 neumann_bc.py
