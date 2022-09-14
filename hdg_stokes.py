@@ -28,12 +28,10 @@ msh.topology.create_entities(fdim)
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
-# out_str += f"facets = {facets}\n"
 
 # NOTE Despite all facets being present in the submesh, the entity map isn't
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
-# out_str += f"entity_map = {entity_map}\n"
 
 k = 2
 V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
@@ -50,7 +48,6 @@ vbar = ufl.TestFunction(Vbar)
 pbar = ufl.TrialFunction(Qbar)
 qbar = ufl.TestFunction(Qbar)
 
-# FIXME Use CellDiameter
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 gamma = 6.0 * k**2 / h
@@ -59,7 +56,6 @@ facet_integration_entities = {1: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
         facet_integration_entities[1].extend([cell, local_facet])
-# out_str += f"facet_integration_entities = {facet_integration_entities}\n"
 
 dx_c = ufl.Measure("dx", domain=msh)
 ds_c = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
@@ -67,7 +63,6 @@ dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
-# # out_str += f"entity_maps = {entity_maps}\n"
 
 x = ufl.SpatialCoordinate(msh)
 u_e = ufl.as_vector((x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
@@ -110,13 +105,12 @@ def boundary(x):
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = [inv_entity_map[facet]
                               for facet in msh_boundary_facets]
-# out_str += f"facet_mesh_boundary_facets = {facet_mesh_boundary_facets}\n"
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc_ubar = fem.dirichletbc(np.zeros(2, dtype=PETSc.ScalarType), dofs, Vbar)
 
 # Pressure boundary condition
 # TODO Locate on facet space or cell space?
-# FIXME Make so it doesn't depend on diagonal direction
+# FIXME Change so it doesn't depend on diagonal direction
 pressure_dof = fem.locate_dofs_geometrical(
     Q, lambda x: np.logical_and(np.isclose(x[0], 1.0),
                                 np.isclose(x[1], 0.0)))
@@ -128,9 +122,6 @@ A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
 
-out_str += f"A.norm() = {A.norm()}\n"
-out_str += f"b.norm() = {b.norm()}\n"
-
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -140,8 +131,6 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 # Compute solution
 x = A.createVecRight()
 ksp.solve(b, x)
-
-out_str += f"x.norm() = {x.norm()}\n"
 
 u_h = fem.Function(V)
 p_h = fem.Function(Q)
