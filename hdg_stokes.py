@@ -65,21 +65,25 @@ inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
 
 x = ufl.SpatialCoordinate(msh)
-u_e = ufl.as_vector((x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
-                     - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
+u_e = ufl.as_vector(
+    (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
+     - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
 p_e = x[0] * (1 - x[0])
 f = - div(grad(u_e)) + grad(p_e)
 
 a_00 = fem.form(inner(grad(u), grad(v)) * dx_c + gamma * inner(u, v) * ds_c(1)
-                - (inner(u, dot(grad(v), n)) + inner(v, dot(grad(u), n))) * ds_c(1))
+                - (inner(u, dot(grad(v), n))
+                   + inner(v, dot(grad(u), n))) * ds_c(1))
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
-a_02 = fem.form(inner(ubar, dot(grad(v), n)) * ds_c(1) - gamma * inner(ubar, v) * ds_c(1),
+a_02 = fem.form(inner(ubar, dot(grad(v), n)) * ds_c(1)
+                - gamma * inner(ubar, v) * ds_c(1),
                 entity_maps=entity_maps)
 a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(1), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
 # Only needed to apply BC on pressure
 a_11 = fem.form(fem.Constant(msh, 0.0) * inner(p, q) * dx_c)
-a_20 = fem.form(inner(vbar, dot(grad(u), n)) * ds_c(1) - gamma * inner(vbar, u) * ds_c(1),
+a_20 = fem.form(inner(vbar, dot(grad(u), n)) * ds_c(1)
+                - gamma * inner(vbar, u) * ds_c(1),
                 entity_maps=entity_maps)
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
 a_22 = fem.form(gamma * inner(ubar, vbar) * ds_c(1), entity_maps=entity_maps)
@@ -139,7 +143,8 @@ pbar_h = fem.Function(Qbar)
 
 u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-ubar_offset = p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
+ubar_offset = \
+    p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
 u_h.x.array[:u_offset] = x.array_r[:u_offset]
 u_h.x.scatter_forward()
 p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
