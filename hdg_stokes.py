@@ -144,21 +144,22 @@ ksp.solve(b, x)
 out_str += f"x.norm() = {x.norm()}\n"
 
 u = fem.Function(V)
-v = fem.Function(Q)
+p = fem.Function(Q)
 ubar = fem.Function(Vbar)
 pbar = fem.Function(Qbar)
 
 u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
 u.x.array[:u_offset] = x.array_r[:u_offset]
 u.x.scatter_forward()
-# ubar.x.array[:(len(x.array_r) - u_offset)] = x.array_r[u_offset:]
+p.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+p.x.scatter_forward()
 
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 
-# with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
-#     ubar.x.scatter_forward()
-#     f.write(0.0)
+with io.VTXWriter(msh.comm, "p.bp", p) as f:
+    f.write(0.0)
 
 e_L2 = norm_L2(msh.comm, u - u_e)
 out_str += f"e_L2 = {e_L2}\n"
