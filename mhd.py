@@ -27,15 +27,15 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
     Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
 
+    # Trial and test functions for the magnetic vector potential
+    A = TrialFunction(X)
+    phi = TestFunction(X)
+
     # Define trial and test functions for velocity and pressure spaces
     u = TrialFunction(V)
     v = TestFunction(V)
     p = TrialFunction(Q)
     q = TestFunction(Q)
-
-    # Trial and test functions for the magnetic vector potential
-    A = TrialFunction(X)
-    phi = TestFunction(X)
 
     # Function to represent magnetic vector potential at current time step
     A_h = fem.Function(X)
@@ -47,6 +47,10 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Prescribed current density
     J_p = fem.Function(Z)
     J_p.interpolate(J_p_expr)
+
+    # Force on fluid
+    f = fem.Function(V)
+    f.interpolate(f_expr)
 
     # Velocity at previous time step
     u_n = fem.Function(V)
@@ -73,8 +77,6 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     a_22 = fem.form(inner(A / delta_t, phi) * dx
                     + inner(curl(A), curl(phi)) * dx)
 
-    f = fem.Function(V)
-    f.interpolate(f_expr)
     L_0 = fem.form(inner(u_n / delta_t + f, v) * dx_sm
                    + inner(A_n / delta_t + J_p, cross(curl(A_n), v)) * dx_sm,
                    entity_maps=entity_maps_sm)
