@@ -43,6 +43,8 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Magnetic vector potential at previous time step
     A_n = fem.Function(X)
     A_n.x.array[:] = A_h.x.array
+    # Velocity at previous time step
+    u_n = fem.Function(V)
 
     # Prescribed current density
     J_p = fem.Function(Z)
@@ -51,9 +53,6 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Force on fluid
     f = fem.Function(V)
     f.interpolate(f_expr)
-
-    # Velocity at previous time step
-    u_n = fem.Function(V)
 
     # Create integration measures and entity maps
     dx_sm = Measure("dx", domain=submesh)
