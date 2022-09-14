@@ -29,6 +29,11 @@ jobs:
       - name: Flake8
         run: flake8 .
 
+      - uses: actions/checkout@v3
+        with:
+          repository: FEniCS/basix
+          ref: main
+
       # Runs a single command using the runners shell
       - name: Run a one-line script
         run: echo Hello, world!
@@ -37,4 +42,4 @@ jobs:
       - name: Run a multi-line script
         run: |
           pwd
-          ls
+          ls ~
