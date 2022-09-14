@@ -218,6 +218,8 @@ def solve_mhd(msh, submesh, k, boundary_marker_msh, boundary_marker_submesh,
 
 
 if __name__ == "__main__":
+    # Boundary marker for the mesh, over which the electromagnetism
+    # problem will be solved
     def boundary_marker_msh(x):
         b_0 = np.logical_or(np.isclose(x[0], 0.0),
                             np.isclose(x[0], 1.0))
@@ -227,6 +229,8 @@ if __name__ == "__main__":
                             np.isclose(x[2], 1.0))
         return np.logical_or(np.logical_or(b_0, b_1), b_2)
 
+    # Boundary marker for the submesh, over which the fluid problem
+    # will be solved
     def boundary_marker_sm(x):
         b_0 = np.logical_or(np.isclose(x[0], 0.0),
                             np.isclose(x[0], 1.0))
@@ -246,13 +250,15 @@ if __name__ == "__main__":
         def __call__(self, x):
             return self.expression(x, self.t)
 
-    # NOTE n must be even
+    # Simulation parameters
     n = 4
+    assert n % 2 == 0  # NOTE n must be even
     k = 2
-    t_end = 0.5
-    num_time_steps = 20
+    t_end = 0.1
+    num_time_steps = 5
 
     # NOTE Interpolating non-zero functions may fail on a submesh in parallel
+    # Boundary condition for the velocity field
     u_expr = TimeDependentExpression(
         lambda x, t:
             np.vstack(
@@ -260,6 +266,7 @@ if __name__ == "__main__":
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0]))))
 
+    # Fluid forcing term
     f_expr = TimeDependentExpression(
         lambda x, t:
             np.vstack(
@@ -267,6 +274,7 @@ if __name__ == "__main__":
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0]))))
 
+    # Boundary condition for the magnetic vector potential
     A_expr = TimeDependentExpression(
         expression=lambda x, t:
             np.vstack(
@@ -274,25 +282,20 @@ if __name__ == "__main__":
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0]))))
 
+    # Prescribed current density
     J_p_expr = TimeDependentExpression(
         expression=lambda x, t:
         np.vstack((np.zeros_like(x[0]),
-                   np.sin(np.pi * t) * np.cos(np.pi * x[1]),
+                   np.sin(np.pi * t) * np.cos(np.pi * x[0]),
                    np.zeros_like(x[0]))))
 
-    cube_msh = mesh.create_unit_cube(MPI.COMM_WORLD, n, n, n)
+    # Create mesh and submesh
     msh = mesh.create_box(
         MPI.COMM_WORLD, ((0.0, 0.0, 0.0), (1.0, 2.0, 1.0)), (n, 2 * n, n))
-    upper_cells = mesh.locate_entities(
+    fluid_cells = mesh.locate_entities(
         msh, msh.topology.dim, lambda x: x[1] <= 1)
-    submesh, entity_map, vertex_map, geom_map = mesh.create_submesh(
-        msh, msh.topology.dim, upper_cells)
-    with XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-        file.write_mesh(msh)
-    with XDMFFile(cube_msh.comm, "cube_msh.xdmf", "w") as file:
-        file.write_mesh(cube_msh)
-    with XDMFFile(submesh.comm, "submesh.xdmf", "w") as file:
-        file.write_mesh(submesh)
+    submesh, entity_map = mesh.create_submesh(
+        msh, msh.topology.dim, fluid_cells)[0:2]
 
     u_h, p_h, A_h = solve_mhd(
         msh, submesh, k, boundary_marker_msh, boundary_marker_sm, f_expr, u_expr,
