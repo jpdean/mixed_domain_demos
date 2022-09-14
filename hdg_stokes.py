@@ -53,7 +53,7 @@ qbar = ufl.TestFunction(Qbar)
 # FIXME Use CellDiameter
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
-gamma = 10.0 * k**2 / h
+gamma = 6.0 * k**2 / h
 
 facet_integration_entities = {1: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
