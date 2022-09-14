@@ -42,4 +42,4 @@ jobs:
       - name: Run a multi-line script
         run: |
           pwd
-          ls ~
+          ls $GITHUB_WORKSPACE
