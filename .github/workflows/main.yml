@@ -67,4 +67,10 @@ jobs:
         run: flake8 .
 
       - name: Run demos (serial)
-        run: python3 hdg_poisson.py
+        run: |
+          python3 hdg_poisson.py
+          python3 lagrange_multiplier.py
+          python3 lagrange_multiplier_bc.py
+          python3 mhd.py
+          python3 nested_submeshes.py
+          neumann_bc.py
