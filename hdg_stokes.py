@@ -157,12 +157,16 @@ p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
 p_h.x.scatter_forward()
 ubar_h.x.array[:ubar_offset - p_offset] = x.array_r[p_offset:ubar_offset]
 ubar_h.x.scatter_forward()
+pbar_h.x.array[:(len(x.array_r) - ubar_offset)] = x.array_r[ubar_offset:]
+pbar_h.x.scatter_forward()
 
 with io.VTXWriter(msh.comm, "u.bp", u_h) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "p.bp", p_h) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "ubar.bp", ubar_h) as f:
+    f.write(0.0)
+with io.VTXWriter(msh.comm, "pbar.bp", pbar_h) as f:
     f.write(0.0)
 
 e_u = norm_L2(msh.comm, u_h - u_e)
