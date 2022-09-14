@@ -32,9 +32,9 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     phi = TestFunction(X)
 
     # Define trial and test functions for velocity and pressure spaces
-    u_h = TrialFunction(V)
+    u = TrialFunction(V)
     v = TestFunction(V)
-    p_h = TrialFunction(Q)
+    p = TrialFunction(Q)
     q = TestFunction(Q)
 
     # Function to represent magnetic vector potential at current time step
@@ -61,17 +61,17 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Define forms
     # TODO Check I'm not missing conductivity terms in solid region
     delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-    a_00 = fem.form(inner(u_h / delta_t, v) * dx_sm
-                    + inner(grad(u_h), grad(v)) * dx_sm
-                    + inner(cross(curl(A_n), u_h), cross(curl(A_n), v)) * dx_sm,
+    a_00 = fem.form(inner(u / delta_t, v) * dx_sm
+                    + inner(grad(u), grad(v)) * dx_sm
+                    + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx_sm,
                     entity_maps=entity_maps_sm)
-    a_01 = fem.form(- inner(p_h, div(v)) * dx_sm)
+    a_01 = fem.form(- inner(p, div(v)) * dx_sm)
     a_02 = fem.form(inner(A / delta_t, cross(curl(A_n), v)) * dx_sm,
                     entity_maps=entity_maps_sm)
-    a_10 = fem.form(- inner(div(u_h), q) * dx_sm)
+    a_10 = fem.form(- inner(div(u), q) * dx_sm)
     a_11 = fem.form(fem.Constant(submesh, PETSc.ScalarType(0.0))
-                    * inner(p_h, q) * dx_sm)
-    a_20 = fem.form(inner(cross(curl(A_n), u_h), phi) * dx_sm,
+                    * inner(p, q) * dx_sm)
+    a_20 = fem.form(inner(cross(curl(A_n), u), phi) * dx_sm,
                     entity_maps=entity_maps_sm)
     a_22 = fem.form(inner(A / delta_t, phi) * dx
                     + inner(curl(A), curl(phi)) * dx)
