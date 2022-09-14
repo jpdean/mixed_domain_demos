@@ -74,3 +74,12 @@ jobs:
           python3 mhd.py
           python3 nested_submeshes.py
           python3 neumann_bc.py
+
+      - name: Run demos (parallel)
+        run: |
+          mpirun -n 2 python3 hdg_poisson.py
+          mpirun -n 2 python3 lagrange_multiplier.py
+          mpirun -n 2 python3 lagrange_multiplier_bc.py
+          mpirun -n 2 python3 mhd.py
+          mpirun -n 2 python3 nested_submeshes.py
+          mpirun -n 2 python3 neumann_bc.py
