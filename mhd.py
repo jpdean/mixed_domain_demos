@@ -129,10 +129,9 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Collect boundary conditions
     bcs = [bc_u, bc_p, bc_A]
 
-    # FIXME Just create matrix and vector here
-    A_mat = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-    A_mat.assemble()
-    b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
+    # Create matrix and vector
+    A_mat = fem.petsc.create_matrix_block(a)
+    b = fem.petsc.create_vector_block(L)
 
     # Create and configure solver
     ksp = PETSc.KSP().create(msh.comm)
