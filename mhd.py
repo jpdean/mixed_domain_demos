@@ -8,7 +8,7 @@ from ufl import (TrialFunction, TestFunction, inner, grad, div,
                  curl, cross, Measure, dx)
 from petsc4py import PETSc
 import numpy as np
-from dolfinx.io import VTXWriter, XDMFFile
+from dolfinx.io import VTXWriter
 
 
 def norm_L2(comm, v):
