@@ -29,10 +29,6 @@ def domain_average(msh, v):
 def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
               entity_map, A_expr, u_bc_expr, J_p_expr, f_expr, t_end,
               num_time_steps):
-
-    V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
-    Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
-
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
     X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
@@ -41,16 +37,21 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # [L^2(Ω)]^d-conforming function space for visualisation.
     Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
 
+    # H^1(Ω) and [L^2(Ω)]^d conforming subspaces for the velocity and pressure
+    V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
+    Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
+
+    # Define trial and test functions for velocity and pressure spaces
     u = TrialFunction(V)
     v = TestFunction(V)
     p = TrialFunction(Q)
     q = TestFunction(Q)
 
-    # Define weak form of problem
+    # Trial and test functions for the magnetic vector potential
     A = TrialFunction(X)
     phi = TestFunction(X)
 
-    # Magnetic vector potential
+    # Function to represent magnetic vector potential at current time step
     A_h = fem.Function(X)
     A_h.interpolate(A_expr)
     # Magnetic vector potential at previous time step
@@ -61,12 +62,14 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     J_p = fem.Function(Z)
     J_p.interpolate(J_p_expr)
 
+    # Velocity at previous time step
     u_n = fem.Function(V)
 
+    # Create integration measures and entity maps
     dx_sm = Measure("dx", domain=submesh)
-
     entity_maps_sm = {msh: entity_map}
 
+    # Define forms
     # TODO Check I'm not missing conductivity terms in solid region
     delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
     a_00 = fem.form(inner(u / delta_t, v) * dx_sm
@@ -101,14 +104,25 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
          L_1,
          L_2]
 
+    # Magnetic vector potential boundary condition
+    boundary_facets_m = mesh.locate_entities_boundary(
+        msh, msh.topology.dim - 1, boundary_marker_msh)
+    boundary_A_dofs = fem.locate_dofs_topological(
+        X, msh.topology.dim - 1, boundary_facets_m)
+    A_bc = fem.Function(X)
+    A_bc.interpolate(A_expr)
+    bc_A = fem.dirichletbc(A_bc, boundary_A_dofs)
+
+    # Velocity boundary condition
     u_bc = fem.Function(V)
     u_bc.interpolate(u_bc_expr)
     boundary_facets_sm = mesh.locate_entities_boundary(
-        submesh, submesh.topology.dim - 1, boundary_marker_sm)
+        submesh, submesh.topology.dim - 1, boundary_marker_submesh)
     boundary_vel_dofs = fem.locate_dofs_topological(
         V, submesh.topology.dim - 1, boundary_facets_sm)
     bc_u = fem.dirichletbc(u_bc, boundary_vel_dofs)
 
+    # Pressure boundary condition
     # NOTE Can't use locate_dofs_geometrical on a submesh in parallel as
     # it gives incorrect results due to tabulate_dof_coordinates not working
     # properly.
@@ -126,14 +140,7 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
         pressure_dof = np.array([], dtype=np.int32)
     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
-    boundary_facets_m = mesh.locate_entities_boundary(
-        msh, msh.topology.dim - 1, boundary_marker_msh)
-    boundary_A_dofs = fem.locate_dofs_topological(
-        X, msh.topology.dim - 1, boundary_facets_m)
-    A_bc = fem.Function(X)
-    A_bc.interpolate(A_expr)
-    bc_A = fem.dirichletbc(A_bc, boundary_A_dofs)
-
+    # Collect boundary conditions
     bcs = [bc_u, bc_p, bc_A]
 
     # FIXME Just create matrix and vector here
@@ -148,14 +155,14 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("superlu_dist")
 
-    # Compute solution
+    # Create vector to store solution
     x = A_mat.createVecLeft()
 
-    # Create Functions and scatter x solution
+    # Create functions to output to file
     u, p = fem.Function(V), fem.Function(Q)
     u.name = "u"
     p.name = "p"
-
+    # Interpolate A_h into Z for artifact-free visualization
     A_Z = fem.Function(Z)
     A_Z.name = "A"
     A_Z.interpolate(A_h)
@@ -174,26 +181,27 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     for n in range(num_time_steps):
         t += delta_t.value
 
+        # Update expressions
         u_bc_expr.t = t
         u_bc.interpolate(u_bc_expr)
-
         A_expr.t = t
         A_bc.interpolate(A_expr)
-
         f_expr.t = t
         f.interpolate(f_expr)
-
         J_p_expr.t = t
         J_p.interpolate(J_p_expr)
 
+        # Assemble matrix
         A_mat.zeroEntries()
         fem.petsc.assemble_matrix_block(A_mat, a, bcs=bcs)
         A_mat.assemble()
 
+        # Assemble vector
         with b.localForm() as b_loc:
             b_loc.set(0)
         fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
+        # Solve and recover solution
         ksp.solve(b, x)
         u.x.array[:offset_0] = x.array_r[:offset_0]
         u.x.scatter_forward()
@@ -202,12 +210,15 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
         A_h.x.array[:(len(x.array_r) - offset_1)] = x.array_r[offset_1:]
         A_h.x.scatter_forward()
 
+        # Interpolate for file output
         A_Z.interpolate(A_h)
 
+        # Save to file
         u_file.write(t)
         p_file.write(t)
         A_file.write(t)
 
+        # Update
         u_n.x.array[:] = u.x.array
         A_n.x.array[:] = A_h.x.array
 
@@ -275,7 +286,7 @@ if __name__ == "__main__":
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0]))))
 
-    # Boundary condition for the magnetic vector potential
+    # Initial and boundary condition for the magnetic vector potential
     A_expr = TimeDependentExpression(
         expression=lambda x, t:
             np.vstack(
