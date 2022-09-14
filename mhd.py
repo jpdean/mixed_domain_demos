@@ -32,9 +32,9 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     phi = TestFunction(X)
 
     # Define trial and test functions for velocity and pressure spaces
-    u = TrialFunction(V)
+    u_h = TrialFunction(V)
     v = TestFunction(V)
-    p = TrialFunction(Q)
+    p_h = TrialFunction(Q)
     q = TestFunction(Q)
 
     # Function to represent magnetic vector potential at current time step
@@ -61,17 +61,17 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     # Define forms
     # TODO Check I'm not missing conductivity terms in solid region
     delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-    a_00 = fem.form(inner(u / delta_t, v) * dx_sm
-                    + inner(grad(u), grad(v)) * dx_sm
-                    + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx_sm,
+    a_00 = fem.form(inner(u_h / delta_t, v) * dx_sm
+                    + inner(grad(u_h), grad(v)) * dx_sm
+                    + inner(cross(curl(A_n), u_h), cross(curl(A_n), v)) * dx_sm,
                     entity_maps=entity_maps_sm)
-    a_01 = fem.form(- inner(p, div(v)) * dx_sm)
+    a_01 = fem.form(- inner(p_h, div(v)) * dx_sm)
     a_02 = fem.form(inner(A / delta_t, cross(curl(A_n), v)) * dx_sm,
                     entity_maps=entity_maps_sm)
-    a_10 = fem.form(- inner(div(u), q) * dx_sm)
+    a_10 = fem.form(- inner(div(u_h), q) * dx_sm)
     a_11 = fem.form(fem.Constant(submesh, PETSc.ScalarType(0.0))
-                    * inner(p, q) * dx_sm)
-    a_20 = fem.form(inner(cross(curl(A_n), u), phi) * dx_sm,
+                    * inner(p_h, q) * dx_sm)
+    a_20 = fem.form(inner(cross(curl(A_n), u_h), phi) * dx_sm,
                     entity_maps=entity_maps_sm)
     a_22 = fem.form(inner(A / delta_t, phi) * dx
                     + inner(curl(A), curl(phi)) * dx)
@@ -145,17 +145,17 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
     x = A_mat.createVecLeft()
 
     # Create functions to output to file
-    u, p = fem.Function(V), fem.Function(Q)
-    u.name = "u"
-    p.name = "p"
+    u_h, p_h = fem.Function(V), fem.Function(Q)
+    u_h.name = "u"
+    p_h.name = "p"
     # Interpolate A_h into Z for artifact-free visualization
     A_Z = fem.Function(Z)
     A_Z.name = "A"
     A_Z.interpolate(A_h)
 
     # TODO Write in one file
-    u_file = VTXWriter(submesh.comm, "u.bp", [u._cpp_object])
-    p_file = VTXWriter(submesh.comm, "p.bp", [p._cpp_object])
+    u_file = VTXWriter(submesh.comm, "u.bp", [u_h._cpp_object])
+    p_file = VTXWriter(submesh.comm, "p.bp", [p_h._cpp_object])
     A_file = VTXWriter(msh.comm, "A.bp", [A_Z._cpp_object])
 
     t = 0.0
@@ -189,10 +189,10 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
 
         # Solve and recover solution
         ksp.solve(b, x)
-        u.x.array[:offset_0] = x.array_r[:offset_0]
-        u.x.scatter_forward()
-        p.x.array[:offset_1 - offset_0] = x.array_r[offset_0:offset_1]
-        p.x.scatter_forward()
+        u_h.x.array[:offset_0] = x.array_r[:offset_0]
+        u_h.x.scatter_forward()
+        p_h.x.array[:offset_1 - offset_0] = x.array_r[offset_0:offset_1]
+        p_h.x.scatter_forward()
         A_h.x.array[:(len(x.array_r) - offset_1)] = x.array_r[offset_1:]
         A_h.x.scatter_forward()
 
@@ -205,14 +205,14 @@ def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
         A_file.write(t)
 
         # Update
-        u_n.x.array[:] = u.x.array
+        u_n.x.array[:] = u_h.x.array
         A_n.x.array[:] = A_h.x.array
 
     u_file.close()
     p_file.close()
     A_file.close()
 
-    return u, p, A_h
+    return u_h, p_h, A_h
 
 
 if __name__ == "__main__":
