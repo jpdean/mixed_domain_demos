@@ -69,6 +69,12 @@ inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
 # # out_str += f"entity_maps = {entity_maps}\n"
 
+x = ufl.SpatialCoordinate(msh)
+u_e = ufl.as_vector((x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
+                     - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
+p_e = x[0] * (1 - x[0])
+f = - div(grad(u_e)) + grad(p_e)
+
 a_00 = fem.form(inner(grad(u), grad(v)) * dx_c + gamma * inner(u, v) * ds_c(1)
                 - (inner(u, dot(grad(v), n)) + inner(v, dot(grad(u), n))) * ds_c(1))
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
@@ -83,8 +89,6 @@ a_20 = fem.form(inner(vbar, dot(grad(u), n)) * ds_c(1) - gamma * inner(vbar, u) 
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
 a_22 = fem.form(gamma * inner(ubar, vbar) * ds_c(1), entity_maps=entity_maps)
 
-x = ufl.SpatialCoordinate(msh)
-f = ufl.as_vector((-x[1], x[0]))
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(ufl.as_vector((1e-9, 1e-9)), vbar) * dx_f)
@@ -156,4 +160,8 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
 #     ubar.x.scatter_forward()
 #     f.write(0.0)
 
-print(out_str)
+e_L2 = norm_L2(msh.comm, u - u_e)
+out_str += f"e_L2 = {e_L2}\n"
+
+if rank == 0:
+    print(out_str)
