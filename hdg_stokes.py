@@ -144,9 +144,13 @@ x = A.createVecRight()
 ksp.solve(b, x)
 
 u_h = fem.Function(V)
+u_h.name = "u"
 p_h = fem.Function(Q)
+p_h.name = "p"
 ubar_h = fem.Function(Vbar)
+ubar_h.name = "ubar"
 pbar_h = fem.Function(Qbar)
+pbar_h.name = "pbar"
 
 u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
