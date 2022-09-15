@@ -64,12 +64,19 @@ dx_f = ufl.Measure("dx", domain=facet_mesh)
 inv_entity_map = [entity_map.index(entity) for entity in facets]
 entity_maps = {facet_mesh: inv_entity_map}
 
+
+def u_e(x):
+    return ufl.as_vector(
+        (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
+         - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
+
+
+def p_e(x):
+    return x[0] * (1 - x[0])
+
+
 x = ufl.SpatialCoordinate(msh)
-u_e = ufl.as_vector(
-    (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
-     - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
-p_e = x[0] * (1 - x[0])
-f = - div(grad(u_e)) + grad(p_e)
+f = - div(grad(u_e(x))) + grad(p_e(x))
 
 a_00 = fem.form(inner(grad(u), grad(v)) * dx_c + gamma * inner(u, v) * ds_c(1)
                 - (inner(u, dot(grad(v), n))
@@ -163,13 +170,22 @@ with io.VTXWriter(msh.comm, "ubar.bp", ubar_h) as f:
 with io.VTXWriter(msh.comm, "pbar.bp", pbar_h) as f:
     f.write(0.0)
 
-e_u = norm_L2(msh.comm, u_h - u_e)
+x = ufl.SpatialCoordinate(msh)
+e_u = norm_L2(msh.comm, u_h - u_e(x))
 e_div_u = norm_L2(msh.comm, div(u_h))
 p_h_avg = domain_average(msh, p_h)
-p_e_avg = domain_average(msh, p_e)
-e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e - p_e_avg))
+p_e_avg = domain_average(msh, p_e(x))
+e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
+
+xbar = ufl.SpatialCoordinate(facet_mesh)
+e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
+pbar_h_avg = domain_average(facet_mesh, pbar_h)
+pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
+e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
 
 if rank == 0:
     print(f"e_u = {e_u}")
     print(f"e_div_u = {e_div_u}")
     print(f"e_p = {e_p}")
+    print(f"e_ubar = {e_ubar}")
+    print(f"e_pbar = {e_pbar}")
