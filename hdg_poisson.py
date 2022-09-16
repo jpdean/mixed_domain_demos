@@ -47,6 +47,7 @@ h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 gamma = 16.0 * k**2 / h
 
+# TODO Do this with numpy
 facet_integration_entities = {1: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
@@ -86,15 +87,15 @@ L = [L_0, L_1]
 
 
 def boundary(x):
-    lr = np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
-    tb = np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0))
-    lrtb = np.logical_or(lr, tb)
+    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+    lrtb = lr | tb
     if tdim == 2:
         return lrtb
     else:
         assert tdim == 3
-        fb = np.logical_or(np.isclose(x[2], 0.0), np.isclose(x[2], 1.0))
-        return np.logical_or(lrtb, fb)
+        fb = np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
+        return lrtb | fb
 
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
