@@ -1,7 +1,7 @@
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner
+from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import reorder_mesh
@@ -12,7 +12,7 @@ def norm_L2(comm, v):
         fem.form(inner(v, v) * ufl.dx)), op=MPI.SUM))
 
 
-n = 4
+n = 8
 assert n % 2 == 0  # NOTE n must be even
 k = 1
 msh = mesh.create_unit_square(
@@ -68,16 +68,24 @@ for facet in centre_facets:
         facet_integration_entities[1].extend([cell, local_facet])
 ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 
+
+def u_e(x):
+    return x[0] * (1 - x[0])
+
+
 # Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
 a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
-f = fem.Constant(msh, PETSc.ScalarType(2.0))
+
+# f = fem.Constant(msh, PETSc.ScalarType(2.0))
+x_msh = ufl.SpatialCoordinate(msh)
+f = - div(grad(u_e(x_msh)))
 L_0 = fem.form(inner(f, v) * ufl.dx)
-c = fem.Constant(submesh, PETSc.ScalarType(0.25))
-L_1 = fem.form(inner(c, eta) * ufl.dx)
-# x = ufl.SpatialCoordinate(submesh)
-# L_1 = fem.form(inner(- 0.1 * ufl.sin(ufl.pi * x[1]), eta) * ufl.dx)
+
+# c = fem.Constant(submesh, PETSc.ScalarType(0.25))
+x_sm = ufl.SpatialCoordinate(submesh)
+L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
 
 a = [[a_00, a_01],
      [a_10, None]]
@@ -114,9 +122,7 @@ with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
     f.write(0.0)
 
 # Compute L^2-norm of error
-x = ufl.SpatialCoordinate(msh)
-u_e = x[0] * (1 - x[0])
-e_L2 = norm_L2(msh.comm, u - u_e)
+e_L2 = norm_L2(msh.comm, u - u_e(x_msh))
 rank = msh.comm.Get_rank()
 if rank == 0:
     print(f"e_L2 = {e_L2}")
