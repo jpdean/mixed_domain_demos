@@ -36,7 +36,10 @@ facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 k = 2
 V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
 Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
-Vbar = fem.VectorFunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
+# NOTE: Currently need to explicitly specify dim due to 
+# https://github.com/FEniCS/basix/issues/603
+Vbar = fem.VectorFunctionSpace(
+    facet_mesh, ("Discontinuous Lagrange", k), dim=facet_mesh.geometry.dim)
 Qbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
 u = ufl.TrialFunction(V)
