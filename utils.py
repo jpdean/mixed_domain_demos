@@ -4,6 +4,7 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx import mesh
 
 
 def reorder_mesh(msh):
@@ -65,7 +66,7 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
                 local_facet = msh_c_to_f.links(cell).tolist().index(facet)
                 # FIXME Don't hardcode cell type
                 assert local_facet >= 0 and local_facet <= 2
-                submesh_cell = entity_map.index(cell)
+                submesh_cell = cell_map.index(cell)
                 submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
                 submesh_facets[i] = submesh_facet
     submesh_meshtags = mesh.meshtags(
