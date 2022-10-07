@@ -41,3 +41,33 @@ def domain_average(msh, v):
             fem.Constant(msh, PETSc.ScalarType(1.0)) * ufl.dx)), op=MPI.SUM)
     return 1 / vol * msh.comm.allreduce(
         fem.assemble_scalar(fem.form(v * ufl.dx)), op=MPI.SUM)
+
+
+# FIXME This should be a C++ helper function
+# TODO Simplify and document
+def convert_facet_tags(msh, submesh, cell_map, facet_tag):
+    msh_facets = facet_tag.indices
+
+    # Connectivities
+    tdim = msh.topology.dim
+    msh.topology.create_connectivity(tdim, tdim - 1)
+    msh.topology.create_connectivity(tdim - 1, tdim)
+    msh_c_to_f = msh.topology.connectivity(tdim, tdim - 1)
+    msh_f_to_c = msh.topology.connectivity(tdim - 1, tdim)
+    submesh.topology.create_connectivity(tdim, tdim - 1)
+    submesh_c_to_f = submesh.topology.connectivity(tdim, tdim - 1)
+
+    submesh_facets = np.empty_like(msh_facets)
+    for i, facet in enumerate(msh_facets):
+        cells = msh_f_to_c.links(facet)
+        for cell in cells:
+            if cell in cell_map:
+                local_facet = msh_c_to_f.links(cell).tolist().index(facet)
+                # FIXME Don't hardcode cell type
+                assert local_facet >= 0 and local_facet <= 2
+                submesh_cell = entity_map.index(cell)
+                submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
+                submesh_facets[i] = submesh_facet
+    submesh_meshtags = mesh.meshtags(
+        submesh, submesh.topology.dim - 1, submesh_facets, facet_tag.values)
+    return submesh_meshtags
