@@ -452,6 +452,24 @@ for facet in obstacle_facets:
         cells = f_to_c.links(facet)
         assert len(cells) == 2
 
+        cell_plus = cells[0] if cells[0] in fluid_cells else cells[1]
+        cell_minus = cells[0] if cells[0] in solid_cells else cells[1]
+        assert cell_plus in fluid_cells
+        assert cell_minus in solid_cells
+
+        # FIXME Don't use tolist
+        local_facet_plus = c_to_f.links(cell_plus).tolist().index(facet)
+        local_facet_minus = c_to_f.links(cell_minus).tolist().index(facet)
+        facet_integration_entities[1].extend(
+            [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
+
+        # HACK See test_assemble_submesh.py::test_jørgen_problem
+        entity_maps[fluid_submesh][cell_minus] = \
+            entity_maps[fluid_submesh][cell_plus]
+        # Same hack for the right submesh
+        entity_maps[solid_submesh][cell_plus] = \
+            entity_maps[solid_submesh][cell_minus]
+
 # a_T = fem.form(a_T)
 # L_T = fem.form(L_T)
 
