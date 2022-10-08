@@ -174,8 +174,8 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 100
-t_end = 1.0
+num_time_steps = 10
+t_end = 0.1
 R_e = 1000  # Reynolds Number
 k = 2  # Polynomial degree
 
