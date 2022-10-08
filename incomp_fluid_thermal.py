@@ -385,12 +385,13 @@ u_file.write(t)
 p_file.write(t)
 
 # Solid
+h_f = 50.0  # Heat transfer coeff
 delta_t_T_s = fem.Constant(
     solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 kappa_T_s = fem.Constant(solid_submesh, PETSc.ScalarType(0.1))
 a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
                  + kappa_T_s * inner(grad(T_s), grad(w_s)) * dx
-                 + kappa_T_s * inner(1.0 * T_s, w_s) * ufl.ds)
+                 + kappa_T_s * inner(h_f * T_s, w_s) * ufl.ds)
 L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
 
 A_T_s = fem.petsc.assemble_matrix(a_T_s)
@@ -444,7 +445,7 @@ for bc in robin_bcs_T:
     L_T += kappa * inner(beta_R, w) * ds(bc[0])
 
 # Obstacle
-a_T += kappa * inner(1.0 * T, w) * ds(boundary_id["obstacle"])
+a_T += kappa * inner(h_f * T, w) * ds(boundary_id["obstacle"])
 
 obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 cell_imap = msh.topology.index_map(tdim)
@@ -489,13 +490,13 @@ for facet in obstacle_facets:
 dS_coupling = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_coupling = kappa * inner(T_s_n("-"), w("+")) * dS_coupling(1)
+L_T_coupling = kappa * inner(h_f * T_s_n("-"), w("+")) * dS_coupling(1)
 
 a_T = fem.form(a_T)
 L_T = fem.form(L_T)
 L_T_coupling = fem.form(L_T_coupling, entity_maps=entity_maps)
 
-L_T_s_coupling = kappa_T_s * inner(T_n("+"), w_s("-")) * dS_coupling(1)
+L_T_s_coupling = kappa_T_s * inner(h_f * T_n("+"), w_s("-")) * dS_coupling(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
 A_T = fem.petsc.create_matrix(a_T)
