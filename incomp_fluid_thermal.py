@@ -208,9 +208,9 @@ boundary_id = {"inlet": 8,
 # FIXME Don't hardcode values
 fluid_cells = ct.indices[ct.values == 6]
 tdim = msh.topology.dim
-fluid_submesh, entity_map = mesh.create_submesh(msh, tdim, fluid_cells)[:2]
+fluid_submesh, fluid_entity_map = mesh.create_submesh(msh, tdim, fluid_cells)[:2]
 
-fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, entity_map, ft)
+fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, fluid_entity_map, ft)
 
 # with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
 #     file.write_mesh(fluid_submesh)
