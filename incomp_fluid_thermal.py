@@ -1,3 +1,5 @@
+# FIXME Should either assemble everything over msh or use perms from msh
+
 # ---
 # jupyter:
 #   jupytext:
@@ -264,14 +266,13 @@ a_01 = - inner(p, div(v)) * dx
 a_10 = - inner(div(u), q) * dx
 a_11 = fem.Constant(fluid_submesh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
 
-assert False
 f = fem.Function(W)
 # NOTE: Arrived at Neumann BC term by rewriting inner(grad(u), outer(v, n))
 # it is based on as inner(dot(grad(u), n), v) and then g = dot(grad(u), n)
 # etc. TODO Check this. NOTE Consider changing formulation to one with momentum
 # law in conservative form to be able to specify momentum flux
 L_0 = inner(f, v) * dx
-L_1 = inner(fem.Constant(msh, PETSc.ScalarType(0.0)), q) * dx
+L_1 = inner(fem.Constant(fluid_submesh, PETSc.ScalarType(0.0)), q) * dx
 
 bcs = []
 for bc in dirichlet_bcs:
@@ -283,7 +284,7 @@ for bc in dirichlet_bcs:
     L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds(bc[0])
                             + alpha / h * inner(outer(u_D, n), outer(v, n)) * ds(bc[0]))
 
-    bc_boundary_facets = ft.indices[ft.values == bc[0]]
+    bc_boundary_facets = fluid_submesh_ft.indices[fluid_submesh_ft.values == bc[0]]
     bc_dofs = fem.locate_dofs_topological(
         V, msh.topology.dim - 1, bc_boundary_facets)
     bcs.append(fem.dirichletbc(u_D, bc_dofs))
