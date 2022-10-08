@@ -429,6 +429,9 @@ for bc in robin_bcs_T:
     a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
     L_T += kappa * inner(beta_R, w) * ds(bc[0])
 
+# Obstacle
+a_T += kappa * inner(1.0 * T, w) * ds(boundary_id["obstacle"])
+
 obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
@@ -471,87 +474,92 @@ for facet in obstacle_facets:
             entity_maps[solid_submesh][cell_minus]
 dS_T = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
 
-# a_T = fem.form(a_T)
-# L_T = fem.form(L_T)
+# TODO Add code to suport multiple domains in a single form
+L_T_s = kappa * inner(T_s("-"), w("+")) * dS_T(1)
 
-# A_T = fem.petsc.create_matrix(a_T)
-# b_T = fem.petsc.create_vector(L_T)
+a_T = fem.form(a_T)
+L_T = fem.form(L_T)
+L_T_s = fem.form(L_T_s, entity_maps=entity_maps)
 
-# ksp_T = PETSc.KSP().create(msh.comm)
-# ksp_T.setOperators(A_T)
-# ksp_T.setType("preonly")
-# ksp_T.getPC().setType("lu")
-# ksp_T.getPC().setFactorSolverType("superlu_dist")
+A_T = fem.petsc.create_matrix(a_T)
+b_T = fem.petsc.create_vector(L_T)
 
-# T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-# T_file.write(t)
+ksp_T = PETSc.KSP().create(msh.comm)
+ksp_T.setOperators(A_T)
+ksp_T.setType("preonly")
+ksp_T.getPC().setType("lu")
+ksp_T.getPC().setFactorSolverType("superlu_dist")
 
-# # Now we add the time stepping and convective terms
+T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
+T_file.write(t)
 
-# u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
-# a_00 += inner(u / delta_t, v) * dx - \
-#     inner(u, div(outer(v, u_n))) * dx + \
-#     inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
-#     inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
-#     inner(dot(u_n, n) * lmbda * u, v) * ds
-# a = fem.form([[a_00, a_01],
-#               [a_10, a_11]])
+# Now we add the time stepping and convective terms
 
-# L_0 += inner(u_n / delta_t, v) * dx
+u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
+a_00 += inner(u / delta_t, v) * dx - \
+    inner(u, div(outer(v, u_n))) * dx + \
+    inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
+    inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
+    inner(dot(u_n, n) * lmbda * u, v) * ds
+a = fem.form([[a_00, a_01],
+              [a_10, a_11]])
 
-# for bc in dirichlet_bcs:
-#     u_D = fem.Function(V)
-#     u_D.interpolate(bc[1])
-#     L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
-# L = fem.form([L_0,
-#               L_1])
+L_0 += inner(u_n / delta_t, v) * dx
 
-# # Time stepping loop
+for bc in dirichlet_bcs:
+    u_D = fem.Function(V)
+    u_D.interpolate(bc[1])
+    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
+L = fem.form([L_0,
+              L_1])
 
-# for n in range(num_time_steps):
-#     t += delta_t.value
+# Time stepping loop
 
-#     A.zeroEntries()
-#     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
-#     A.assemble()
+for n in range(num_time_steps):
+    t += delta_t.value
 
-#     with b.localForm() as b_loc:
-#         b_loc.set(0)
-#     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+    A.zeroEntries()
+    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+    A.assemble()
 
-#     # Compute solution
-#     ksp.solve(b, x)
-#     u_h.x.array[:offset] = x.array_r[:offset]
-#     u_h.x.scatter_forward()
-#     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-#     p_h.x.scatter_forward()
+    with b.localForm() as b_loc:
+        b_loc.set(0)
+    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-#     A_T.zeroEntries()
-#     fem.petsc.assemble_matrix(A_T, a_T)
-#     A_T.assemble()
+    # Compute solution
+    ksp.solve(b, x)
+    u_h.x.array[:offset] = x.array_r[:offset]
+    u_h.x.scatter_forward()
+    p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+    p_h.x.scatter_forward()
 
-#     with b_T.localForm() as b_T_loc:
-#         b_T_loc.set(0)
-#     fem.petsc.assemble_vector(b_T, L_T)
-#     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    A_T.zeroEntries()
+    fem.petsc.assemble_matrix(A_T, a_T)
+    A_T.assemble()
 
-#     ksp_T.solve(b_T, T_n.vector)
-#     T_n.x.scatter_forward()
+    with b_T.localForm() as b_T_loc:
+        b_T_loc.set(0)
+    fem.petsc.assemble_vector(b_T, L_T)
+    fem.petsc.assemble_vector(b_T, L_T_s)
+    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-#     u_vis.interpolate(u_h)
+    ksp_T.solve(b_T, T_n.vector)
+    T_n.x.scatter_forward()
 
-#     # Write to file
-#     u_file.write(t)
-#     p_file.write(t)
-#     T_file.write(t)
+    u_vis.interpolate(u_h)
 
-#     # Update u_n
-#     u_n.x.array[:] = u_h.x.array
+    # Write to file
+    u_file.write(t)
+    p_file.write(t)
+    T_file.write(t)
 
-# u_file.close()
-# p_file.close()
+    # Update u_n
+    u_n.x.array[:] = u_h.x.array
 
-# # Compute errors
-# e_div_u = norm_L2(msh.comm, div(u_h))
-# # This scheme conserves mass exactly, so check this
-# assert np.isclose(e_div_u, 0.0)
+u_file.close()
+p_file.close()
+
+# Compute errors
+e_div_u = norm_L2(msh.comm, div(u_h))
+# This scheme conserves mass exactly, so check this
+assert np.isclose(e_div_u, 0.0)
