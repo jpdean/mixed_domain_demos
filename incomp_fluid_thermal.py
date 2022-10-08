@@ -150,6 +150,7 @@ from dolfinx import mesh, fem, io
 from mpi4py import MPI
 from petsc4py import PETSc
 import numpy as np
+import ufl
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  inner, grad, dx, dS, avg, outer, div, conditional,
                  gt, dot, Measure)
@@ -237,9 +238,6 @@ W = fem.VectorFunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k + 1))
 # Function space for the solid domain
 X = fem.FunctionSpace(solid_submesh, ("Lagrange", 1))
 
-T_s = fem.Function(X)
-T_s.interpolate(lambda x: 1.0 + x[0])
-
 # with io.XDMFFile(msh.comm, "T_s.xdmf", "w") as file:
 #     file.write_mesh(solid_submesh)
 #     file.write_function(T_s)
@@ -249,6 +247,9 @@ T_s.interpolate(lambda x: 1.0 + x[0])
 u, v = TrialFunction(V), TestFunction(V)
 p, q = TrialFunction(Q), TestFunction(Q)
 T, w = TrialFunction(Q), TestFunction(Q)
+T_s, w_s = TrialFunction(X), TestFunction(X)
+
+T_s_n = fem.Function(X)
 
 delta_t = fem.Constant(fluid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 alpha = fem.Constant(fluid_submesh, PETSc.ScalarType(6.0 * k**2))
@@ -383,6 +384,18 @@ t = 0.0
 u_file.write(t)
 p_file.write(t)
 
+# Solid
+delta_t_T_s = fem.Constant(
+    solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
+a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
+                 + inner(grad(T_s), grad(w_s)) * dx
+                 + inner(1.0 * T_s, w_s) * ufl.ds)
+L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
+
+A_T_s = fem.petsc.assemble_matrix(a_T_s)
+A_T_s.assemble()
+b_T_s = fem.petsc.create_vector(L_T_s)
+
 T_n = fem.Function(Q)
 
 dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
@@ -475,7 +488,7 @@ for facet in obstacle_facets:
 dS_coupling = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_coupling = kappa * inner(T_s("-"), w("+")) * dS_coupling(1)
+L_T_coupling = kappa * inner(T_s_n("-"), w("+")) * dS_coupling(1)
 
 a_T = fem.form(a_T)
 L_T = fem.form(L_T)
@@ -489,6 +502,12 @@ ksp_T.setOperators(A_T)
 ksp_T.setType("preonly")
 ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
+
+ksp_T_s = PETSc.KSP().create(msh.comm)
+ksp_T_s.setOperators(A_T_s)
+ksp_T_s.setType("preonly")
+ksp_T_s.getPC().setType("lu")
+ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 
 T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
 T_file.write(t)
@@ -545,6 +564,15 @@ for n in range(num_time_steps):
 
     ksp_T.solve(b_T, T_n.vector)
     T_n.x.scatter_forward()
+
+    with b_T_s.localForm() as b_T_s_loc:
+        b_T_s_loc.set(0)
+    fem.petsc.assemble_vector(b_T_s, L_T_s)
+    b_T_s.ghostUpdate(
+        addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+
+    ksp_T_s.solve(b_T_s, T_s_n.vector)
+    T_s_n.x.scatter_forward()
 
     u_vis.interpolate(u_h)
 
