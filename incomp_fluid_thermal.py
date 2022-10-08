@@ -144,7 +144,6 @@
 # ## Implementation
 # We begin by importing the required modules and functions
 
-from re import sub
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -175,8 +174,8 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 10
-t_end = 0.1
+num_time_steps = 100
+t_end = 1.0
 R_e = 1000  # Reynolds Number
 k = 2  # Polynomial degree
 
@@ -187,10 +186,17 @@ k = 2  # Polynomial degree
 
 # msh, mt, boundary_id = benchmark_mesh.generate()
 
-msh, ct, ft = io.gmshio.read_from_msh("benchmark.msh", MPI.COMM_WORLD)
+partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+msh, ct, ft = io.gmshio.read_from_msh(
+    "benchmark.msh", MPI.COMM_WORLD, gdim=2, partitioner=partitioner)
 msh.name = "benchmark"
 ct.name = f"{msh.name}_cells"
 ft.name = f"{msh.name}_facets"
+
+boundary_id = {"inlet": 8,
+               "outlet": 9,
+               "wall": 10,
+               "obstacle": 11}
 
 # with io.XDMFFile(msh.comm, "benchmark_mesh.xdmf", "w") as file:
 #     file.write_mesh(msh)
@@ -204,287 +210,290 @@ fluid_submesh, entity_map = mesh.create_submesh(msh, tdim, fluid_cells)[:2]
 
 fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, entity_map, ft)
 
-with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
-    file.write_mesh(fluid_submesh)
-    fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
-    file.write_meshtags(fluid_submesh_ft)
+# with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
+#     file.write_mesh(fluid_submesh)
+#     fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
+#     file.write_meshtags(fluid_submesh_ft)
+
+msh = fluid_submesh
+ft = fluid_submesh_ft
 
 # # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
-# # Function space for the velocity
-# V = fem.FunctionSpace(msh, ("Raviart-Thomas", k + 1))
-# # Function space for the pressure
-# Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
-# # Funcion space for visualising the velocity field
-# W = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+# Function space for the velocity
+V = fem.FunctionSpace(msh, ("Raviart-Thomas", k + 1))
+# Function space for the pressure
+Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
+# Funcion space for visualising the velocity field
+W = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
 
-# # Define trial and test functions
+# Define trial and test functions
 
-# u, v = TrialFunction(V), TestFunction(V)
-# p, q = TrialFunction(Q), TestFunction(Q)
-# T, w = TrialFunction(Q), TestFunction(Q)
+u, v = TrialFunction(V), TestFunction(V)
+p, q = TrialFunction(Q), TestFunction(Q)
+T, w = TrialFunction(Q), TestFunction(Q)
 
-# delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-# alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-# alpha_T = fem.Constant(msh, PETSc.ScalarType(10.0 * k**2))
-# R_e_const = fem.Constant(msh, PETSc.ScalarType(R_e))
-# kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
+delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
+alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
+alpha_T = fem.Constant(msh, PETSc.ScalarType(10.0 * k**2))
+R_e_const = fem.Constant(msh, PETSc.ScalarType(R_e))
+kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
 
-# # List of tuples of form (id, expression)
-# dirichlet_bcs = [(boundary_id["inlet"], lambda x: np.vstack(((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
-#                  (boundary_id["wall"], lambda x: np.vstack(
-#                      (np.zeros_like(x[0]), np.zeros_like(x[0])))),
-#                  (boundary_id["obstacle"], lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]))))]
-# neumann_bcs = [(boundary_id["outlet"], fem.Constant(
-#     msh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
+# List of tuples of form (id, expression)
+dirichlet_bcs = [(boundary_id["inlet"], lambda x: np.vstack(((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
+                 (boundary_id["wall"], lambda x: np.vstack(
+                     (np.zeros_like(x[0]), np.zeros_like(x[0])))),
+                 (boundary_id["obstacle"], lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]))))]
+neumann_bcs = [(boundary_id["outlet"], fem.Constant(
+    msh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
 
-# ds = Measure("ds", domain=msh, subdomain_data=mt)
+ds = Measure("ds", domain=msh, subdomain_data=ft)
 
-# h = CellDiameter(msh)
-# n = FacetNormal(msh)
-
-
-# def jump(phi, n):
-#     return outer(phi("+"), n("+")) + outer(phi("-"), n("-"))
+h = CellDiameter(msh)
+n = FacetNormal(msh)
 
 
-# # We solve the Stokes problem for the initial condition, so the convective
-# # terms are omitted for now
-
-# a_00 = 1 / R_e_const * (inner(grad(u), grad(v)) * dx
-#                         - inner(avg(grad(u)), jump(v, n)) * dS
-#                         - inner(jump(u, n), avg(grad(v))) * dS
-#                         + alpha / avg(h) * inner(jump(u, n), jump(v, n)) * dS)
-# a_01 = - inner(p, div(v)) * dx
-# a_10 = - inner(div(u), q) * dx
-# a_11 = fem.Constant(msh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
-
-# f = fem.Function(W)
-# # NOTE: Arrived at Neumann BC term by rewriting inner(grad(u), outer(v, n))
-# # it is based on as inner(dot(grad(u), n), v) and then g = dot(grad(u), n)
-# # etc. TODO Check this. NOTE Consider changing formulation to one with momentum
-# # law in conservative form to be able to specify momentum flux
-# L_0 = inner(f, v) * dx
-# L_1 = inner(fem.Constant(msh, PETSc.ScalarType(0.0)), q) * dx
-
-# bcs = []
-# for bc in dirichlet_bcs:
-#     a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds(bc[0])
-#                              - inner(outer(u, n), grad(v)) * ds(bc[0])
-#                              + alpha / h * inner(outer(u, n), outer(v, n)) * ds(bc[0]))
-#     u_D = fem.Function(V)
-#     u_D.interpolate(bc[1])
-#     L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds(bc[0])
-#                             + alpha / h * inner(outer(u_D, n), outer(v, n)) * ds(bc[0]))
-
-#     bc_boundary_facets = mt.indices[mt.values == bc[0]]
-#     bc_dofs = fem.locate_dofs_topological(
-#         V, msh.topology.dim - 1, bc_boundary_facets)
-#     bcs.append(fem.dirichletbc(u_D, bc_dofs))
+def jump(phi, n):
+    return outer(phi("+"), n("+")) + outer(phi("-"), n("-"))
 
 
-# for bc in neumann_bcs:
-#     L_0 += 1 / R_e_const * inner(bc[1], v) * ds(bc[0])
+# We solve the Stokes problem for the initial condition, so the convective
+# terms are omitted for now
 
-# a = fem.form([[a_00, a_01],
-#               [a_10, a_11]])
-# L = fem.form([L_0,
-#               L_1])
+a_00 = 1 / R_e_const * (inner(grad(u), grad(v)) * dx
+                        - inner(avg(grad(u)), jump(v, n)) * dS
+                        - inner(jump(u, n), avg(grad(v))) * dS
+                        + alpha / avg(h) * inner(jump(u, n), jump(v, n)) * dS)
+a_01 = - inner(p, div(v)) * dx
+a_10 = - inner(div(u), q) * dx
+a_11 = fem.Constant(msh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
 
-# # If the pressure is only determined up to a constant, pin a single degree
-# # of freedom
+f = fem.Function(W)
+# NOTE: Arrived at Neumann BC term by rewriting inner(grad(u), outer(v, n))
+# it is based on as inner(dot(grad(u), n), v) and then g = dot(grad(u), n)
+# etc. TODO Check this. NOTE Consider changing formulation to one with momentum
+# law in conservative form to be able to specify momentum flux
+L_0 = inner(f, v) * dx
+L_1 = inner(fem.Constant(msh, PETSc.ScalarType(0.0)), q) * dx
 
-# # TODO TIDY
-# # FIXME This assumes there is a vertex at point (0, 0)
-# if len(neumann_bcs) == 0:
-#     pressure_dofs = fem.locate_dofs_geometrical(
-#         Q, lambda x: np.logical_and(np.isclose(x[0], 0.0),
-#                                     np.isclose(x[1], 0.0)))
-#     if len(pressure_dofs) > 0:
-#         pressure_dof = [pressure_dofs[0]]
-#     else:
-#         pressure_dof = []
-#     bc_p = fem.dirichletbc(PETSc.ScalarType(0.0),
-#                            np.array(pressure_dof, dtype=np.int32),
-#                            Q)
+bcs = []
+for bc in dirichlet_bcs:
+    a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds(bc[0])
+                             - inner(outer(u, n), grad(v)) * ds(bc[0])
+                             + alpha / h * inner(outer(u, n), outer(v, n)) * ds(bc[0]))
+    u_D = fem.Function(V)
+    u_D.interpolate(bc[1])
+    L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds(bc[0])
+                            + alpha / h * inner(outer(u_D, n), outer(v, n)) * ds(bc[0]))
 
-# # Assemble Stokes problem
-
-# A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-# A.assemble()
-# b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
-
-# # Create and configure solver
-
-# ksp = PETSc.KSP().create(msh.comm)
-# ksp.setOperators(A)
-# ksp.setType("preonly")
-# ksp.getPC().setType("lu")
-# ksp.getPC().setFactorSolverType("mumps")
-# opts = PETSc.Options()
-# # See https://graal.ens-lyon.fr/MUMPS/doc/userguide_5.5.1.pdf
-# # TODO Check
-# opts["mat_mumps_icntl_6"] = 2
-# opts["mat_mumps_icntl_14"] = 100
-# opts["ksp_error_if_not_converged"] = 1
-# ksp.setFromOptions()
-
-# # Solve Stokes for initial condition
-
-# x = A.createVecRight()
-# ksp.solve(b, x)
-
-# # Split the solution
-
-# u_h = fem.Function(V)
-# p_h = fem.Function(Q)
-# p_h.name = "p"
-# offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-# u_h.x.array[:offset] = x.array_r[:offset]
-# u_h.x.scatter_forward()
-# p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-# p_h.x.scatter_forward()
-
-# u_vis = fem.Function(W)
-# u_vis.name = "u"
-# u_vis.interpolate(u_h)
-
-# # Write initial condition to file
-
-# u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-# p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-# t = 0.0
-# u_file.write(t)
-# p_file.write(t)
-
-# T_n = fem.Function(Q)
-
-# dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
-# neumann_bcs_T = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
-# robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0)),
-#                (boundary_id["obstacle"], (1.0, 1.0))]
+    bc_boundary_facets = ft.indices[ft.values == bc[0]]
+    bc_dofs = fem.locate_dofs_topological(
+        V, msh.topology.dim - 1, bc_boundary_facets)
+    bcs.append(fem.dirichletbc(u_D, bc_dofs))
 
 
-# # Create function to store solution and previous time step
+for bc in neumann_bcs:
+    L_0 += 1 / R_e_const * inner(bc[1], v) * ds(bc[0])
 
-# u_n = fem.Function(V)
-# u_n.x.array[:] = u_h.x.array
+a = fem.form([[a_00, a_01],
+              [a_10, a_11]])
+L = fem.form([L_0,
+              L_1])
 
-# lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
+# If the pressure is only determined up to a constant, pin a single degree
+# of freedom
 
-# # FIXME Use u_h not u_n
-# a_T = inner(T / delta_t, w) * dx - \
-#     inner(u_h * T, grad(w)) * dx + \
-#     inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
-#           lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
-#     inner(lmbda * dot(u_h, n) * T, w) * ds + \
-#     kappa * (inner(grad(T), grad(w)) * dx -
-#              inner(avg(grad(T)), jump_T(w, n)) * dS -
-#              inner(jump_T(T, n), avg(grad(w))) * dS +
-#              (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
+# TODO TIDY
+# FIXME This assumes there is a vertex at point (0, 0)
+if len(neumann_bcs) == 0:
+    pressure_dofs = fem.locate_dofs_geometrical(
+        Q, lambda x: np.logical_and(np.isclose(x[0], 0.0),
+                                    np.isclose(x[1], 0.0)))
+    if len(pressure_dofs) > 0:
+        pressure_dof = [pressure_dofs[0]]
+    else:
+        pressure_dof = []
+    bc_p = fem.dirichletbc(PETSc.ScalarType(0.0),
+                           np.array(pressure_dof, dtype=np.int32),
+                           Q)
 
-# L_T = inner(T_n / delta_t, w) * dx
+# Assemble Stokes problem
 
-# for bc in dirichlet_bcs_T:
-#     T_D = fem.Function(Q)
-#     T_D.interpolate(bc[1])
-#     a_T += kappa * (- inner(grad(T), w * n) * ds(bc[0]) -
-#                     inner(grad(w), T * n) * ds(bc[0]) +
-#                     (alpha / h) * inner(T, w) * ds(bc[0]))
-#     L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds(bc[0]) + \
-#         kappa * (- inner(T_D * n, grad(w)) * ds(bc[0]) +
-#                  (alpha / h) * inner(T_D, w) * ds(bc[0]))
+A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+A.assemble()
+b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
 
-# for bc in neumann_bcs_T:
-#     g_T = fem.Function(Q)
-#     g_T.interpolate(bc[1])
-#     L_T += kappa * inner(g_T, w) * ds(bc[0])
+# Create and configure solver
 
-# for bc in robin_bcs_T:
-#     alpha_R, beta_R = bc[1]
-#     a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
-#     L_T += kappa * inner(beta_R, w) * ds(bc[0])
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+ksp.getPC().setFactorSolverType("mumps")
+opts = PETSc.Options()
+# See https://graal.ens-lyon.fr/MUMPS/doc/userguide_5.5.1.pdf
+# TODO Check
+opts["mat_mumps_icntl_6"] = 2
+opts["mat_mumps_icntl_14"] = 100
+opts["ksp_error_if_not_converged"] = 1
+ksp.setFromOptions()
 
-# a_T = fem.form(a_T)
-# L_T = fem.form(L_T)
+# Solve Stokes for initial condition
 
-# A_T = fem.petsc.create_matrix(a_T)
-# b_T = fem.petsc.create_vector(L_T)
+x = A.createVecRight()
+ksp.solve(b, x)
 
-# ksp_T = PETSc.KSP().create(msh.comm)
-# ksp_T.setOperators(A_T)
-# ksp_T.setType("preonly")
-# ksp_T.getPC().setType("lu")
-# ksp_T.getPC().setFactorSolverType("superlu_dist")
+# Split the solution
 
-# T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-# T_file.write(t)
+u_h = fem.Function(V)
+p_h = fem.Function(Q)
+p_h.name = "p"
+offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+u_h.x.array[:offset] = x.array_r[:offset]
+u_h.x.scatter_forward()
+p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+p_h.x.scatter_forward()
 
-# # Now we add the time stepping and convective terms
+u_vis = fem.Function(W)
+u_vis.name = "u"
+u_vis.interpolate(u_h)
 
-# u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
-# a_00 += inner(u / delta_t, v) * dx - \
-#     inner(u, div(outer(v, u_n))) * dx + \
-#     inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
-#     inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
-#     inner(dot(u_n, n) * lmbda * u, v) * ds
-# a = fem.form([[a_00, a_01],
-#               [a_10, a_11]])
+# Write initial condition to file
 
-# L_0 += inner(u_n / delta_t, v) * dx
+u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
+p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
+t = 0.0
+u_file.write(t)
+p_file.write(t)
 
-# for bc in dirichlet_bcs:
-#     u_D = fem.Function(V)
-#     u_D.interpolate(bc[1])
-#     L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
-# L = fem.form([L_0,
-#               L_1])
+T_n = fem.Function(Q)
 
-# # Time stepping loop
+dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
+neumann_bcs_T = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
+robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0)),
+               (boundary_id["obstacle"], (1.0, 1.0))]
 
-# for n in range(num_time_steps):
-#     t += delta_t.value
 
-#     A.zeroEntries()
-#     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
-#     A.assemble()
+# Create function to store solution and previous time step
 
-#     with b.localForm() as b_loc:
-#         b_loc.set(0)
-#     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+u_n = fem.Function(V)
+u_n.x.array[:] = u_h.x.array
 
-#     # Compute solution
-#     ksp.solve(b, x)
-#     u_h.x.array[:offset] = x.array_r[:offset]
-#     u_h.x.scatter_forward()
-#     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-#     p_h.x.scatter_forward()
+lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 
-#     A_T.zeroEntries()
-#     fem.petsc.assemble_matrix(A_T, a_T)
-#     A_T.assemble()
+# FIXME Use u_h not u_n
+a_T = inner(T / delta_t, w) * dx - \
+    inner(u_h * T, grad(w)) * dx + \
+    inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
+          lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
+    inner(lmbda * dot(u_h, n) * T, w) * ds + \
+    kappa * (inner(grad(T), grad(w)) * dx -
+             inner(avg(grad(T)), jump_T(w, n)) * dS -
+             inner(jump_T(T, n), avg(grad(w))) * dS +
+             (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
 
-#     with b_T.localForm() as b_T_loc:
-#         b_T_loc.set(0)
-#     fem.petsc.assemble_vector(b_T, L_T)
-#     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+L_T = inner(T_n / delta_t, w) * dx
 
-#     ksp_T.solve(b_T, T_n.vector)
-#     T_n.x.scatter_forward()
+for bc in dirichlet_bcs_T:
+    T_D = fem.Function(Q)
+    T_D.interpolate(bc[1])
+    a_T += kappa * (- inner(grad(T), w * n) * ds(bc[0]) -
+                    inner(grad(w), T * n) * ds(bc[0]) +
+                    (alpha / h) * inner(T, w) * ds(bc[0]))
+    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds(bc[0]) + \
+        kappa * (- inner(T_D * n, grad(w)) * ds(bc[0]) +
+                 (alpha / h) * inner(T_D, w) * ds(bc[0]))
 
-#     u_vis.interpolate(u_h)
+for bc in neumann_bcs_T:
+    g_T = fem.Function(Q)
+    g_T.interpolate(bc[1])
+    L_T += kappa * inner(g_T, w) * ds(bc[0])
 
-#     # Write to file
-#     u_file.write(t)
-#     p_file.write(t)
-#     T_file.write(t)
+for bc in robin_bcs_T:
+    alpha_R, beta_R = bc[1]
+    a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
+    L_T += kappa * inner(beta_R, w) * ds(bc[0])
 
-#     # Update u_n
-#     u_n.x.array[:] = u_h.x.array
+a_T = fem.form(a_T)
+L_T = fem.form(L_T)
 
-# u_file.close()
-# p_file.close()
+A_T = fem.petsc.create_matrix(a_T)
+b_T = fem.petsc.create_vector(L_T)
 
-# # Compute errors
-# e_div_u = norm_L2(msh.comm, div(u_h))
-# # This scheme conserves mass exactly, so check this
-# assert np.isclose(e_div_u, 0.0)
+ksp_T = PETSc.KSP().create(msh.comm)
+ksp_T.setOperators(A_T)
+ksp_T.setType("preonly")
+ksp_T.getPC().setType("lu")
+ksp_T.getPC().setFactorSolverType("superlu_dist")
+
+T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
+T_file.write(t)
+
+# Now we add the time stepping and convective terms
+
+u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
+a_00 += inner(u / delta_t, v) * dx - \
+    inner(u, div(outer(v, u_n))) * dx + \
+    inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
+    inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
+    inner(dot(u_n, n) * lmbda * u, v) * ds
+a = fem.form([[a_00, a_01],
+              [a_10, a_11]])
+
+L_0 += inner(u_n / delta_t, v) * dx
+
+for bc in dirichlet_bcs:
+    u_D = fem.Function(V)
+    u_D.interpolate(bc[1])
+    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
+L = fem.form([L_0,
+              L_1])
+
+# Time stepping loop
+
+for n in range(num_time_steps):
+    t += delta_t.value
+
+    A.zeroEntries()
+    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+    A.assemble()
+
+    with b.localForm() as b_loc:
+        b_loc.set(0)
+    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+
+    # Compute solution
+    ksp.solve(b, x)
+    u_h.x.array[:offset] = x.array_r[:offset]
+    u_h.x.scatter_forward()
+    p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+    p_h.x.scatter_forward()
+
+    A_T.zeroEntries()
+    fem.petsc.assemble_matrix(A_T, a_T)
+    A_T.assemble()
+
+    with b_T.localForm() as b_T_loc:
+        b_T_loc.set(0)
+    fem.petsc.assemble_vector(b_T, L_T)
+    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+
+    ksp_T.solve(b_T, T_n.vector)
+    T_n.x.scatter_forward()
+
+    u_vis.interpolate(u_h)
+
+    # Write to file
+    u_file.write(t)
+    p_file.write(t)
+    T_file.write(t)
+
+    # Update u_n
+    u_n.x.array[:] = u_h.x.array
+
+u_file.close()
+p_file.close()
+
+# Compute errors
+e_div_u = norm_L2(msh.comm, div(u_h))
+# This scheme conserves mass exactly, so check this
+assert np.isclose(e_div_u, 0.0)
