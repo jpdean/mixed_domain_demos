@@ -469,6 +469,7 @@ for facet in obstacle_facets:
         # Same hack for the right submesh
         entity_maps[solid_submesh][cell_plus] = \
             entity_maps[solid_submesh][cell_minus]
+dS_T = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # a_T = fem.form(a_T)
 # L_T = fem.form(L_T)
