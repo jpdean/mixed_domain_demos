@@ -512,6 +512,9 @@ ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
 T_file.write(t)
 
+T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
+T_s_file.write(t)
+
 # Now we add the time stepping and convective terms
 
 u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
@@ -580,12 +583,15 @@ for n in range(num_time_steps):
     u_file.write(t)
     p_file.write(t)
     T_file.write(t)
+    T_s_file.write(t)
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
 
 u_file.close()
 p_file.close()
+T_file.close()
+T_s_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
