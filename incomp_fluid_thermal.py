@@ -195,6 +195,8 @@ msh.name = "benchmark"
 ct.name = f"{msh.name}_cells"
 ft.name = f"{msh.name}_facets"
 
+volume_id = {"fluid": 6,
+             "solid": 7}
 boundary_id = {"inlet": 8,
                "outlet": 9,
                "wall": 10,
@@ -206,16 +208,22 @@ boundary_id = {"inlet": 8,
 #     file.write_meshtags(ft)
 
 # FIXME Don't hardcode values
-fluid_cells = ct.indices[ct.values == 6]
+fluid_cells = ct.indices[ct.values == volume_id["fluid"]]
 tdim = msh.topology.dim
 fluid_submesh, fluid_entity_map = mesh.create_submesh(msh, tdim, fluid_cells)[:2]
 
 fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, fluid_entity_map, ft)
 
+solid_cells = ct.indices[ct.values == volume_id["solid"]]
+solid_submesh, solid_entity_map = mesh.create_submesh(msh, tdim, solid_cells)[:2]
+
 # with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
 #     file.write_mesh(fluid_submesh)
 #     fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
 #     file.write_meshtags(fluid_submesh_ft)
+
+with io.XDMFFile(msh.comm, "solid_submesh.xdmf", "w") as file:
+    file.write_mesh(solid_submesh)
 
 # # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 # Function space for the velocity
