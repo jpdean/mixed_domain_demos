@@ -236,7 +236,7 @@ Q = fem.FunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k))
 # Funcion space for visualising the velocity field
 W = fem.VectorFunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k + 1))
 # Function space for the solid domain
-X = fem.FunctionSpace(solid_submesh, ("Lagrange", 1))
+X = fem.FunctionSpace(solid_submesh, ("Lagrange", k))
 
 # with io.XDMFFile(msh.comm, "T_s.xdmf", "w") as file:
 #     file.write_mesh(solid_submesh)
@@ -513,6 +513,7 @@ ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
 T_file.write(t)
 
+# FIXME Why is this failing in parallel?
 T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
 T_s_file.write(t)
 
