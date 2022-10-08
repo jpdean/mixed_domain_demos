@@ -215,16 +215,13 @@ fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, entity_map, ft)
 #     fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
 #     file.write_meshtags(fluid_submesh_ft)
 
-msh = fluid_submesh
-ft = fluid_submesh_ft
-
 # # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 # Function space for the velocity
-V = fem.FunctionSpace(msh, ("Raviart-Thomas", k + 1))
+V = fem.FunctionSpace(fluid_submesh, ("Raviart-Thomas", k + 1))
 # Function space for the pressure
-Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
+Q = fem.FunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k))
 # Funcion space for visualising the velocity field
-W = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+W = fem.VectorFunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k + 1))
 
 # Define trial and test functions
 
@@ -232,11 +229,11 @@ u, v = TrialFunction(V), TestFunction(V)
 p, q = TrialFunction(Q), TestFunction(Q)
 T, w = TrialFunction(Q), TestFunction(Q)
 
-delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-alpha_T = fem.Constant(msh, PETSc.ScalarType(10.0 * k**2))
-R_e_const = fem.Constant(msh, PETSc.ScalarType(R_e))
-kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
+delta_t = fem.Constant(fluid_submesh, PETSc.ScalarType(t_end / num_time_steps))
+alpha = fem.Constant(fluid_submesh, PETSc.ScalarType(6.0 * k**2))
+alpha_T = fem.Constant(fluid_submesh, PETSc.ScalarType(10.0 * k**2))
+R_e_const = fem.Constant(fluid_submesh, PETSc.ScalarType(R_e))
+kappa = fem.Constant(fluid_submesh, PETSc.ScalarType(0.01))
 
 # List of tuples of form (id, expression)
 dirichlet_bcs = [(boundary_id["inlet"], lambda x: np.vstack(((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
@@ -244,12 +241,12 @@ dirichlet_bcs = [(boundary_id["inlet"], lambda x: np.vstack(((1.5 * 4 * x[1] * (
                      (np.zeros_like(x[0]), np.zeros_like(x[0])))),
                  (boundary_id["obstacle"], lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]))))]
 neumann_bcs = [(boundary_id["outlet"], fem.Constant(
-    msh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
+    fluid_submesh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
 
-ds = Measure("ds", domain=msh, subdomain_data=ft)
+ds = Measure("ds", domain=fluid_submesh, subdomain_data=fluid_submesh_ft)
 
-h = CellDiameter(msh)
-n = FacetNormal(msh)
+h = CellDiameter(fluid_submesh)
+n = FacetNormal(fluid_submesh)
 
 
 def jump(phi, n):
@@ -265,8 +262,9 @@ a_00 = 1 / R_e_const * (inner(grad(u), grad(v)) * dx
                         + alpha / avg(h) * inner(jump(u, n), jump(v, n)) * dS)
 a_01 = - inner(p, div(v)) * dx
 a_10 = - inner(div(u), q) * dx
-a_11 = fem.Constant(msh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
+a_11 = fem.Constant(fluid_submesh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
 
+assert False
 f = fem.Function(W)
 # NOTE: Arrived at Neumann BC term by rewriting inner(grad(u), outer(v, n))
 # it is based on as inner(dot(grad(u), n), v) and then g = dot(grad(u), n)
