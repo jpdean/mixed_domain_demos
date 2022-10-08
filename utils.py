@@ -58,7 +58,10 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
     submesh.topology.create_connectivity(tdim, tdim - 1)
     submesh_c_to_f = submesh.topology.connectivity(tdim, tdim - 1)
 
-    submesh_facets = np.empty_like(msh_facets)
+    # NOTE: Tagged facets mat not have a cell in the submesh, or may
+    # have more than one cell in the submesh
+    submesh_facets = []
+    submesh_values = []
     for i, facet in enumerate(msh_facets):
         cells = msh_f_to_c.links(facet)
         for cell in cells:
@@ -68,7 +71,14 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
                 assert local_facet >= 0 and local_facet <= 2
                 submesh_cell = cell_map.index(cell)
                 submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
-                submesh_facets[i] = submesh_facet
+                submesh_facets.append(submesh_facet)
+                submesh_values.append(facet_tag.values[i])
+    submesh_facets = np.array(submesh_facets)
+    submesh_values = np.array(submesh_values, dtype=np.intc)
+    # Sort and make unique
+    submesh_facets, ind = np.unique(submesh_facets, return_index=True)
+    submesh_values = submesh_values[ind]
     submesh_meshtags = mesh.meshtags(
-        submesh, submesh.topology.dim - 1, submesh_facets, facet_tag.values)
+        submesh, submesh.topology.dim - 1,
+        submesh_facets[ind], submesh_values[ind])
     return submesh_meshtags
