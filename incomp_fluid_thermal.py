@@ -387,9 +387,10 @@ p_file.write(t)
 # Solid
 delta_t_T_s = fem.Constant(
     solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
+kappa_T_s = fem.Constant(solid_submesh, PETSc.ScalarType(0.1))
 a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
-                 + inner(grad(T_s), grad(w_s)) * dx
-                 + inner(1.0 * T_s, w_s) * ufl.ds)
+                 + kappa_T_s * inner(grad(T_s), grad(w_s)) * dx
+                 + kappa_T_s * inner(1.0 * T_s, w_s) * ufl.ds)
 L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
 
 A_T_s = fem.petsc.assemble_matrix(a_T_s)
