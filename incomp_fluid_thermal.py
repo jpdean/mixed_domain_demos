@@ -439,6 +439,19 @@ entity_maps = {fluid_submesh: [fluid_entity_map.index(entity)
                                if entity in solid_entity_map else -1
                                for entity in range(num_cells)]}
 
+facet_integration_entities = {1: []}
+fdim = tdim - 1
+facet_imap = msh.topology.index_map(fdim)
+msh.topology.create_connectivity(tdim, fdim)
+msh.topology.create_connectivity(fdim, tdim)
+c_to_f = msh.topology.connectivity(tdim, fdim)
+f_to_c = msh.topology.connectivity(fdim, tdim)
+for facet in obstacle_facets:
+    # Check if this facet is owned
+    if facet < facet_imap.size_local:
+        cells = f_to_c.links(facet)
+        assert len(cells) == 2
+
 # a_T = fem.form(a_T)
 # L_T = fem.form(L_T)
 
