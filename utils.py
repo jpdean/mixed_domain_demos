@@ -79,6 +79,5 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
     submesh_facets, ind = np.unique(submesh_facets, return_index=True)
     submesh_values = submesh_values[ind]
     submesh_meshtags = mesh.meshtags(
-        submesh, submesh.topology.dim - 1,
-        submesh_facets[ind], submesh_values[ind])
+        submesh, submesh.topology.dim - 1, submesh_facets, submesh_values)
     return submesh_meshtags
