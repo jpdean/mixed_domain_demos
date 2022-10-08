@@ -472,14 +472,14 @@ for facet in obstacle_facets:
         # Same hack for the right submesh
         entity_maps[solid_submesh][cell_plus] = \
             entity_maps[solid_submesh][cell_minus]
-dS_T = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
+dS_coupling = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_s = kappa * inner(T_s("-"), w("+")) * dS_T(1)
+L_T_coupling = kappa * inner(T_s("-"), w("+")) * dS_coupling(1)
 
 a_T = fem.form(a_T)
 L_T = fem.form(L_T)
-L_T_s = fem.form(L_T_s, entity_maps=entity_maps)
+L_T_coupling = fem.form(L_T_coupling, entity_maps=entity_maps)
 
 A_T = fem.petsc.create_matrix(a_T)
 b_T = fem.petsc.create_vector(L_T)
@@ -540,7 +540,7 @@ for n in range(num_time_steps):
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
     fem.petsc.assemble_vector(b_T, L_T)
-    fem.petsc.assemble_vector(b_T, L_T_s)
+    fem.petsc.assemble_vector(b_T, L_T_coupling)
     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
     ksp_T.solve(b_T, T_n.vector)
