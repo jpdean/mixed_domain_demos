@@ -495,6 +495,9 @@ a_T = fem.form(a_T)
 L_T = fem.form(L_T)
 L_T_coupling = fem.form(L_T_coupling, entity_maps=entity_maps)
 
+L_T_s_coupling = kappa_T_s * inner(T_n("+"), w_s("-")) * dS_coupling(1)
+L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
+
 A_T = fem.petsc.create_matrix(a_T)
 b_T = fem.petsc.create_vector(L_T)
 
@@ -573,6 +576,7 @@ for n in range(num_time_steps):
     with b_T_s.localForm() as b_T_s_loc:
         b_T_s_loc.set(0)
     fem.petsc.assemble_vector(b_T_s, L_T_s)
+    fem.petsc.assemble_vector(b_T_s, L_T_s_coupling)
     b_T_s.ghostUpdate(
         addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
