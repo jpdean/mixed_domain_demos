@@ -177,8 +177,8 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 10
-t_end = 0.1
+num_time_steps = 500
+t_end = 5.0
 R_e = 1000  # Reynolds Number
 k = 2  # Polynomial degree
 
@@ -385,7 +385,7 @@ u_file.write(t)
 p_file.write(t)
 
 # Solid
-h_f = 50.0  # Heat transfer coeff
+h_f = 100.0  # Heat transfer coeff
 delta_t_T_s = fem.Constant(
     solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 kappa_T_s = fem.Constant(solid_submesh, PETSc.ScalarType(0.1))
