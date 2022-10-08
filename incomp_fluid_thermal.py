@@ -210,12 +210,14 @@ boundary_id = {"inlet": 8,
 # FIXME Don't hardcode values
 fluid_cells = ct.indices[ct.values == volume_id["fluid"]]
 tdim = msh.topology.dim
-fluid_submesh, fluid_entity_map = mesh.create_submesh(msh, tdim, fluid_cells)[:2]
+fluid_submesh, fluid_entity_map = mesh.create_submesh(
+    msh, tdim, fluid_cells)[:2]
 
 fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, fluid_entity_map, ft)
 
 solid_cells = ct.indices[ct.values == volume_id["solid"]]
-solid_submesh, solid_entity_map = mesh.create_submesh(msh, tdim, solid_cells)[:2]
+solid_submesh, solid_entity_map = mesh.create_submesh(
+    msh, tdim, solid_cells)[:2]
 
 # with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
 #     file.write_mesh(fluid_submesh)
@@ -385,9 +387,7 @@ T_n = fem.Function(Q)
 
 dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
 neumann_bcs_T = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
-robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0)),
-               (boundary_id["obstacle"], (1.0, 1.0))]
-
+robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0))]
 
 # Create function to store solution and previous time step
 
@@ -429,87 +429,97 @@ for bc in robin_bcs_T:
     a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
     L_T += kappa * inner(beta_R, w) * ds(bc[0])
 
-a_T = fem.form(a_T)
-L_T = fem.form(L_T)
+obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
+cell_imap = msh.topology.index_map(tdim)
+num_cells = cell_imap.size_local + cell_imap.num_ghosts
+entity_maps = {fluid_submesh: [fluid_entity_map.index(entity)
+                               if entity in fluid_entity_map else -1
+                               for entity in range(num_cells)],
+               solid_submesh: [solid_entity_map.index(entity)
+                               if entity in solid_entity_map else -1
+                               for entity in range(num_cells)]}
 
-A_T = fem.petsc.create_matrix(a_T)
-b_T = fem.petsc.create_vector(L_T)
+# a_T = fem.form(a_T)
+# L_T = fem.form(L_T)
 
-ksp_T = PETSc.KSP().create(msh.comm)
-ksp_T.setOperators(A_T)
-ksp_T.setType("preonly")
-ksp_T.getPC().setType("lu")
-ksp_T.getPC().setFactorSolverType("superlu_dist")
+# A_T = fem.petsc.create_matrix(a_T)
+# b_T = fem.petsc.create_vector(L_T)
 
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-T_file.write(t)
+# ksp_T = PETSc.KSP().create(msh.comm)
+# ksp_T.setOperators(A_T)
+# ksp_T.setType("preonly")
+# ksp_T.getPC().setType("lu")
+# ksp_T.getPC().setFactorSolverType("superlu_dist")
 
-# Now we add the time stepping and convective terms
+# T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
+# T_file.write(t)
 
-u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
-a_00 += inner(u / delta_t, v) * dx - \
-    inner(u, div(outer(v, u_n))) * dx + \
-    inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
-    inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
-    inner(dot(u_n, n) * lmbda * u, v) * ds
-a = fem.form([[a_00, a_01],
-              [a_10, a_11]])
+# # Now we add the time stepping and convective terms
 
-L_0 += inner(u_n / delta_t, v) * dx
+# u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
+# a_00 += inner(u / delta_t, v) * dx - \
+#     inner(u, div(outer(v, u_n))) * dx + \
+#     inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
+#     inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
+#     inner(dot(u_n, n) * lmbda * u, v) * ds
+# a = fem.form([[a_00, a_01],
+#               [a_10, a_11]])
 
-for bc in dirichlet_bcs:
-    u_D = fem.Function(V)
-    u_D.interpolate(bc[1])
-    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
-L = fem.form([L_0,
-              L_1])
+# L_0 += inner(u_n / delta_t, v) * dx
 
-# Time stepping loop
+# for bc in dirichlet_bcs:
+#     u_D = fem.Function(V)
+#     u_D.interpolate(bc[1])
+#     L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
+# L = fem.form([L_0,
+#               L_1])
 
-for n in range(num_time_steps):
-    t += delta_t.value
+# # Time stepping loop
 
-    A.zeroEntries()
-    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
-    A.assemble()
+# for n in range(num_time_steps):
+#     t += delta_t.value
 
-    with b.localForm() as b_loc:
-        b_loc.set(0)
-    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+#     A.zeroEntries()
+#     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+#     A.assemble()
 
-    # Compute solution
-    ksp.solve(b, x)
-    u_h.x.array[:offset] = x.array_r[:offset]
-    u_h.x.scatter_forward()
-    p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-    p_h.x.scatter_forward()
+#     with b.localForm() as b_loc:
+#         b_loc.set(0)
+#     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-    A_T.zeroEntries()
-    fem.petsc.assemble_matrix(A_T, a_T)
-    A_T.assemble()
+#     # Compute solution
+#     ksp.solve(b, x)
+#     u_h.x.array[:offset] = x.array_r[:offset]
+#     u_h.x.scatter_forward()
+#     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+#     p_h.x.scatter_forward()
 
-    with b_T.localForm() as b_T_loc:
-        b_T_loc.set(0)
-    fem.petsc.assemble_vector(b_T, L_T)
-    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+#     A_T.zeroEntries()
+#     fem.petsc.assemble_matrix(A_T, a_T)
+#     A_T.assemble()
 
-    ksp_T.solve(b_T, T_n.vector)
-    T_n.x.scatter_forward()
+#     with b_T.localForm() as b_T_loc:
+#         b_T_loc.set(0)
+#     fem.petsc.assemble_vector(b_T, L_T)
+#     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-    u_vis.interpolate(u_h)
+#     ksp_T.solve(b_T, T_n.vector)
+#     T_n.x.scatter_forward()
 
-    # Write to file
-    u_file.write(t)
-    p_file.write(t)
-    T_file.write(t)
+#     u_vis.interpolate(u_h)
 
-    # Update u_n
-    u_n.x.array[:] = u_h.x.array
+#     # Write to file
+#     u_file.write(t)
+#     p_file.write(t)
+#     T_file.write(t)
 
-u_file.close()
-p_file.close()
+#     # Update u_n
+#     u_n.x.array[:] = u_h.x.array
 
-# Compute errors
-e_div_u = norm_L2(msh.comm, div(u_h))
-# This scheme conserves mass exactly, so check this
-assert np.isclose(e_div_u, 0.0)
+# u_file.close()
+# p_file.close()
+
+# # Compute errors
+# e_div_u = norm_L2(msh.comm, div(u_h))
+# # This scheme conserves mass exactly, so check this
+# assert np.isclose(e_div_u, 0.0)
