@@ -222,8 +222,8 @@ solid_submesh, solid_entity_map = mesh.create_submesh(msh, tdim, solid_cells)[:2
 #     fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
 #     file.write_meshtags(fluid_submesh_ft)
 
-with io.XDMFFile(msh.comm, "solid_submesh.xdmf", "w") as file:
-    file.write_mesh(solid_submesh)
+# with io.XDMFFile(msh.comm, "solid_submesh.xdmf", "w") as file:
+#     file.write_mesh(solid_submesh)
 
 # # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 # Function space for the velocity
@@ -232,6 +232,15 @@ V = fem.FunctionSpace(fluid_submesh, ("Raviart-Thomas", k + 1))
 Q = fem.FunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k))
 # Funcion space for visualising the velocity field
 W = fem.VectorFunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k + 1))
+# Function space for the solid domain
+X = fem.FunctionSpace(solid_submesh, ("Lagrange", 1))
+
+T_s = fem.Function(X)
+T_s.interpolate(lambda x: 1.0 + x[0])
+
+# with io.XDMFFile(msh.comm, "T_s.xdmf", "w") as file:
+#     file.write_mesh(solid_submesh)
+#     file.write_function(T_s)
 
 # Define trial and test functions
 
