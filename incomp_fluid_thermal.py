@@ -474,23 +474,23 @@ dS_coupling = Measure(
     "dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_coupling(1)
+L_T_f_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_coupling(1)
 
 a_T_f = fem.form(a_T_f)
 L_T_f = fem.form(L_T_f)
-L_T_coupling = fem.form(L_T_coupling, entity_maps=entity_maps)
+L_T_f_coupling = fem.form(L_T_f_coupling, entity_maps=entity_maps)
 
 L_T_s_coupling = kappa_T_s * inner(h_f * T_f_n("+"), w_s("-")) * dS_coupling(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
-A_T = fem.petsc.create_matrix(a_T_f)
-b_T = fem.petsc.create_vector(L_T_f)
+A_T_f = fem.petsc.create_matrix(a_T_f)
+b_T_f = fem.petsc.create_vector(L_T_f)
 
-ksp_T = PETSc.KSP().create(msh.comm)
-ksp_T.setOperators(A_T)
-ksp_T.setType("preonly")
-ksp_T.getPC().setType("lu")
-ksp_T.getPC().setFactorSolverType("superlu_dist")
+ksp_T_f = PETSc.KSP().create(msh.comm)
+ksp_T_f.setOperators(A_T_f)
+ksp_T_f.setType("preonly")
+ksp_T_f.getPC().setType("lu")
+ksp_T_f.getPC().setFactorSolverType("superlu_dist")
 
 ksp_T_s = PETSc.KSP().create(msh.comm)
 ksp_T_s.setOperators(A_T_s)
@@ -498,8 +498,8 @@ ksp_T_s.setType("preonly")
 ksp_T_s.getPC().setType("lu")
 ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_f_n._cpp_object])
-T_file.write(t)
+T_f_file = io.VTXWriter(msh.comm, "T_f.bp", [T_f_n._cpp_object])
+T_f_file.write(t)
 
 # FIXME Why is this failing in parallel?
 T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
@@ -545,17 +545,17 @@ for n in range(num_time_steps):
     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
     p_h.x.scatter_forward()
 
-    A_T.zeroEntries()
-    fem.petsc.assemble_matrix(A_T, a_T_f)
-    A_T.assemble()
+    A_T_f.zeroEntries()
+    fem.petsc.assemble_matrix(A_T_f, a_T_f)
+    A_T_f.assemble()
 
-    with b_T.localForm() as b_T_loc:
+    with b_T_f.localForm() as b_T_loc:
         b_T_loc.set(0)
-    fem.petsc.assemble_vector(b_T, L_T_f)
-    fem.petsc.assemble_vector(b_T, L_T_coupling)
-    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    fem.petsc.assemble_vector(b_T_f, L_T_f)
+    fem.petsc.assemble_vector(b_T_f, L_T_f_coupling)
+    b_T_f.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-    ksp_T.solve(b_T, T_f_n.vector)
+    ksp_T_f.solve(b_T_f, T_f_n.vector)
     T_f_n.x.scatter_forward()
 
     with b_T_s.localForm() as b_T_s_loc:
@@ -573,7 +573,7 @@ for n in range(num_time_steps):
     # Write to file
     u_file.write(t)
     p_file.write(t)
-    T_file.write(t)
+    T_f_file.write(t)
     T_s_file.write(t)
 
     # Update u_n
@@ -581,7 +581,7 @@ for n in range(num_time_steps):
 
 u_file.close()
 p_file.close()
-T_file.close()
+T_f_file.close()
 T_s_file.close()
 
 # Compute errors
