@@ -365,7 +365,12 @@ t = 0.0
 u_file.write(t)
 p_file.write(t)
 
-# Solid
+# Create function to store solution and previous time step
+
+u_n = fem.Function(V)
+u_n.x.array[:] = u_h.x.array
+
+# Solid heat diffusion problem
 h_f = 100.0  # Heat transfer coeff
 delta_t_T_s = fem.Constant(
     solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
@@ -381,21 +386,14 @@ A_T_s = fem.petsc.assemble_matrix(a_T_s)
 A_T_s.assemble()
 b_T_s = fem.petsc.create_vector(L_T_s)
 
-T_n = fem.Function(Q)
+# Fluid heat convection-diffusion problem
 
-dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
-neumann_bcs_T = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
-robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0))]
-
-# Create function to store solution and previous time step
-
-u_n = fem.Function(V)
-u_n.x.array[:] = u_h.x.array
+dirichlet_bcs_T_f = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
+neumann_bcs_T_f = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
+robin_bcs_T_f = [(boundary_id["wall"], (0.0, 0.0))]
 
 lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
-
-# FIXME Use u_h not u_n
-a_T = inner(T_f / delta_t, w_f) * dx - \
+a_T_f = inner(T_f / delta_t, w_f) * dx - \
     inner(u_h * T_f, grad(w_f)) * dx + \
     inner(lmbda("+") * dot(u_h("+"), n("+")) * T_f("+") -
           lmbda("-") * dot(u_h("-"), n("-")) * T_f("-"), jump(w_f)) * dS + \
@@ -405,30 +403,32 @@ a_T = inner(T_f / delta_t, w_f) * dx - \
              inner(jump(T_f, n), avg(grad(w_f))) * dS +
              (alpha / avg(h)) * inner(jump(T_f, n), jump(w_f, n)) * dS)
 
-L_T = inner(T_n / delta_t, w_f) * dx
+# Fluid temp at previous time step
+T_f_n = fem.Function(Q)
+L_T_f = inner(T_f_n / delta_t, w_f) * dx
 
-for bc in dirichlet_bcs_T:
+for bc in dirichlet_bcs_T_f:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T += kappa * (- inner(grad(T_f), w_f * n) * ds(bc[0]) -
-                    inner(grad(w_f), T_f * n) * ds(bc[0]) +
-                    (alpha / h) * inner(T_f, w_f) * ds(bc[0]))
-    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w_f) * ds(bc[0]) + \
+    a_T_f += kappa * (- inner(grad(T_f), w_f * n) * ds(bc[0]) -
+                      inner(grad(w_f), T_f * n) * ds(bc[0]) +
+                      (alpha / h) * inner(T_f, w_f) * ds(bc[0]))
+    L_T_f += - inner((1 - lmbda) * dot(u_h, n) * T_D, w_f) * ds(bc[0]) + \
         kappa * (- inner(T_D * n, grad(w_f)) * ds(bc[0]) +
                  (alpha / h) * inner(T_D, w_f) * ds(bc[0]))
 
-for bc in neumann_bcs_T:
+for bc in neumann_bcs_T_f:
     g_T = fem.Function(Q)
     g_T.interpolate(bc[1])
-    L_T += kappa * inner(g_T, w_f) * ds(bc[0])
+    L_T_f += kappa * inner(g_T, w_f) * ds(bc[0])
 
-for bc in robin_bcs_T:
+for bc in robin_bcs_T_f:
     alpha_R, beta_R = bc[1]
-    a_T += kappa * inner(alpha_R * T_f, w_f) * ds(bc[0])
-    L_T += kappa * inner(beta_R, w_f) * ds(bc[0])
+    a_T_f += kappa * inner(alpha_R * T_f, w_f) * ds(bc[0])
+    L_T_f += kappa * inner(beta_R, w_f) * ds(bc[0])
 
 # Obstacle
-a_T += kappa * inner(h_f * T_f, w_f) * ds(boundary_id["obstacle"])
+a_T_f += kappa * inner(h_f * T_f, w_f) * ds(boundary_id["obstacle"])
 
 obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 cell_imap = msh.topology.index_map(tdim)
@@ -476,15 +476,15 @@ dS_coupling = Measure(
 # TODO Add code to suport multiple domains in a single form
 L_T_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_coupling(1)
 
-a_T = fem.form(a_T)
-L_T = fem.form(L_T)
+a_T_f = fem.form(a_T_f)
+L_T_f = fem.form(L_T_f)
 L_T_coupling = fem.form(L_T_coupling, entity_maps=entity_maps)
 
-L_T_s_coupling = kappa_T_s * inner(h_f * T_n("+"), w_s("-")) * dS_coupling(1)
+L_T_s_coupling = kappa_T_s * inner(h_f * T_f_n("+"), w_s("-")) * dS_coupling(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
-A_T = fem.petsc.create_matrix(a_T)
-b_T = fem.petsc.create_vector(L_T)
+A_T = fem.petsc.create_matrix(a_T_f)
+b_T = fem.petsc.create_vector(L_T_f)
 
 ksp_T = PETSc.KSP().create(msh.comm)
 ksp_T.setOperators(A_T)
@@ -498,7 +498,7 @@ ksp_T_s.setType("preonly")
 ksp_T_s.getPC().setType("lu")
 ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
+T_file = io.VTXWriter(msh.comm, "T.bp", [T_f_n._cpp_object])
 T_file.write(t)
 
 # FIXME Why is this failing in parallel?
@@ -546,17 +546,17 @@ for n in range(num_time_steps):
     p_h.x.scatter_forward()
 
     A_T.zeroEntries()
-    fem.petsc.assemble_matrix(A_T, a_T)
+    fem.petsc.assemble_matrix(A_T, a_T_f)
     A_T.assemble()
 
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
-    fem.petsc.assemble_vector(b_T, L_T)
+    fem.petsc.assemble_vector(b_T, L_T_f)
     fem.petsc.assemble_vector(b_T, L_T_coupling)
     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-    ksp_T.solve(b_T, T_n.vector)
-    T_n.x.scatter_forward()
+    ksp_T.solve(b_T, T_f_n.vector)
+    T_f_n.x.scatter_forward()
 
     with b_T_s.localForm() as b_T_s_loc:
         b_T_s_loc.set(0)
