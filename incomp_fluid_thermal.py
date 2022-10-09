@@ -1,5 +1,3 @@
-# FIXME Should either assemble everything over msh or use perms from msh
-
 # ---
 # jupyter:
 #   jupytext:
@@ -177,17 +175,10 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 500
-t_end = 5.0
+num_time_steps = 10
+t_end = 0.1
 R_e = 1000  # Reynolds Number
 k = 2  # Polynomial degree
-
-# Next, we create a mesh and the required functions spaces over
-# it. Since the velocity uses an $H(\textnormal{div})$-conforming function
-# space, we also create a vector valued discontinuous Lagrange space
-# to interpolate into for artifact free visualisation.
-
-# msh, mt, boundary_id = benchmark_mesh.generate()
 
 partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
 msh, ct, ft = io.gmshio.read_from_msh(
@@ -203,32 +194,20 @@ boundary_id = {"inlet": 8,
                "wall": 10,
                "obstacle": 11}
 
-# with io.XDMFFile(msh.comm, "benchmark_mesh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-#     file.write_meshtags(ct)
-#     file.write_meshtags(ft)
-
-# FIXME Don't hardcode values
+# Create fluid submesh
 fluid_cells = ct.indices[ct.values == volume_id["fluid"]]
 tdim = msh.topology.dim
 fluid_submesh, fluid_entity_map = mesh.create_submesh(
     msh, tdim, fluid_cells)[:2]
 
+# Convert meshtags for use on fluid_submesh
 fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, fluid_entity_map, ft)
 
+# Create submesh for cylinder
 solid_cells = ct.indices[ct.values == volume_id["solid"]]
 solid_submesh, solid_entity_map = mesh.create_submesh(
     msh, tdim, solid_cells)[:2]
 
-# with io.XDMFFile(msh.comm, "fluid_submesh.xdmf", "w") as file:
-#     file.write_mesh(fluid_submesh)
-#     fluid_submesh.topology.create_connectivity(tdim - 1, tdim)
-#     file.write_meshtags(fluid_submesh_ft)
-
-# with io.XDMFFile(msh.comm, "solid_submesh.xdmf", "w") as file:
-#     file.write_mesh(solid_submesh)
-
-# # msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 # Function space for the velocity
 V = fem.FunctionSpace(fluid_submesh, ("Raviart-Thomas", k + 1))
 # Function space for the pressure
@@ -237,10 +216,6 @@ Q = fem.FunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k))
 W = fem.VectorFunctionSpace(fluid_submesh, ("Discontinuous Lagrange", k + 1))
 # Function space for the solid domain
 X = fem.FunctionSpace(solid_submesh, ("Lagrange", k))
-
-# with io.XDMFFile(msh.comm, "T_s.xdmf", "w") as file:
-#     file.write_mesh(solid_submesh)
-#     file.write_function(T_s)
 
 # Define trial and test functions
 
