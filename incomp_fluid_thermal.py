@@ -152,7 +152,7 @@ import ufl
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  inner, grad, dx, dS, avg, outer, div, conditional,
                  gt, dot, Measure)
-from ufl import jump as jump_T
+from ufl import jump
 from utils import convert_facet_tags
 
 # We also define some helper functions that will be used later
@@ -252,7 +252,7 @@ h = CellDiameter(fluid_submesh)
 n = FacetNormal(fluid_submesh)
 
 
-def jump(phi, n):
+def jump_ns(phi, n):
     return outer(phi("+"), n("+")) + outer(phi("-"), n("-"))
 
 
@@ -260,9 +260,9 @@ def jump(phi, n):
 # terms are omitted for now
 
 a_00 = 1 / R_e_const * (inner(grad(u), grad(v)) * dx
-                        - inner(avg(grad(u)), jump(v, n)) * dS
-                        - inner(jump(u, n), avg(grad(v))) * dS
-                        + alpha / avg(h) * inner(jump(u, n), jump(v, n)) * dS)
+                        - inner(avg(grad(u)), jump_ns(v, n)) * dS
+                        - inner(jump_ns(u, n), avg(grad(v))) * dS
+                        + alpha / avg(h) * inner(jump_ns(u, n), jump_ns(v, n)) * dS)
 a_01 = - inner(p, div(v)) * dx
 a_10 = - inner(div(u), q) * dx
 a_11 = fem.Constant(fluid_submesh, PETSc.ScalarType(0.0)) * inner(p, q) * dx
@@ -398,12 +398,12 @@ lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 a_T = inner(T_f / delta_t, w_f) * dx - \
     inner(u_h * T_f, grad(w_f)) * dx + \
     inner(lmbda("+") * dot(u_h("+"), n("+")) * T_f("+") -
-          lmbda("-") * dot(u_h("-"), n("-")) * T_f("-"), jump_T(w_f)) * dS + \
+          lmbda("-") * dot(u_h("-"), n("-")) * T_f("-"), jump(w_f)) * dS + \
     inner(lmbda * dot(u_h, n) * T_f, w_f) * ds + \
     kappa * (inner(grad(T_f), grad(w_f)) * dx -
-             inner(avg(grad(T_f)), jump_T(w_f, n)) * dS -
-             inner(jump_T(T_f, n), avg(grad(w_f))) * dS +
-             (alpha / avg(h)) * inner(jump_T(T_f, n), jump_T(w_f, n)) * dS)
+             inner(avg(grad(T_f)), jump(w_f, n)) * dS -
+             inner(jump(T_f, n), avg(grad(w_f))) * dS +
+             (alpha / avg(h)) * inner(jump(T_f, n), jump(w_f, n)) * dS)
 
 L_T = inner(T_n / delta_t, w_f) * dx
 
