@@ -219,13 +219,16 @@ X = fem.FunctionSpace(solid_submesh, ("Lagrange", k))
 
 # Define trial and test functions
 
+# Velocity
 u, v = TrialFunction(V), TestFunction(V)
+# Pressure
 p, q = TrialFunction(Q), TestFunction(Q)
-T, w = TrialFunction(Q), TestFunction(Q)
+# Fluid temperature
+T_f, w_f = TrialFunction(Q), TestFunction(Q)
+# Solid temperature
 T_s, w_s = TrialFunction(X), TestFunction(X)
 
-T_s_n = fem.Function(X)
-
+# Define some constants
 delta_t = fem.Constant(fluid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 alpha = fem.Constant(fluid_submesh, PETSc.ScalarType(6.0 * k**2))
 alpha_T = fem.Constant(fluid_submesh, PETSc.ScalarType(10.0 * k**2))
@@ -233,10 +236,13 @@ R_e_const = fem.Constant(fluid_submesh, PETSc.ScalarType(R_e))
 kappa = fem.Constant(fluid_submesh, PETSc.ScalarType(0.01))
 
 # List of tuples of form (id, expression)
-dirichlet_bcs = [(boundary_id["inlet"], lambda x: np.vstack(((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
-                 (boundary_id["wall"], lambda x: np.vstack(
-                     (np.zeros_like(x[0]), np.zeros_like(x[0])))),
-                 (boundary_id["obstacle"], lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]))))]
+dirichlet_bcs = [
+    (boundary_id["inlet"], lambda x: np.vstack(
+        ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
+    (boundary_id["wall"], lambda x: np.vstack(
+        (np.zeros_like(x[0]), np.zeros_like(x[0])))),
+    (boundary_id["obstacle"], lambda x: np.vstack(
+        (np.zeros_like(x[0]), np.zeros_like(x[0]))))]
 neumann_bcs = [(boundary_id["outlet"], fem.Constant(
     fluid_submesh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
 
@@ -367,6 +373,8 @@ kappa_T_s = fem.Constant(solid_submesh, PETSc.ScalarType(0.1))
 a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
                  + kappa_T_s * inner(grad(T_s), grad(w_s)) * dx
                  + kappa_T_s * inner(h_f * T_s, w_s) * ufl.ds)
+# Solid temperature at previous time step
+T_s_n = fem.Function(X)
 L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
 
 A_T_s = fem.petsc.assemble_matrix(a_T_s)
@@ -387,40 +395,40 @@ u_n.x.array[:] = u_h.x.array
 lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 
 # FIXME Use u_h not u_n
-a_T = inner(T / delta_t, w) * dx - \
-    inner(u_h * T, grad(w)) * dx + \
-    inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
-          lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
-    inner(lmbda * dot(u_h, n) * T, w) * ds + \
-    kappa * (inner(grad(T), grad(w)) * dx -
-             inner(avg(grad(T)), jump_T(w, n)) * dS -
-             inner(jump_T(T, n), avg(grad(w))) * dS +
-             (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
+a_T = inner(T_f / delta_t, w_f) * dx - \
+    inner(u_h * T_f, grad(w_f)) * dx + \
+    inner(lmbda("+") * dot(u_h("+"), n("+")) * T_f("+") -
+          lmbda("-") * dot(u_h("-"), n("-")) * T_f("-"), jump_T(w_f)) * dS + \
+    inner(lmbda * dot(u_h, n) * T_f, w_f) * ds + \
+    kappa * (inner(grad(T_f), grad(w_f)) * dx -
+             inner(avg(grad(T_f)), jump_T(w_f, n)) * dS -
+             inner(jump_T(T_f, n), avg(grad(w_f))) * dS +
+             (alpha / avg(h)) * inner(jump_T(T_f, n), jump_T(w_f, n)) * dS)
 
-L_T = inner(T_n / delta_t, w) * dx
+L_T = inner(T_n / delta_t, w_f) * dx
 
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T += kappa * (- inner(grad(T), w * n) * ds(bc[0]) -
-                    inner(grad(w), T * n) * ds(bc[0]) +
-                    (alpha / h) * inner(T, w) * ds(bc[0]))
-    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds(bc[0]) + \
-        kappa * (- inner(T_D * n, grad(w)) * ds(bc[0]) +
-                 (alpha / h) * inner(T_D, w) * ds(bc[0]))
+    a_T += kappa * (- inner(grad(T_f), w_f * n) * ds(bc[0]) -
+                    inner(grad(w_f), T_f * n) * ds(bc[0]) +
+                    (alpha / h) * inner(T_f, w_f) * ds(bc[0]))
+    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w_f) * ds(bc[0]) + \
+        kappa * (- inner(T_D * n, grad(w_f)) * ds(bc[0]) +
+                 (alpha / h) * inner(T_D, w_f) * ds(bc[0]))
 
 for bc in neumann_bcs_T:
     g_T = fem.Function(Q)
     g_T.interpolate(bc[1])
-    L_T += kappa * inner(g_T, w) * ds(bc[0])
+    L_T += kappa * inner(g_T, w_f) * ds(bc[0])
 
 for bc in robin_bcs_T:
     alpha_R, beta_R = bc[1]
-    a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
-    L_T += kappa * inner(beta_R, w) * ds(bc[0])
+    a_T += kappa * inner(alpha_R * T_f, w_f) * ds(bc[0])
+    L_T += kappa * inner(beta_R, w_f) * ds(bc[0])
 
 # Obstacle
-a_T += kappa * inner(h_f * T, w) * ds(boundary_id["obstacle"])
+a_T += kappa * inner(h_f * T_f, w_f) * ds(boundary_id["obstacle"])
 
 obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 cell_imap = msh.topology.index_map(tdim)
@@ -462,10 +470,11 @@ for facet in obstacle_facets:
         # Same hack for the right submesh
         entity_maps[solid_submesh][cell_plus] = \
             entity_maps[solid_submesh][cell_minus]
-dS_coupling = Measure("dS", domain=msh, subdomain_data=facet_integration_entities)
+dS_coupling = Measure(
+    "dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_coupling = kappa * inner(h_f * T_s_n("-"), w("+")) * dS_coupling(1)
+L_T_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_coupling(1)
 
 a_T = fem.form(a_T)
 L_T = fem.form(L_T)
