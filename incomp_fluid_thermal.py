@@ -501,9 +501,12 @@ ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 T_f_file = io.VTXWriter(msh.comm, "T_f.bp", [T_f_n._cpp_object])
 T_f_file.write(t)
 
-# FIXME Why is this failing in parallel?
-T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
-T_s_file.write(t)
+# FIXME Why won't T_s.bp output upen when written in parallel?
+# T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
+# T_s_file.write(t)
+T_s_file = io.XDMFFile(msh.comm, "T_s.xdmf", "w")
+T_s_file.write_mesh(solid_submesh)
+T_s_file.write_function(T_s_n, t)
 
 # Now we add the time stepping and convective terms
 
@@ -553,7 +556,8 @@ for n in range(num_time_steps):
         b_T_loc.set(0)
     fem.petsc.assemble_vector(b_T_f, L_T_f)
     fem.petsc.assemble_vector(b_T_f, L_T_f_coupling)
-    b_T_f.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    b_T_f.ghostUpdate(addv=PETSc.InsertMode.ADD,
+                      mode=PETSc.ScatterMode.REVERSE)
 
     ksp_T_f.solve(b_T_f, T_f_n.vector)
     T_f_n.x.scatter_forward()
@@ -574,7 +578,7 @@ for n in range(num_time_steps):
     u_file.write(t)
     p_file.write(t)
     T_f_file.write(t)
-    T_s_file.write(t)
+    T_s_file.write_function(T_s_n, t)
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
