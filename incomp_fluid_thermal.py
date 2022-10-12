@@ -476,6 +476,8 @@ dS_i = Measure(
     "dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
+# NOTE Could also add this term to the L_T_f form, instead of
+# assembling an extra vector
 L_T_f_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_i(1)
 
 a_T_f = fem.form(a_T_f)
