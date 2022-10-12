@@ -440,6 +440,7 @@ entity_maps = {fluid_submesh: [fluid_entity_map.index(entity)
                                if entity in solid_entity_map else -1
                                for entity in range(num_cells)]}
 
+# HACK to integrate interface terms
 facet_integration_entities = {1: []}
 fdim = tdim - 1
 facet_imap = msh.topology.index_map(fdim)
@@ -470,17 +471,18 @@ for facet in obstacle_facets:
         # Same hack for the right submesh
         entity_maps[solid_submesh][cell_plus] = \
             entity_maps[solid_submesh][cell_minus]
-dS_coupling = Measure(
+# Create measure for interface
+dS_i = Measure(
     "dS", domain=msh, subdomain_data=facet_integration_entities)
 
 # TODO Add code to suport multiple domains in a single form
-L_T_f_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_coupling(1)
+L_T_f_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_i(1)
 
 a_T_f = fem.form(a_T_f)
 L_T_f = fem.form(L_T_f)
 L_T_f_coupling = fem.form(L_T_f_coupling, entity_maps=entity_maps)
 
-L_T_s_coupling = kappa_T_s * inner(h_f * T_f_n("+"), w_s("-")) * dS_coupling(1)
+L_T_s_coupling = kappa_T_s * inner(h_f * T_f_n("+"), w_s("-")) * dS_i(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
 A_T_f = fem.petsc.create_matrix(a_T_f)
