@@ -175,24 +175,30 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 10
-t_end = 0.1
+num_time_steps = 1
+t_end = 0.01
 R_e = 1000  # Reynolds Number
 k = 2  # Polynomial degree
 
 partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
 msh, ct, ft = io.gmshio.read_from_msh(
-    "benchmark.msh", MPI.COMM_WORLD, gdim=2, partitioner=partitioner)
+    "benchmark_3D.msh", MPI.COMM_WORLD, gdim=3, partitioner=partitioner)
 msh.name = "benchmark"
 ct.name = f"{msh.name}_cells"
 ft.name = f"{msh.name}_facets"
 
-volume_id = {"fluid": 6,
-             "solid": 7}
-boundary_id = {"inlet": 8,
-               "outlet": 9,
-               "wall": 10,
-               "obstacle": 11}
+# with io.XDMFFile(msh.comm, "benchmark.xdmf", "w") as file:
+#     file.write_mesh(msh)
+#     file.write_meshtags(ct)
+#     msh.topology.create_connectivity(msh.topology.dim - 1, msh.topology.dim)
+#     file.write_meshtags(ft)
+
+volume_id = {"fluid": 28,
+             "solid": 29}
+boundary_id = {"inlet": 30,
+               "outlet": 31,
+               "wall": 32,
+               "obstacle": 33}
 
 # Create fluid submesh
 fluid_cells = ct.indices[ct.values == volume_id["fluid"]]
@@ -238,13 +244,14 @@ kappa = fem.Constant(fluid_submesh, PETSc.ScalarType(0.01))
 # List of tuples of form (id, expression)
 dirichlet_bcs = [
     (boundary_id["inlet"], lambda x: np.vstack(
-        ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))),
+        (1.5 * 16 / 0.41**2 * x[1] * (1 - x[1] / 0.41) * x[2] * (1 - x[2] / 0.41),
+         np.zeros_like(x[0]), np.zeros_like(x[0])))),
     (boundary_id["wall"], lambda x: np.vstack(
-        (np.zeros_like(x[0]), np.zeros_like(x[0])))),
+        (np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0])))),
     (boundary_id["obstacle"], lambda x: np.vstack(
-        (np.zeros_like(x[0]), np.zeros_like(x[0]))))]
+        (np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0]))))]
 neumann_bcs = [(boundary_id["outlet"], fem.Constant(
-    fluid_submesh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
+    fluid_submesh, np.array([0.0, 0.0, 0.0], dtype=PETSc.ScalarType)))]
 
 ds = Measure("ds", domain=fluid_submesh, subdomain_data=fluid_submesh_ft)
 
