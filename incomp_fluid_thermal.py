@@ -177,6 +177,12 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
+def par_print(string):
+    if msh.comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
+
+
 # We define some simulation parameters
 
 num_time_steps = 10
@@ -204,19 +210,28 @@ boundary_id = {"inlet": 30,
                "wall": 32,
                "obstacle": 33}
 
+
+par_print("Creating fluid submesh")
+
 # Create fluid submesh
 fluid_cells = ct.indices[ct.values == volume_id["fluid"]]
 tdim = msh.topology.dim
 fluid_submesh, fluid_entity_map = mesh.create_submesh(
     msh, tdim, fluid_cells)[:2]
 
+par_print("Converting facet tags")
+
 # Convert meshtags for use on fluid_submesh
 fluid_submesh_ft = convert_facet_tags(msh, fluid_submesh, fluid_entity_map, ft)
+
+par_print("Create solid submesh")
 
 # Create submesh for cylinder
 solid_cells = ct.indices[ct.values == volume_id["solid"]]
 solid_submesh, solid_entity_map = mesh.create_submesh(
     msh, tdim, solid_cells)[:2]
+
+par_print("Creating function spaces")
 
 # Function space for the velocity
 V = fem.FunctionSpace(fluid_submesh, ("Raviart-Thomas", k + 1))
@@ -305,6 +320,8 @@ for bc in dirichlet_bcs:
 for bc in neumann_bcs:
     L_0 += 1 / R_e_const * inner(bc[1], v) * ds(bc[0])
 
+par_print("Compiling forms")
+
 a = fem.form([[a_00, a_01],
               [a_10, a_11]])
 L = fem.form([L_0,
@@ -329,6 +346,8 @@ if len(neumann_bcs) == 0:
 
 # Assemble Stokes problem
 
+par_print("Assembling Stokes")
+
 A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
@@ -349,6 +368,8 @@ opts["ksp_error_if_not_converged"] = 1
 ksp.setFromOptions()
 
 # Solve Stokes for initial condition
+
+par_print("Solving Stokes")
 
 x = A.createVecRight()
 ksp.solve(b, x)
@@ -381,6 +402,8 @@ p_file.write(t)
 u_n = fem.Function(V)
 u_n.x.array[:] = u_h.x.array
 
+par_print("Compile solid forms")
+
 # Solid heat diffusion problem
 h_f = 100.0  # Heat transfer coeff
 delta_t_T_s = fem.Constant(
@@ -392,6 +415,8 @@ a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
 # Solid temperature at previous time step
 T_s_n = fem.Function(X)
 L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
+
+par_print("Assemble solid forms")
 
 A_T_s = fem.petsc.assemble_matrix(a_T_s)
 A_T_s.assemble()
@@ -437,6 +462,8 @@ for bc in robin_bcs_T_f:
     alpha_R, beta_R = bc[1]
     a_T_f += kappa * inner(alpha_R * T_f, w_f) * ds(bc[0])
     L_T_f += kappa * inner(beta_R, w_f) * ds(bc[0])
+
+par_print("Integration entities for obstacle")
 
 # Obstacle
 a_T_f += kappa * inner(h_f * T_f, w_f) * ds(boundary_id["obstacle"])
@@ -486,6 +513,8 @@ for facet in obstacle_facets:
 dS_i = Measure(
     "dS", domain=msh, subdomain_data=facet_integration_entities)
 
+par_print("Compile coupling forms")
+
 # TODO Add code to suport multiple domains in a single form
 # NOTE Could also add this term to the L_T_f form, instead of
 # assembling an extra vector
@@ -516,6 +545,8 @@ ksp_T_s.getPC().setFactorSolverType("superlu_dist")
 T_f_file = io.VTXWriter(msh.comm, "T_f.bp", [T_f_n._cpp_object])
 T_f_file.write(t)
 
+par_print("Write T_s")
+
 # FIXME Why won't T_s.bp output upen when written in parallel?
 # T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
 # T_s_file.write(t)
@@ -524,6 +555,8 @@ T_s_file.write_mesh(solid_submesh)
 T_s_file.write_function(T_s_n, t)
 
 # Now we add the time stepping and convective terms
+
+par_print("Add convective forms")
 
 u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
 a_00 += inner(u / delta_t, v) * dx - \
@@ -546,11 +579,11 @@ L = fem.form([L_0,
 # Time stepping loop
 
 for n in range(num_time_steps):
-    if msh.comm.rank == 0:
-        print(f"Step {n} of {num_time_steps}")
-        sys.stdout.flush()
+    par_print(f"Step {n} of {num_time_steps}")
 
     t += delta_t.value
+
+    par_print("Assembling fluid problem")
 
     A.zeroEntries()
     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
@@ -560,12 +593,16 @@ for n in range(num_time_steps):
         b_loc.set(0)
     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
+    par_print("Solving fluid problem")
+
     # Compute solution
     ksp.solve(b, x)
     u_h.x.array[:offset] = x.array_r[:offset]
     u_h.x.scatter_forward()
     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
     p_h.x.scatter_forward()
+
+    par_print("Solve convection-diffusion problem")
 
     A_T_f.zeroEntries()
     fem.petsc.assemble_matrix(A_T_f, a_T_f)
@@ -581,6 +618,8 @@ for n in range(num_time_steps):
     ksp_T_f.solve(b_T_f, T_f_n.vector)
     T_f_n.x.scatter_forward()
 
+    par_print("Assemble diffusion problem")
+
     with b_T_s.localForm() as b_T_s_loc:
         b_T_s_loc.set(0)
     fem.petsc.assemble_vector(b_T_s, L_T_s)
@@ -588,10 +627,14 @@ for n in range(num_time_steps):
     b_T_s.ghostUpdate(
         addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
+    par_print("Solve diffusion problem")
+
     ksp_T_s.solve(b_T_s, T_s_n.vector)
     T_s_n.x.scatter_forward()
 
     u_vis.interpolate(u_h)
+
+    par_print("Write to file")
 
     # Write to file
     u_file.write(t)
