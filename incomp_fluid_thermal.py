@@ -147,6 +147,7 @@
 # ## Implementation
 # We begin by importing the required modules and functions
 
+import sys
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -545,6 +546,10 @@ L = fem.form([L_0,
 # Time stepping loop
 
 for n in range(num_time_steps):
+    if msh.comm.rank == 0:
+        print(f"Step {n} of {num_time_steps}")
+        sys.stdout.flush()
+
     t += delta_t.value
 
     A.zeroEntries()
