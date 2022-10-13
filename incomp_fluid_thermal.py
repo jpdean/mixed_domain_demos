@@ -1,3 +1,6 @@
+# NOTE: Create mesh with
+# gmsh benchmark_3D.geo -o benchmark_3D.msh -3 -order 1 -clmin 0.001 -clmax 0.1 -clcurv 15 -optimize_netgen
+
 # ---
 # jupyter:
 #   jupytext:
