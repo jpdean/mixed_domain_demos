@@ -182,7 +182,7 @@ k = 2  # Polynomial degree
 
 partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
 msh, ct, ft = io.gmshio.read_from_msh(
-    "benchmark.msh", MPI.COMM_WORLD, gdim=2, partitioner=partitioner)
+    "benchmark_2.msh", MPI.COMM_WORLD, gdim=2, partitioner=partitioner)
 msh.name = "benchmark"
 ct.name = f"{msh.name}_cells"
 ft.name = f"{msh.name}_facets"
