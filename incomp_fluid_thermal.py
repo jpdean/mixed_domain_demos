@@ -490,16 +490,20 @@ a_T_f = fem.form(a_T_f)
 n_m = ufl.FacetNormal(msh)
 h_m = CellDiameter(msh)
 alpha_m = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-L_T_f_coupling = kappa * (- 0.5 * inner(grad(T_s_n("-")), w_f("+") * n_m("+"))
-                          - 0.5 * inner(grad(w_f("+")), T_s_n("-") * n_m("-"))
-                          + alpha_m / avg(h_m) * inner(T_s_n("-") * n_m("-"), w_f("+") * n_m("+"))) * dS_i(1)
+# Minus sign due to moving terms over from LHS
+L_T_f_coupling = - kappa * (- 0.5 * inner(grad(T_s_n("-")), w_f("+") * n_m("+"))
+                            - 0.5 * inner(grad(w_f("+")),
+                                          T_s_n("-") * n_m("-"))
+                            + alpha_m / avg(h_m) * inner(T_s_n("-") * n_m("-"), w_f("+") * n_m("+"))) * dS_i(1)
 
 L_T_f = fem.form(L_T_f)
 L_T_f_coupling = fem.form(L_T_f_coupling, entity_maps=entity_maps)
 
-L_T_s_coupling = kappa_T_s * (- 0.5 * inner(grad(T_f_n("+")), w_s("-") * n_m("-"))
-                              - 0.5 * inner(grad(w_s("-")), T_f_n("+") * n_m("+"))
-                              + alpha_m / avg(h_m) * inner(T_f_n("+") * n_m("+"), w_s("-") * n_m("-"))) * dS_i(1)
+# Minus sign due to moving terms over from LHS
+L_T_s_coupling = - kappa_T_s * (- 0.5 * inner(grad(T_f_n("+")), w_s("-") * n_m("-"))
+                                - 0.5 * inner(grad(w_s("-")),
+                                              T_f_n("+") * n_m("+"))
+                                + alpha_m / avg(h_m) * inner(T_f_n("+") * n_m("+"), w_s("-") * n_m("-"))) * dS_i(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
 A_T_f = fem.petsc.create_matrix(a_T_f)
