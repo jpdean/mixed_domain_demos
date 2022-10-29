@@ -231,6 +231,7 @@ T_s, w_s = TrialFunction(X), TestFunction(X)
 # Define some constants
 delta_t = fem.Constant(fluid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 alpha = fem.Constant(fluid_submesh, PETSc.ScalarType(6.0 * k**2))
+# FIXME This isn't used
 alpha_T = fem.Constant(fluid_submesh, PETSc.ScalarType(10.0 * k**2))
 R_e_const = fem.Constant(fluid_submesh, PETSc.ScalarType(R_e))
 kappa = fem.Constant(fluid_submesh, PETSc.ScalarType(0.01))
@@ -371,13 +372,18 @@ u_n = fem.Function(V)
 u_n.x.array[:] = u_h.x.array
 
 # Solid heat diffusion problem
-h_f = 100.0  # Heat transfer coeff
+n_s = FacetNormal(solid_submesh)
+h_s = CellDiameter(solid_submesh)
+alpha_s = fem.Constant(solid_submesh, PETSc.ScalarType(6.0 * k**2))
+
 delta_t_T_s = fem.Constant(
     solid_submesh, PETSc.ScalarType(t_end / num_time_steps))
 kappa_T_s = fem.Constant(solid_submesh, PETSc.ScalarType(0.1))
 a_T_s = fem.form(inner(T_s / delta_t_T_s, w_s) * dx
                  + kappa_T_s * inner(grad(T_s), grad(w_s)) * dx
-                 + kappa_T_s * inner(h_f * T_s, w_s) * ufl.ds)
+                 - kappa_T_s * 0.5 * inner(grad(T_s), w_s * n_s) * ufl.ds
+                 - kappa_T_s * 0.5 * inner(grad(w_s), T_s * n_s) * ufl.ds
+                 + kappa_T_s * alpha_s / h_s * inner(T_s * n_s, w_s * n_s) * ufl.ds)
 # Solid temperature at previous time step
 T_s_n = fem.Function(X)
 L_T_s = fem.form(inner(T_s_n / delta_t_T_s + 1.0, w_s) * dx)
@@ -428,7 +434,8 @@ for bc in robin_bcs_T_f:
     L_T_f += kappa * inner(beta_R, w_f) * ds(bc[0])
 
 # Obstacle
-a_T_f += kappa * inner(h_f * T_f, w_f) * ds(boundary_id["obstacle"])
+a_T_f += kappa * (- 0.5 * inner(grad(T_f), w_f * n) - 0.5 * inner(grad(w_f), T_f * n)
+                  + alpha / h * inner(T_f * n, w_f * n)) * ds(boundary_id["obstacle"])
 
 obstacle_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 cell_imap = msh.topology.index_map(tdim)
@@ -475,16 +482,24 @@ for facet in obstacle_facets:
 dS_i = Measure(
     "dS", domain=msh, subdomain_data=facet_integration_entities)
 
+a_T_f = fem.form(a_T_f)
+
 # TODO Add code to suport multiple domains in a single form
 # NOTE Could also add this term to the L_T_f form, instead of
 # assembling an extra vector
-L_T_f_coupling = kappa * inner(h_f * T_s_n("-"), w_f("+")) * dS_i(1)
+n_m = ufl.FacetNormal(msh)
+h_m = CellDiameter(msh)
+alpha_m = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
+L_T_f_coupling = kappa * (- 0.5 * inner(grad(T_s_n("-")), w_f("+") * n_m("+"))
+                          - 0.5 * inner(grad(w_f("+")), T_s_n("-") * n_m("-"))
+                          + alpha_m / avg(h_m) * inner(T_s_n("-") * n_m("-"), w_f("+") * n_m("+"))) * dS_i(1)
 
-a_T_f = fem.form(a_T_f)
 L_T_f = fem.form(L_T_f)
 L_T_f_coupling = fem.form(L_T_f_coupling, entity_maps=entity_maps)
 
-L_T_s_coupling = kappa_T_s * inner(h_f * T_f_n("+"), w_s("-")) * dS_i(1)
+L_T_s_coupling = kappa_T_s * (- 0.5 * inner(grad(T_f_n("+")), w_s("-") * n_m("-"))
+                              - 0.5 * inner(grad(w_s("-")), T_f_n("+") * n_m("+"))
+                              + alpha_m / avg(h_m) * inner(T_f_n("+") * n_m("+"), w_s("-") * n_m("-"))) * dS_i(1)
 L_T_s_coupling = fem.form(L_T_s_coupling, entity_maps=entity_maps)
 
 A_T_f = fem.petsc.create_matrix(a_T_f)
