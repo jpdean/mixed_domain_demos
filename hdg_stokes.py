@@ -117,8 +117,7 @@ def boundary(x):
 
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
-facet_mesh_boundary_facets = [inv_entity_map[facet]
-                              for facet in msh_boundary_facets]
+facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc_ubar = fem.dirichletbc(np.zeros(2, dtype=PETSc.ScalarType), dofs, Vbar)
 
