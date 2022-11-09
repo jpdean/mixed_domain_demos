@@ -80,8 +80,14 @@ def p_e(x):
 
 x = ufl.SpatialCoordinate(msh)
 f = - div(grad(u_e(x))) + grad(p_e(x))
+u_n = fem.Function(V)
 
-a_00 = fem.form(inner(grad(u), grad(v)) * dx_c + gamma * inner(u, v) * ds_c(1)
+delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
+num_time_steps = 1
+
+a_00 = fem.form(inner(u / delta_t, v) * dx_c
+                + inner(grad(u), grad(v)) * dx_c +
+                gamma * inner(u, v) * ds_c(1)
                 - (inner(u, dot(grad(v), n))
                    + inner(v, dot(grad(u), n))) * ds_c(1))
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
@@ -98,7 +104,7 @@ a_20 = fem.form(inner(vbar, dot(grad(u), n)) * ds_c(1)
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
 a_22 = fem.form(gamma * inner(ubar, vbar) * ds_c(1), entity_maps=entity_maps)
 
-L_0 = fem.form(inner(f, v) * dx_c)
+L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(ufl.as_vector((1e-9, 1e-9)), vbar) * dx_f)
 L_3 = fem.form(inner(fem.Constant(facet_mesh, 0.0), qbar) * dx_f)
@@ -133,7 +139,6 @@ bcs = [bc_ubar, bc_p]
 
 A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
-b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -141,12 +146,10 @@ ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("superlu_dist")
 
-# Compute solution
+b = fem.petsc.create_vector_block(L)
 x = A.createVecRight()
-ksp.solve(b, x)
 
-u_h = fem.Function(V)
-u_h.name = "u"
+u_n.name = "u"
 p_h = fem.Function(Q)
 p_h.name = "p"
 ubar_h = fem.Function(Vbar)
@@ -154,31 +157,48 @@ ubar_h.name = "ubar"
 pbar_h = fem.Function(Qbar)
 pbar_h.name = "pbar"
 
-u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-ubar_offset = \
-    p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
-u_h.x.array[:u_offset] = x.array_r[:u_offset]
-u_h.x.scatter_forward()
-p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
-p_h.x.scatter_forward()
-ubar_h.x.array[:ubar_offset - p_offset] = x.array_r[p_offset:ubar_offset]
-ubar_h.x.scatter_forward()
-pbar_h.x.array[:(len(x.array_r) - ubar_offset)] = x.array_r[ubar_offset:]
-pbar_h.x.scatter_forward()
+u_file = io.VTXWriter(msh.comm, "u.bp", [u_n._cpp_object])
+p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
+ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_h._cpp_object])
+pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
 
-with io.VTXWriter(msh.comm, "u.bp", u_h) as f:
-    f.write(0.0)
-with io.VTXWriter(msh.comm, "p.bp", p_h) as f:
-    f.write(0.0)
-with io.VTXWriter(msh.comm, "ubar.bp", ubar_h) as f:
-    f.write(0.0)
-with io.VTXWriter(msh.comm, "pbar.bp", pbar_h) as f:
-    f.write(0.0)
+u_file.write(0.0)
+p_file.write(0.0)
+ubar_file.write(0.0)
+pbar_file.write(0.0)
+
+t = 0.0
+for n in range(num_time_steps):
+    t += delta_t.value
+
+    with b.localForm() as b_loc:
+        b_loc.set(0)
+    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+
+    # Compute solution
+    ksp.solve(b, x)
+
+    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = \
+        p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
+    u_n.x.array[:u_offset] = x.array_r[:u_offset]
+    u_n.x.scatter_forward()
+    p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+    p_h.x.scatter_forward()
+    ubar_h.x.array[:ubar_offset - p_offset] = x.array_r[p_offset:ubar_offset]
+    ubar_h.x.scatter_forward()
+    pbar_h.x.array[:(len(x.array_r) - ubar_offset)] = x.array_r[ubar_offset:]
+    pbar_h.x.scatter_forward()
+
+    u_file.write(t)
+    p_file.write(t)
+    ubar_file.write(t)
+    pbar_file.write(t)
 
 x = ufl.SpatialCoordinate(msh)
-e_u = norm_L2(msh.comm, u_h - u_e(x))
-e_div_u = norm_L2(msh.comm, div(u_h))
+e_u = norm_L2(msh.comm, u_n - u_e(x))
+e_div_u = norm_L2(msh.comm, div(u_n))
 p_h_avg = domain_average(msh, p_h)
 p_e_avg = domain_average(msh, p_e(x))
 e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
