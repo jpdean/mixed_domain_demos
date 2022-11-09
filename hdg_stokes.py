@@ -62,7 +62,9 @@ dx_c = ufl.Measure("dx", domain=msh)
 ds_c = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-inv_entity_map = [entity_map.index(entity) for entity in facets]
+inv_entity_map = np.full_like(entity_map, -1)
+for i, f in enumerate(entity_map):
+    inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
 
