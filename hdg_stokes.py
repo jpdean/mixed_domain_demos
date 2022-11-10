@@ -5,7 +5,7 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import reorder_mesh, norm_L2, domain_average
+from utils import reorder_mesh, norm_L2, domain_average, normal_jump_error
 
 
 comm = MPI.COMM_WORLD
@@ -199,6 +199,7 @@ for n in range(num_time_steps):
 x = ufl.SpatialCoordinate(msh)
 e_u = norm_L2(msh.comm, u_n - u_e(x))
 e_div_u = norm_L2(msh.comm, div(u_n))
+e_jump_u = normal_jump_error(msh, u_n)
 p_h_avg = domain_average(msh, p_h)
 p_e_avg = domain_average(msh, p_e(x))
 e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
@@ -212,6 +213,7 @@ e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
 if rank == 0:
     print(f"e_u = {e_u}")
     print(f"e_div_u = {e_div_u}")
+    print(f"e_jump_u = {e_jump_u}")
     print(f"e_p = {e_p}")
     print(f"e_ubar = {e_ubar}")
     print(f"e_pbar = {e_pbar}")

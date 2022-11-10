@@ -30,9 +30,9 @@ def reorder_mesh(msh):
             geom_dofmap.array[i:i+num_cell_vertices][geom_perm]
 
 
-def norm_L2(comm, v):
+def norm_L2(comm, v, measure=ufl.dx):
     return np.sqrt(comm.allreduce(fem.assemble_scalar(
-        fem.form(ufl.inner(v, v) * ufl.dx)), op=MPI.SUM))
+        fem.form(ufl.inner(v, v) * measure)), op=MPI.SUM))
 
 
 def domain_average(msh, v):
@@ -42,6 +42,11 @@ def domain_average(msh, v):
             fem.Constant(msh, PETSc.ScalarType(1.0)) * ufl.dx)), op=MPI.SUM)
     return 1 / vol * msh.comm.allreduce(
         fem.assemble_scalar(fem.form(v * ufl.dx)), op=MPI.SUM)
+
+
+def normal_jump_error(msh, v):
+    n = ufl.FacetNormal(msh)
+    return norm_L2(msh.comm, ufl.jump(v, n), measure=ufl.dS)
 
 
 # FIXME This should be a C++ helper function
