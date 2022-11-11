@@ -81,7 +81,7 @@ def p_e(x):
 x = ufl.SpatialCoordinate(msh)
 f = - div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
-lmbda = ufl.conditional(ufl.gt(dot(u_n, n), 0), 1, 0)
+lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
 
 delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
 num_time_steps = 1
