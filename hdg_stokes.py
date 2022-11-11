@@ -81,6 +81,7 @@ def p_e(x):
 x = ufl.SpatialCoordinate(msh)
 f = - div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
+lmbda = ufl.conditional(ufl.gt(dot(u_n, n), 0), 1, 0)
 
 delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
 num_time_steps = 1
@@ -137,8 +138,7 @@ bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
 bcs = [bc_ubar, bc_p]
 
-A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-A.assemble()
+A = fem.petsc.create_matrix_block(a)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -170,6 +170,10 @@ pbar_file.write(0.0)
 t = 0.0
 for n in range(num_time_steps):
     t += delta_t.value
+
+    A.zeroEntries()
+    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+    A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
