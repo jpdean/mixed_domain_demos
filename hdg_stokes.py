@@ -12,7 +12,7 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-n = 32
+n = 16
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none)
 
@@ -79,14 +79,14 @@ def p_e(x):
 
 
 x = ufl.SpatialCoordinate(msh)
-nu = 1.0
+nu = 1.0e-3
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
 lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
 
-delta_t = fem.Constant(msh, PETSc.ScalarType(1e-1))
+delta_t = fem.Constant(msh, PETSc.ScalarType(1))
 nu = fem.Constant(msh, PETSc.ScalarType(nu))
-num_time_steps = 10
+num_time_steps = 100
 
 a_00 = fem.form(inner(u / delta_t, v) * dx_c +
                 nu * (inner(grad(u), grad(v)) * dx_c +
@@ -94,7 +94,7 @@ a_00 = fem.form(inner(u / delta_t, v) * dx_c +
                 - (inner(u, dot(grad(v), n))
                    + inner(v, dot(grad(u), n))) * ds_c(1))
                 + inner(outer(u, u_n) - outer(u, lmbda * u_n),
-                        outer(v, n)) * ds_c(1) +
+                        outer(v, n)) * ds_c(1) -
                 inner(outer(u, u_n), grad(v)) * dx_c)
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
 a_02 = fem.form(nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
