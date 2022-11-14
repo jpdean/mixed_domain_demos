@@ -1,7 +1,7 @@
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
-from ufl import inner, grad, dot, div
+from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
@@ -84,7 +84,7 @@ f = - nu * div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
 lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
 
-delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
+delta_t = fem.Constant(msh, PETSc.ScalarType(1e-1))
 nu = fem.Constant(msh, PETSc.ScalarType(nu))
 num_time_steps = 1
 
@@ -102,11 +102,14 @@ a_10 = fem.form(- inner(q, div(u)) * dx_c)
 # Only needed to apply BC on pressure
 a_11 = fem.form(fem.Constant(msh, 0.0) * inner(p, q) * dx_c)
 a_20 = fem.form(nu * (inner(vbar, dot(grad(u), n)) * ds_c(1)
-                - gamma * inner(vbar, u) * ds_c(1)),
+                - gamma * inner(vbar, u) * ds_c(1)) +
+                inner(outer(u, u_n) - outer(u, lmbda * u_n),
+                      outer(vbar, n)) * ds_c(1),
                 entity_maps=entity_maps)
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
-a_22 = fem.form(nu * gamma * inner(ubar, vbar) *
-                ds_c(1), entity_maps=entity_maps)
+a_22 = fem.form(nu * gamma * inner(ubar, vbar) * ds_c(1) +
+                inner(outer(ubar, lmbda * u_n), outer(vbar, n)) * ds_c(1),
+                entity_maps=entity_maps)
 
 L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
