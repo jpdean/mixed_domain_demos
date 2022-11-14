@@ -86,16 +86,20 @@ lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
 
 delta_t = fem.Constant(msh, PETSc.ScalarType(1e-1))
 nu = fem.Constant(msh, PETSc.ScalarType(nu))
-num_time_steps = 1
+num_time_steps = 10
 
 a_00 = fem.form(inner(u / delta_t, v) * dx_c +
                 nu * (inner(grad(u), grad(v)) * dx_c +
                 gamma * inner(u, v) * ds_c(1)
                 - (inner(u, dot(grad(v), n))
-                   + inner(v, dot(grad(u), n))) * ds_c(1)))
+                   + inner(v, dot(grad(u), n))) * ds_c(1))
+                + inner(outer(u, u_n) - outer(u, lmbda * u_n),
+                        outer(v, n)) * ds_c(1) +
+                inner(outer(u, u_n), grad(v)) * dx_c)
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
 a_02 = fem.form(nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
-                - gamma * inner(ubar, v) * ds_c(1)),
+                - gamma * inner(ubar, v) * ds_c(1)) +
+                inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(1),
                 entity_maps=entity_maps)
 a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(1), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
