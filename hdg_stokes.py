@@ -79,7 +79,7 @@ def p_e(x):
 
 
 x = ufl.SpatialCoordinate(msh)
-nu = 1
+nu = 1.0
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
 delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
@@ -108,7 +108,8 @@ a_22 = fem.form(nu * gamma * inner(ubar, vbar) *
 
 L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
-L_2 = fem.form(inner(ufl.as_vector((1e-9, 1e-9)), vbar) * dx_f)
+L_2 = fem.form(inner(fem.Constant(
+    facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
 L_3 = fem.form(inner(fem.Constant(facet_mesh, 0.0), qbar) * dx_f)
 
 a = [[a_00, a_01, a_02, a_03],
