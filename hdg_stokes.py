@@ -12,7 +12,7 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-n = 8
+n = 32
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none)
 
@@ -79,30 +79,32 @@ def p_e(x):
 
 
 x = ufl.SpatialCoordinate(msh)
-f = - div(grad(u_e(x))) + grad(p_e(x))
+nu = 1
+f = - nu * div(grad(u_e(x))) + grad(p_e(x))
 u_n = fem.Function(V)
-
 delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
+nu = fem.Constant(msh, PETSc.ScalarType(nu))
 num_time_steps = 1
 
-a_00 = fem.form(inner(u / delta_t, v) * dx_c
-                + inner(grad(u), grad(v)) * dx_c +
+a_00 = fem.form(inner(u / delta_t, v) * dx_c +
+                nu * (inner(grad(u), grad(v)) * dx_c +
                 gamma * inner(u, v) * ds_c(1)
                 - (inner(u, dot(grad(v), n))
-                   + inner(v, dot(grad(u), n))) * ds_c(1))
+                   + inner(v, dot(grad(u), n))) * ds_c(1)))
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
-a_02 = fem.form(inner(ubar, dot(grad(v), n)) * ds_c(1)
-                - gamma * inner(ubar, v) * ds_c(1),
+a_02 = fem.form(nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
+                - gamma * inner(ubar, v) * ds_c(1)),
                 entity_maps=entity_maps)
 a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(1), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
 # Only needed to apply BC on pressure
 a_11 = fem.form(fem.Constant(msh, 0.0) * inner(p, q) * dx_c)
-a_20 = fem.form(inner(vbar, dot(grad(u), n)) * ds_c(1)
-                - gamma * inner(vbar, u) * ds_c(1),
+a_20 = fem.form(nu * (inner(vbar, dot(grad(u), n)) * ds_c(1)
+                - gamma * inner(vbar, u) * ds_c(1)),
                 entity_maps=entity_maps)
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
-a_22 = fem.form(gamma * inner(ubar, vbar) * ds_c(1), entity_maps=entity_maps)
+a_22 = fem.form(nu * gamma * inner(ubar, vbar) *
+                ds_c(1), entity_maps=entity_maps)
 
 L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
