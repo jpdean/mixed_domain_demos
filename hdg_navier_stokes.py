@@ -1,18 +1,47 @@
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
-from ufl import inner, grad, dot, div
+from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from utils import reorder_mesh, norm_L2, domain_average, normal_jump_error
+from enum import Enum
+
+
+class SolverType(Enum):
+    STOKES = 1
+    NAVIER_STOKES = 2
+
+
+# Simulation parameters
+solver_type = SolverType.NAVIER_STOKES
+n = 32
+k = 2
+nu = 1.0e-2
+num_time_steps = 10
+delta_t = 10
+
+
+def u_e(x):
+    return ufl.as_vector(
+        (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
+         - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
+
+
+def p_e(x):
+    return x[0] * (1 - x[0])
+
+
+def boundary(x):
+    lr = np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
+    tb = np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0))
+    return np.logical_or(lr, tb)
 
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
-
-n = 32
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none)
 
@@ -33,7 +62,6 @@ facets = np.arange(num_facets, dtype=np.int32)
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-k = 2
 V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
 Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
 Vbar = fem.VectorFunctionSpace(
@@ -67,44 +95,46 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-
-def u_e(x):
-    return ufl.as_vector(
-        (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
-         - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
-
-
-def p_e(x):
-    return x[0] * (1 - x[0])
-
-
 x = ufl.SpatialCoordinate(msh)
-nu = 1.0
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+if solver_type == SolverType.NAVIER_STOKES:
+    f += div(outer(u_e(x), u_e(x)))
 u_n = fem.Function(V)
-delta_t = fem.Constant(msh, PETSc.ScalarType(1e16))
+lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
 nu = fem.Constant(msh, PETSc.ScalarType(nu))
-num_time_steps = 1
 
-a_00 = fem.form(inner(u / delta_t, v) * dx_c +
-                nu * (inner(grad(u), grad(v)) * dx_c +
-                gamma * inner(u, v) * ds_c(1)
-                - (inner(u, dot(grad(v), n))
-                   + inner(v, dot(grad(u), n))) * ds_c(1)))
+# TODO Double check convective terms
+a_00 = inner(u / delta_t, v) * dx_c + \
+    nu * (inner(grad(u), grad(v)) * dx_c +
+          gamma * inner(u, v) * ds_c(1)
+          - (inner(u, dot(grad(v), n))
+             + inner(v, dot(grad(u), n))) * ds_c(1))
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
-a_02 = fem.form(nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
-                - gamma * inner(ubar, v) * ds_c(1)),
-                entity_maps=entity_maps)
+a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
+             - gamma * inner(ubar, v) * ds_c(1))
 a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(1), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
 # Only needed to apply BC on pressure
 a_11 = fem.form(fem.Constant(msh, 0.0) * inner(p, q) * dx_c)
-a_20 = fem.form(nu * (inner(vbar, dot(grad(u), n)) * ds_c(1)
-                - gamma * inner(vbar, u) * ds_c(1)),
-                entity_maps=entity_maps)
+a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(1)
+             - gamma * inner(vbar, u) * ds_c(1))
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
-a_22 = fem.form(nu * gamma * inner(ubar, vbar) *
-                ds_c(1), entity_maps=entity_maps)
+a_22 = nu * gamma * inner(ubar, vbar) * ds_c(1)
+
+if solver_type == SolverType.NAVIER_STOKES:
+    a_00 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
+                  outer(v, n)) * ds_c(1) - \
+        inner(outer(u, u_n), grad(v)) * dx_c
+    a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(1)
+    a_20 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
+                  outer(vbar, n)) * ds_c(1)
+    a_22 += inner(outer(ubar, lmbda * u_n), outer(vbar, n)) * ds_c(1)
+
+a_00 = fem.form(a_00)
+a_02 = fem.form(a_02, entity_maps=entity_maps)
+a_20 = fem.form(a_20, entity_maps=entity_maps)
+a_22 = fem.form(a_22, entity_maps=entity_maps)
 
 L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
@@ -117,13 +147,6 @@ a = [[a_00, a_01, a_02, a_03],
      [a_20, None, a_22, None],
      [a_30, None, None, None]]
 L = [L_0, L_1, L_2, L_3]
-
-
-def boundary(x):
-    lr = np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
-    tb = np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0))
-    return np.logical_or(lr, tb)
-
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
@@ -140,8 +163,11 @@ bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
 bcs = [bc_ubar, bc_p]
 
-A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-A.assemble()
+if solver_type == SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -173,6 +199,11 @@ pbar_file.write(0.0)
 t = 0.0
 for n in range(num_time_steps):
     t += delta_t.value
+
+    if solver_type == SolverType.NAVIER_STOKES:
+        A.zeroEntries()
+        fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+        A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
