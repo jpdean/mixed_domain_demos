@@ -18,7 +18,7 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-solver_type = SolverType.NAVIER_STOKES
+solver_type = SolverType.STOKES
 n = 32
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none)
@@ -163,7 +163,11 @@ bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
 
 bcs = [bc_ubar, bc_p]
 
-A = fem.petsc.create_matrix_block(a)
+if solver_type == SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -196,9 +200,10 @@ t = 0.0
 for n in range(num_time_steps):
     t += delta_t.value
 
-    A.zeroEntries()
-    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
-    A.assemble()
+    if solver_type == SolverType.NAVIER_STOKES:
+        A.zeroEntries()
+        fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+        A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
