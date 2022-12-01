@@ -4,12 +4,7 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
-from utils import reorder_mesh
-
-
-def norm_L2(comm, v):
-    return np.sqrt(comm.allreduce(fem.assemble_scalar(
-        fem.form(inner(v, v) * ufl.dx)), op=MPI.SUM))
+from utils import norm_L2
 
 
 n = 8
@@ -19,9 +14,6 @@ msh = mesh.create_unit_square(
     MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
 # msh = mesh.create_unit_cube(
 #     MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
-
-# Currently, permutations are not working in parallel, so reorder the mesh
-reorder_mesh(msh)
 
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 u = ufl.TrialFunction(V)
