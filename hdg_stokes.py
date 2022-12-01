@@ -5,20 +5,18 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import reorder_mesh, norm_L2, domain_average, normal_jump_error
+from utils import (norm_L2, domain_average, normal_jump_error,
+                   create_random_mesh)
 
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-n = 32
-msh = mesh.create_unit_square(
-    comm, n, n, ghost_mode=mesh.GhostMode.none)
-
-# Currently, permutations are not working in parallel, so reorder the
-# mesh
-reorder_mesh(msh)
+n = 8
+# msh = mesh.create_unit_square(
+#     comm, n, n, ghost_mode=mesh.GhostMode.none)
+msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
 
 tdim = msh.topology.dim
 fdim = tdim - 1
