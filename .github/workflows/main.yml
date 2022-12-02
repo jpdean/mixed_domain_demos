@@ -74,7 +74,7 @@ jobs:
           python3 mhd.py
           python3 nested_submeshes.py
           python3 neumann_bc.py
-          python3 hdg_stokes.py
+          python3 hdg_navier_stokes.py
 
       - name: Run demos (parallel)
         run: |
