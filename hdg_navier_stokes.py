@@ -103,6 +103,8 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
+u_d = fem.Function(Vbar)
+
 x = ufl.SpatialCoordinate(msh)
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
 if solver_type == SolverType.NAVIER_STOKES:
@@ -146,7 +148,8 @@ L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(fem.Constant(
     facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
-L_3 = fem.form(inner(fem.Constant(facet_mesh, 0.0), qbar) * dx_f)
+# NOTE: Need to change this term for Neumann BCs
+L_3 = fem.form(inner(dot(u_d, n), qbar) * ds_c, entity_maps=entity_maps)
 
 a = [[a_00, a_01, a_02, a_03],
      [a_10, None, None, None],
@@ -157,7 +160,7 @@ L = [L_0, L_1, L_2, L_3]
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
-bc_ubar = fem.dirichletbc(np.zeros(2, dtype=PETSc.ScalarType), dofs, Vbar)
+bc_ubar = fem.dirichletbc(u_d, dofs)
 
 # NOTE: Don't set pressure BC to avoid affecting conservation properties.
 # MUMPS seems to cope with the small nullspace
