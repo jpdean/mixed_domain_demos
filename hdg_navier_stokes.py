@@ -5,14 +5,18 @@ from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import (norm_L2, domain_average, normal_jump_error,
-                   create_random_mesh)
+from utils import norm_L2, domain_average, normal_jump_error
 from enum import Enum
 
 
 class SolverType(Enum):
     STOKES = 1
     NAVIER_STOKES = 2
+
+
+class Scheme(Enum):
+    RW = 1
+    DRW = 2
 
 
 # Simulation parameters
@@ -22,6 +26,7 @@ k = 2
 nu = 1.0e-2
 num_time_steps = 10
 delta_t = 10
+scheme = Scheme.DRW
 
 
 def u_e(x):
@@ -44,10 +49,9 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-# msh = mesh.create_unit_square(
-#     comm, n, n, ghost_mode=mesh.GhostMode.none,
-#     cell_type=mesh.CellType.quadrilateral)
-msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
+msh = mesh.create_unit_square(
+    comm, n, n, ghost_mode=mesh.GhostMode.none,
+    cell_type=mesh.CellType.quadrilateral)
 
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -62,8 +66,12 @@ facets = np.arange(num_facets, dtype=np.int32)
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
-Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
+if scheme == Scheme.RW:
+    V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
+    Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
+else:
+    V = fem.FunctionSpace(msh, ("Discontinuous Raviart-Thomas", k + 1))
+    Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.VectorFunctionSpace(
     facet_mesh, ("Discontinuous Lagrange", k))
 Qbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
@@ -174,7 +182,12 @@ ksp.setFromOptions()
 b = fem.petsc.create_vector_block(L)
 x = A.createVecRight()
 
-u_n.name = "u"
+if scheme == Scheme.RW:
+    u_vis = fem.Function(V)
+else:
+    V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+    u_vis = fem.Function(V_vis)
+u_vis.name = "u"
 p_h = fem.Function(Q)
 p_h.name = "p"
 ubar_h = fem.Function(Vbar)
@@ -182,7 +195,7 @@ ubar_h.name = "ubar"
 pbar_h = fem.Function(Qbar)
 pbar_h.name = "pbar"
 
-u_file = io.VTXWriter(msh.comm, "u.bp", [u_n._cpp_object])
+u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
 p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
 ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_h._cpp_object])
 pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
@@ -220,6 +233,8 @@ for n in range(num_time_steps):
     ubar_h.x.scatter_forward()
     pbar_h.x.array[:(len(x.array_r) - ubar_offset)] = x.array_r[ubar_offset:]
     pbar_h.x.scatter_forward()
+
+    u_vis.interpolate(u_n)
 
     u_file.write(t)
     p_file.write(t)
