@@ -5,8 +5,7 @@ from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import (norm_L2, domain_average, normal_jump_error,
-                   create_random_mesh)
+from utils import norm_L2, domain_average, normal_jump_error
 from enum import Enum
 
 
@@ -53,8 +52,6 @@ out_str = f"rank {rank}:\n"
 msh = mesh.create_unit_square(
     comm, n, n, ghost_mode=mesh.GhostMode.none,
     cell_type=mesh.CellType.quadrilateral)
-# msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n),
-#                          mesh.GhostMode.none)
 
 tdim = msh.topology.dim
 fdim = tdim - 1
