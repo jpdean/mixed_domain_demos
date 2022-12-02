@@ -31,12 +31,12 @@ scheme = Scheme.DRW
 
 def u_e(x):
     return ufl.as_vector(
-        (x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3),
-         - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)))
+        (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+         ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
 
 
 def p_e(x):
-    return x[0] * (1 - x[0])
+    return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
 
 
 def boundary(x):
@@ -104,6 +104,9 @@ for i, f in enumerate(entity_map):
 entity_maps = {facet_mesh: inv_entity_map}
 
 u_d = fem.Function(Vbar)
+u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
+                          Vbar.element.interpolation_points())
+u_d.interpolate(u_d_expr)
 
 x = ufl.SpatialCoordinate(msh)
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
