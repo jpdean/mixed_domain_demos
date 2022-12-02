@@ -5,7 +5,8 @@ from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import reorder_mesh, norm_L2, domain_average, normal_jump_error
+from utils import (norm_L2, domain_average, normal_jump_error,
+                   create_random_mesh)
 from enum import Enum
 
 
@@ -42,12 +43,12 @@ def boundary(x):
 comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
-msh = mesh.create_unit_square(
-    comm, n, n, ghost_mode=mesh.GhostMode.none)
 
-# Currently, permutations are not working in parallel, so reorder the
-# mesh
-reorder_mesh(msh)
+n = 8
+# msh = mesh.create_unit_square(
+#     comm, n, n, ghost_mode=mesh.GhostMode.none,
+#     cell_type=mesh.CellType.quadrilateral)
+msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
 
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -115,8 +116,6 @@ a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(1)
              - gamma * inner(ubar, v) * ds_c(1))
 a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(1), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
-# Only needed to apply BC on pressure
-a_11 = fem.form(fem.Constant(msh, 0.0) * inner(p, q) * dx_c)
 a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(1)
              - gamma * inner(vbar, u) * ds_c(1))
 a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(1), entity_maps=entity_maps)
@@ -143,7 +142,7 @@ L_2 = fem.form(inner(fem.Constant(
 L_3 = fem.form(inner(fem.Constant(facet_mesh, 0.0), qbar) * dx_f)
 
 a = [[a_00, a_01, a_02, a_03],
-     [a_10, a_11, None, None],
+     [a_10, None, None, None],
      [a_20, None, a_22, None],
      [a_30, None, None, None]]
 L = [L_0, L_1, L_2, L_3]
@@ -153,15 +152,9 @@ facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc_ubar = fem.dirichletbc(np.zeros(2, dtype=PETSc.ScalarType), dofs, Vbar)
 
-# Pressure boundary condition
-# TODO Locate on facet space or cell space?
-# FIXME Change so it doesn't depend on diagonal direction
-pressure_dof = fem.locate_dofs_geometrical(
-    Q, lambda x: np.logical_and(np.isclose(x[0], 1.0),
-                                np.isclose(x[1], 0.0)))
-bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
-
-bcs = [bc_ubar, bc_p]
+# NOTE: Don't set pressure BC to avoid affecting conservation properties.
+# MUMPS seems to cope with the small nullspace
+bcs = [bc_ubar]
 
 if solver_type == SolverType.NAVIER_STOKES:
     A = fem.petsc.create_matrix_block(a)
@@ -173,7 +166,11 @@ ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
+ksp.getPC().setFactorSolverType("mumps")
+opts = PETSc.Options()
+opts["mat_mumps_icntl_6"] = 2
+opts["mat_mumps_icntl_14"] = 100
+ksp.setFromOptions()
 
 b = fem.petsc.create_vector_block(L)
 x = A.createVecRight()
