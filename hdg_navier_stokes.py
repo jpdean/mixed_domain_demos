@@ -23,22 +23,21 @@ class Scheme(Enum):
 
 # Simulation parameters
 solver_type = SolverType.NAVIER_STOKES
-n = 32
 k = 2
 nu = 1.0e-2
 num_time_steps = 10
-delta_t = 10
+delta_t = 0.1
 scheme = Scheme.DRW
 
 
-def u_e(x):
-    return ufl.as_vector(
-        (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
-         ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
+# def u_e(x):
+#     return ufl.as_vector(
+#         (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+#          ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
 
 
-def p_e(x):
-    return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
+# def p_e(x):
+#     return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
 
 
 comm = MPI.COMM_WORLD
@@ -83,7 +82,8 @@ vbar = ufl.TestFunction(Vbar)
 pbar = ufl.TrialFunction(Qbar)
 qbar = ufl.TestFunction(Qbar)
 
-h = ufl.CellDiameter(msh)
+# h = ufl.CellDiameter(msh)  # TODO Fix for high order!
+h = np.sqrt((1 * 5) / (msh.topology.index_map(0).size_global))
 n = ufl.FacetNormal(msh)
 gamma = 6.0 * k**2 / h
 
@@ -105,19 +105,21 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-u_d = fem.Function(Vbar)
-u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
-                          Vbar.element.interpolation_points())
-u_d.interpolate(u_d_expr)
-boundary_conditions = {"left": u_d,
-                       "right": u_d,
-                       "bottom": u_d,
-                       "top": u_d}
+u_d_lr = fem.Function(Vbar)
+# u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
+#                           Vbar.element.interpolation_points())
+u_d_lr.interpolate(lambda x: np.stack((5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0]))))
+u_d_tb = fem.Function(Vbar)
+boundary_conditions = {"left": u_d_lr,
+                       "right": u_d_lr,
+                       "bottom": u_d_tb,
+                       "top": u_d_tb}
 
 x = ufl.SpatialCoordinate(msh)
-f = - nu * div(grad(u_e(x))) + grad(p_e(x))
-if solver_type == SolverType.NAVIER_STOKES:
-    f += div(outer(u_e(x), u_e(x)))
+# f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+# if solver_type == SolverType.NAVIER_STOKES:
+#     f += div(outer(u_e(x), u_e(x)))
+f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
 u_n = fem.Function(V)
 lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
 delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -259,23 +261,23 @@ for n in range(num_time_steps):
     pbar_file.write(t)
 
 x = ufl.SpatialCoordinate(msh)
-e_u = norm_L2(msh.comm, u_n - u_e(x))
+# e_u = norm_L2(msh.comm, u_n - u_e(x))
 e_div_u = norm_L2(msh.comm, div(u_n))
 e_jump_u = normal_jump_error(msh, u_n)
-p_h_avg = domain_average(msh, p_h)
-p_e_avg = domain_average(msh, p_e(x))
-e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
+# p_h_avg = domain_average(msh, p_h)
+# p_e_avg = domain_average(msh, p_e(x))
+# e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
 
-xbar = ufl.SpatialCoordinate(facet_mesh)
-e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
-pbar_h_avg = domain_average(facet_mesh, pbar_h)
-pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
-e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
+# xbar = ufl.SpatialCoordinate(facet_mesh)
+# e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
+# pbar_h_avg = domain_average(facet_mesh, pbar_h)
+# pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
+# e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
 
 if rank == 0:
-    print(f"e_u = {e_u}")
+    # print(f"e_u = {e_u}")
     print(f"e_div_u = {e_div_u}")
     print(f"e_jump_u = {e_jump_u}")
-    print(f"e_p = {e_p}")
-    print(f"e_ubar = {e_ubar}")
-    print(f"e_pbar = {e_pbar}")
+    # print(f"e_p = {e_p}")
+    # print(f"e_ubar = {e_ubar}")
+    # print(f"e_pbar = {e_pbar}")
