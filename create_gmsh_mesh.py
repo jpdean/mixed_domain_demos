@@ -21,9 +21,10 @@ def create():
         sigma = 0.2
         mu = 1.0
         w = 5.0
+        order = 2
+        num_bottom_points = 100
 
         # Point tags
-        num_bottom_points = 100
         bottom_points = [
             gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, lc)
             for x in np.linspace(0.0, w, num_bottom_points)]
@@ -57,8 +58,7 @@ def create():
         gmsh.option.setNumber("Mesh.Algorithm", 8)
         gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
         gmsh.model.mesh.generate(2)
-
-        # gmsh.write("t1.msh")
+        gmsh.model.mesh.setOrder(order)
 
     partitioner = create_cell_partitioner(GhostMode.none)
     msh, _, ft = gmshio.model_to_mesh(
