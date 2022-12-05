@@ -13,17 +13,23 @@ def create():
     if comm.rank == 0:
         gmsh.model.add("unit_square")
         lc = 1e-1
-        gmsh.model.geo.addPoint(0, 0, 0, lc, 1)
-        gmsh.model.geo.addPoint(1, 0, 0, lc, 2)
-        gmsh.model.geo.addPoint(1, 1, 0, lc, 3)
-        gmsh.model.geo.addPoint(0, 1, 0, lc, 4)
 
-        gmsh.model.geo.addLine(1, 2, 1)
-        gmsh.model.geo.addLine(2, 3, 2)
-        gmsh.model.geo.addLine(3, 4, 3)
-        gmsh.model.geo.addLine(4, 1, 4)
+        # num_bottom_points = 10
+        # xs = np.linspace(0.0, 3.0, num_bottom_points)
 
-        gmsh.model.geo.addCurveLoop([1, 2, 3, 4], 1)
+        # Point tags
+        points = [gmsh.model.geo.addPoint(0, 0, 0, lc),
+                  gmsh.model.geo.addPoint(3, 0, 0, lc),
+                  gmsh.model.geo.addPoint(3, 1, 0, lc),
+                  gmsh.model.geo.addPoint(0, 1, 0, lc)]
+
+        # Line tags
+        lines = []
+        for i in range(len(points) - 1):
+            lines.append(gmsh.model.geo.addLine(points[i], points[i + 1]))
+        lines.append(gmsh.model.geo.addLine(points[-1], points[0]))
+
+        gmsh.model.geo.addCurveLoop(lines, 1)
 
         gmsh.model.geo.addPlaneSurface([1], 1)
 
