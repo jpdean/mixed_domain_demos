@@ -5,6 +5,10 @@ from dolfinx.io import gmshio
 from dolfinx.mesh import create_cell_partitioner, GhostMode
 
 
+def gaussian(x, a, sigma, mu):
+    return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
+
+
 def create():
     comm = MPI.COMM_WORLD
     gdim = 2
@@ -13,13 +17,18 @@ def create():
     if comm.rank == 0:
         gmsh.model.add("unit_square")
         lc = 0.1
+        a = 0.2
+        sigma = 0.2
+        mu = 1.0
+        w = 5.0
 
         # Point tags
         num_bottom_points = 100
-        bottom_points = [gmsh.model.geo.addPoint(x, 0, 0, lc)
-                         for x in np.linspace(0.0, 3.0, num_bottom_points)]
+        bottom_points = [
+            gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, lc)
+            for x in np.linspace(0.0, w, num_bottom_points)]
         top_left_point = gmsh.model.geo.addPoint(0, 1, 0, lc)
-        top_right_point = gmsh.model.geo.addPoint(3, 1, 0, lc)
+        top_right_point = gmsh.model.geo.addPoint(w, 1, 0, lc)
 
         # Line tags
         lines = []
