@@ -46,9 +46,9 @@ def create():
         gmsh.model.geo.addPlaneSurface([1], 1)
 
         gmsh.model.geo.mesh.setTransfiniteCurve(1, 40)
-        gmsh.model.geo.mesh.setTransfiniteCurve(2, 15)
+        gmsh.model.geo.mesh.setTransfiniteCurve(2, 15, "Progression", 1.1)
         gmsh.model.geo.mesh.setTransfiniteCurve(3, 40)
-        gmsh.model.geo.mesh.setTransfiniteCurve(4, 15)
+        gmsh.model.geo.mesh.setTransfiniteCurve(4, 15, "Progression", -1.1)
         gmsh.model.geo.mesh.setTransfiniteSurface(
             1, "Left", [bottom_points[0], bottom_points[-1], top_right_point, top_left_point])
 
@@ -61,7 +61,7 @@ def create():
         gmsh.model.addPhysicalGroup(1, [lines[2]], 3)
         gmsh.model.addPhysicalGroup(1, [lines[3]], 4)
 
-        gmsh.option.setNumber("Mesh.Smoothing", 100)
+        gmsh.option.setNumber("Mesh.Smoothing", 5)
         gmsh.option.setNumber("Mesh.RecombineAll", 1)
         gmsh.option.setNumber("Mesh.Algorithm", 8)
         gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)

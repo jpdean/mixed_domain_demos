@@ -83,7 +83,7 @@ pbar = ufl.TrialFunction(Qbar)
 qbar = ufl.TestFunction(Qbar)
 
 # h = ufl.CellDiameter(msh)  # TODO Fix for high order!
-h = np.sqrt((1 * 5) / (msh.topology.index_map(0).size_global))
+h = np.sqrt(0.5 * (1 * 5) / (msh.topology.index_map(0).size_global))
 n = ufl.FacetNormal(msh)
 gamma = 6.0 * k**2 / h
 
