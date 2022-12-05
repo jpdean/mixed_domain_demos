@@ -166,11 +166,19 @@ L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(fem.Constant(
     facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
-# NOTE: Need to change this term for Neumann BCs
+
+# NOTE: Don't set pressure BC to avoid affecting conservation properties.
+# MUMPS seems to cope with the small nullspace
 L_3 = 0.0
+bcs = []
 for name, bc_func in boundary_conditions.items():
     id = boundaries[name]
+    # NOTE: Need to change this term for Neumann BCs
     L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
+
+    facets = inv_entity_map[mt.indices[mt.values == id]]
+    dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+    bcs.append(fem.dirichletbc(bc_func, dofs))
 L_3 = fem.form(L_3, entity_maps=entity_maps)
 
 a = [[a_00, a_01, a_02, a_03],
@@ -178,14 +186,6 @@ a = [[a_00, a_01, a_02, a_03],
      [a_20, None, a_22, None],
      [a_30, None, None, None]]
 L = [L_0, L_1, L_2, L_3]
-
-facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
-dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
-bc_ubar = fem.dirichletbc(u_d, dofs)
-
-# NOTE: Don't set pressure BC to avoid affecting conservation properties.
-# MUMPS seems to cope with the small nullspace
-bcs = [bc_ubar]
 
 if solver_type == SolverType.NAVIER_STOKES:
     A = fem.petsc.create_matrix_block(a)
