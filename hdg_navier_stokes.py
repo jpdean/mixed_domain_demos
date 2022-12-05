@@ -1,3 +1,4 @@
+import create_gmsh_mesh
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
@@ -40,19 +41,15 @@ def p_e(x):
     return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
 
 
-def boundary(x):
-    lr = np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
-    tb = np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0))
-    return np.logical_or(lr, tb)
-
-
 comm = MPI.COMM_WORLD
 rank = comm.rank
 out_str = f"rank {rank}:\n"
 
-msh = mesh.create_unit_square(
-    comm, n, n, ghost_mode=mesh.GhostMode.none,
-    cell_type=mesh.CellType.quadrilateral)
+msh, mt = create_gmsh_mesh.create()
+boundaries = {"left": 4,
+              "right": 2,
+              "bottom": 1,
+              "top": 3}
 
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -90,17 +87,10 @@ h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 gamma = 6.0 * k**2 / h
 
-boundaries = {"exterior": 2}
-
-msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
-values = np.full_like(
-    msh_boundary_facets, boundaries["exterior"], dtype=np.intc)
-mt = mesh.meshtags(msh, fdim, msh_boundary_facets, values)
-
 facet_integration_entities = compute_integration_domains(
     fem.IntegralType.exterior_facet, mt)
 
-all_facets = np.amax(values) + 1
+all_facets = 0
 facet_integration_entities[all_facets] = []
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
@@ -119,7 +109,10 @@ u_d = fem.Function(Vbar)
 u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
                           Vbar.element.interpolation_points())
 u_d.interpolate(u_d_expr)
-boundary_conditions = {"exterior": u_d}
+boundary_conditions = {"left": u_d,
+                       "right": u_d,
+                       "bottom": u_d,
+                       "top": u_d}
 
 x = ufl.SpatialCoordinate(msh)
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
