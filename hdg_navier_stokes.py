@@ -5,6 +5,7 @@ from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 from utils import norm_L2, domain_average, normal_jump_error
 from enum import Enum
 
@@ -89,7 +90,14 @@ h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 gamma = 6.0 * k**2 / h
 
-facet_integration_entities = {1: []}
+msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
+values = np.full_like(msh_boundary_facets, 2, dtype=np.intc)
+mt = mesh.meshtags(msh, fdim, msh_boundary_facets, values)
+
+facet_integration_entities = compute_integration_domains(
+    fem.IntegralType.exterior_facet, mt)
+
+facet_integration_entities[1] = []
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
         facet_integration_entities[1].extend([cell, local_facet])
@@ -152,7 +160,7 @@ L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(fem.Constant(
     facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
 # NOTE: Need to change this term for Neumann BCs
-L_3 = fem.form(inner(dot(u_d, n), qbar) * ds_c, entity_maps=entity_maps)
+L_3 = fem.form(inner(dot(u_d, n), qbar) * ds_c(2), entity_maps=entity_maps)
 
 a = [[a_00, a_01, a_02, a_03],
      [a_10, None, None, None],
@@ -160,7 +168,6 @@ a = [[a_00, a_01, a_02, a_03],
      [a_30, None, None, None]]
 L = [L_0, L_1, L_2, L_3]
 
-msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc_ubar = fem.dirichletbc(u_d, dofs)
