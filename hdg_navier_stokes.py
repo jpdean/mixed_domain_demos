@@ -138,11 +138,13 @@ a_00 = inner(u / delta_t, v) * dx_c + \
 a_01 = fem.form(- inner(p, div(v)) * dx_c)
 a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(all_facets)
              - gamma * inner(ubar, v) * ds_c(all_facets))
-a_03 = fem.form(inner(dot(v, n), pbar) * ds_c(all_facets), entity_maps=entity_maps)
+a_03 = fem.form(inner(dot(v, n), pbar) *
+                ds_c(all_facets), entity_maps=entity_maps)
 a_10 = fem.form(- inner(q, div(u)) * dx_c)
 a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(all_facets)
              - gamma * inner(vbar, u) * ds_c(all_facets))
-a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(all_facets), entity_maps=entity_maps)
+a_30 = fem.form(inner(dot(u, n), qbar) *
+                ds_c(all_facets), entity_maps=entity_maps)
 a_22 = nu * gamma * inner(ubar, vbar) * ds_c(all_facets)
 
 if solver_type == SolverType.NAVIER_STOKES:
