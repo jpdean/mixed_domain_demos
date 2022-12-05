@@ -9,8 +9,8 @@ def create():
     comm = MPI.COMM_WORLD
     gdim = 2
 
+    gmsh.initialize()
     if comm.rank == 0:
-        gmsh.initialize()
         gmsh.model.add("unit_square")
         lc = 1e-1
         gmsh.model.geo.addPoint(0, 0, 0, lc, 1)
@@ -36,11 +36,16 @@ def create():
         gmsh.model.addPhysicalGroup(1, [3], 3)
         gmsh.model.addPhysicalGroup(1, [4], 4)
 
+        gmsh.option.setNumber("Mesh.RecombineAll", 1)
+        gmsh.option.setNumber("Mesh.Algorithm", 8)
         gmsh.model.mesh.generate(2)
+
+        # gmsh.write("t1.msh")
 
     partitioner = create_cell_partitioner(GhostMode.none)
     msh, _, ft = gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+    gmsh.finalize()
 
     return msh, ft
 
