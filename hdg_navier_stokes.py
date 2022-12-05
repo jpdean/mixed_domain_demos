@@ -119,6 +119,7 @@ u_d = fem.Function(Vbar)
 u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
                           Vbar.element.interpolation_points())
 u_d.interpolate(u_d_expr)
+boundary_conditions = {"exterior": u_d}
 
 x = ufl.SpatialCoordinate(msh)
 f = - nu * div(grad(u_e(x))) + grad(p_e(x))
@@ -166,7 +167,11 @@ L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
 L_2 = fem.form(inner(fem.Constant(
     facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
 # NOTE: Need to change this term for Neumann BCs
-L_3 = fem.form(inner(dot(u_d, n), qbar) * ds_c(2), entity_maps=entity_maps)
+L_3 = 0.0
+for name, bc_func in boundary_conditions.items():
+    id = boundaries[name]
+    L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
+L_3 = fem.form(L_3, entity_maps=entity_maps)
 
 a = [[a_00, a_01, a_02, a_03],
      [a_10, None, None, None],
