@@ -384,7 +384,7 @@ class Square(Problem):
         gmsh.initialize()
         if comm.rank == 0:
             gmsh.model.add("unit_square")
-            lc = 0.1
+            lc = 0.04
 
             # Point tags
             points = [gmsh.model.geo.addPoint(0, 0, 0, lc),
@@ -458,7 +458,7 @@ if __name__ == "__main__":
     k = 2
     nu = 1.0e-2
     num_time_steps = 10
-    delta_t = 0.1
+    delta_t = 10
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
