@@ -10,6 +10,7 @@ from utils import norm_L2, domain_average, normal_jump_error
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
+import sys
 
 
 class SolverType(Enum):
@@ -22,9 +23,16 @@ class Scheme(Enum):
     DRW = 2
 
 
+def par_print(string):
+    if comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
+
+
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f):
+          boundary_conditions, f, u_e=None,
+          p_e=None):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
@@ -230,28 +238,30 @@ def solve(solver_type, k, nu, num_time_steps,
         ubar_file.write(t)
         pbar_file.write(t)
 
-    x = ufl.SpatialCoordinate(msh)
-    # e_u = norm_L2(msh.comm, u_n - u_e(x))
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
-    # p_h_avg = domain_average(msh, p_h)
-    # p_e_avg = domain_average(msh, p_e(x))
-    # e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
+    par_print(f"e_div_u = {e_div_u}")
+    par_print(f"e_jump_u = {e_jump_u}")
 
-    # xbar = ufl.SpatialCoordinate(facet_mesh)
-    # e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
-    # pbar_h_avg = domain_average(facet_mesh, pbar_h)
-    # pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
-    # e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
-    #   (p_e(xbar) - pbar_e_avg))
+    x = ufl.SpatialCoordinate(msh)
+    xbar = ufl.SpatialCoordinate(facet_mesh)
+    if u_e is not None:
+        e_u = norm_L2(msh.comm, u_n - u_e(x))
+        e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
+        par_print(f"e_u = {e_u}")
+        par_print(f"e_ubar = {e_ubar}")
 
-    if msh.comm.rank == 0:
-        # print(f"e_u = {e_u}")
-        print(f"e_div_u = {e_div_u}")
-        print(f"e_jump_u = {e_jump_u}")
-        # print(f"e_p = {e_p}")
-        # print(f"e_ubar = {e_ubar}")
-        # print(f"e_pbar = {e_pbar}")
+    if p_e is not None:
+        p_h_avg = domain_average(msh, p_h)
+        p_e_avg = domain_average(msh, p_e(x))
+        e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
+        pbar_h_avg = domain_average(facet_mesh, pbar_h)
+        pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
+        e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
+                         (p_e(xbar) - pbar_e_avg))
+
+        par_print(f"e_p = {e_p}")
+        par_print(f"e_pbar = {e_pbar}")
 
 
 class Problem:
@@ -459,4 +469,5 @@ if __name__ == "__main__":
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f)
+          boundary_conditions, f, problem.u_e,
+          problem.p_e)
