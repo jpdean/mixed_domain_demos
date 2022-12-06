@@ -368,21 +368,78 @@ class GaussianBump(Problem):
 
 class Square(Problem):
     def create_mesh(self):
-        return super().create_mesh()
+        comm = MPI.COMM_WORLD
+        gdim = 2
 
-# def u_e(x):
-#     return ufl.as_vector(
-#         (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
-#          ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
+        gmsh.initialize()
+        if comm.rank == 0:
+            gmsh.model.add("unit_square")
+            lc = 0.1
 
-# def p_e(x):
-#     return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
+            # Point tags
+            points = [gmsh.model.geo.addPoint(0, 0, 0, lc),
+                      gmsh.model.geo.addPoint(1, 0, 0, lc),
+                      gmsh.model.geo.addPoint(1, 1, 0, lc),
+                      gmsh.model.geo.addPoint(0, 1, 0, lc)]
 
+            # Line tags
+            lines = [gmsh.model.geo.addLine(points[0], points[1]),
+                     gmsh.model.geo.addLine(points[1], points[2]),
+                     gmsh.model.geo.addLine(points[2], points[3]),
+                     gmsh.model.geo.addLine(points[3], points[0])]
 
-# x = ufl.SpatialCoordinate(msh)
-# f = - nu * div(grad(u_e(x))) + grad(p_e(x))
-# if solver_type == SolverType.NAVIER_STOKES:
-#     f += div(outer(u_e(x), u_e(x)))
+            gmsh.model.geo.addCurveLoop(lines, 1)
+            gmsh.model.geo.addPlaneSurface([1], 1)
+            gmsh.model.geo.synchronize()
+
+            gmsh.model.addPhysicalGroup(2, [1], 1)
+
+            gmsh.model.addPhysicalGroup(1, [lines[0]], 1)
+            gmsh.model.addPhysicalGroup(1, [lines[1]], 2)
+            gmsh.model.addPhysicalGroup(1, [lines[2]], 3)
+            gmsh.model.addPhysicalGroup(1, [lines[3]], 4)
+
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)
+            gmsh.option.setNumber("Mesh.Algorithm", 8)
+            gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            gmsh.model.mesh.generate(2)
+
+        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+        msh, _, mt = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+        gmsh.finalize()
+
+        boundaries = {"left": 4,
+                      "right": 2,
+                      "bottom": 1,
+                      "top": 3}
+        return msh, mt, boundaries
+
+    def u_e(self, x, module=ufl):
+        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
+
+    def p_e(self, x, module=ufl):
+        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+
+    def boundary_conditions(self):
+        def u_bc(x): return self.u_e(x, module=np)
+        return {"left": u_bc,
+                "right": u_bc,
+                "bottom": u_bc,
+                "top": u_bc}
+
+    def f(self, msh):
+        x = ufl.SpatialCoordinate(msh)
+        f = - nu * div(grad(self.u_e(x))) + grad(self.p_e(x))
+        if solver_type == SolverType.NAVIER_STOKES:
+            f += div(outer(self.u_e(x), self.u_e(x)))
+        return f
 
 
 if __name__ == "__main__":
@@ -395,8 +452,7 @@ if __name__ == "__main__":
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = GaussianBump()
-
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
