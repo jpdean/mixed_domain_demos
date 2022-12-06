@@ -126,7 +126,8 @@ def solve(solver_type, k, nu, num_time_steps,
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(inner(fem.Constant(
-        facet_mesh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0))), vbar) * dx_f)
+        facet_mesh, (PETSc.ScalarType(0.0),
+                     PETSc.ScalarType(0.0))), vbar) * dx_f)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
@@ -211,9 +212,11 @@ def solve(solver_type, k, nu, num_time_steps,
         ksp.solve(b, x)
 
         u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-        p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+        p_offset = u_offset + \
+            Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
         ubar_offset = \
-            p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
+            p_offset + Vbar.dofmap.index_map.size_local * \
+            Vbar.dofmap.index_map_bs
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -244,7 +247,8 @@ def solve(solver_type, k, nu, num_time_steps,
     # e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
     # pbar_h_avg = domain_average(facet_mesh, pbar_h)
     # pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
-    # e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
+    # e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
+    #   (p_e(xbar) - pbar_e_avg))
 
     if rank == 0:
         # print(f"e_u = {e_u}")
