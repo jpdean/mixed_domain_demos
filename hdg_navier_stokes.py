@@ -244,7 +244,7 @@ def solve(solver_type, k, nu, num_time_steps,
     # e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
     #   (p_e(xbar) - pbar_e_avg))
 
-    if rank == 0:
+    if msh.comm.rank == 0:
         # print(f"e_u = {e_u}")
         print(f"e_div_u = {e_div_u}")
         print(f"e_jump_u = {e_jump_u}")
