@@ -254,19 +254,19 @@ def solve(solver_type, k, nu, num_time_steps,
 
 
 class Problem:
-    def create_mesh():
+    def create_mesh(self):
         pass
 
-    def u_e(x):
+    def u_e(self, x):
         return None
 
-    def p_e(x):
+    def p_e(self, x):
         return None
 
-    def boundary_conditions():
+    def boundary_conditions(self):
         pass
 
-    def f(msh):
+    def f(self, msh):
         pass
 
 
