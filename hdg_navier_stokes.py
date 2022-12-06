@@ -313,11 +313,14 @@ class GaussianBump(Problem):
             gmsh.model.geo.addPlaneSurface([1], 1)
 
             # gmsh.model.geo.mesh.setTransfiniteCurve(1, 40)
-            # gmsh.model.geo.mesh.setTransfiniteCurve(2, 15, "Progression", 1.1)
+            # gmsh.model.geo.mesh.setTransfiniteCurve(
+            #   2, 15, "Progression", 1.1)
             # gmsh.model.geo.mesh.setTransfiniteCurve(3, 40)
-            # gmsh.model.geo.mesh.setTransfiniteCurve(4, 15, "Progression", -1.1)
+            # gmsh.model.geo.mesh.setTransfiniteCurve(
+            #   4, 15, "Progression", -1.1)
             # gmsh.model.geo.mesh.setTransfiniteSurface(
-            #     1, "Left", [bottom_points[0], bottom_points[-1], top_right_point, top_left_point])
+            #     1, "Left", [bottom_points[0], bottom_points[-1],
+            #                 top_right_point, top_left_point])
 
             gmsh.model.geo.synchronize()
 
