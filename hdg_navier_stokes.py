@@ -384,7 +384,7 @@ class Square(Problem):
         gmsh.initialize()
         if comm.rank == 0:
             gmsh.model.add("unit_square")
-            lc = 0.04
+            lc = 0.08
 
             # Point tags
             points = [gmsh.model.geo.addPoint(0, 0, 0, lc),
