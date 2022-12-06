@@ -22,7 +22,8 @@ class Scheme(Enum):
 
 
 def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries):
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
@@ -79,17 +80,6 @@ def solve(solver_type, k, nu, num_time_steps,
         inv_entity_map[f] = i
     entity_maps = {facet_mesh: inv_entity_map}
 
-    u_d_lr = fem.Function(Vbar)
-    # u_d_expr = fem.Expression(u_e(ufl.SpatialCoordinate(facet_mesh)),
-    #                           Vbar.element.interpolation_points())
-    u_d_lr.interpolate(lambda x: np.stack(
-        (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0]))))
-    u_d_tb = fem.Function(Vbar)
-    boundary_conditions = {"left": u_d_lr,
-                           "right": u_d_lr,
-                           "bottom": u_d_tb,
-                           "top": u_d_tb}
-
     x = ufl.SpatialCoordinate(msh)
     # f = - nu * div(grad(u_e(x))) + grad(p_e(x))
     # if solver_type == SolverType.NAVIER_STOKES:
@@ -142,8 +132,12 @@ def solve(solver_type, k, nu, num_time_steps,
     # MUMPS seems to cope with the small nullspace
     L_3 = 0.0
     bcs = []
-    for name, bc_func in boundary_conditions.items():
+    for name, bc in boundary_conditions.items():
         id = boundaries[name]
+
+        bc_func = fem.Function(Vbar)
+        bc_func.interpolate(bc)
+
         # NOTE: Need to change this term for Neumann BCs
         L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
 
@@ -287,5 +281,16 @@ if __name__ == "__main__":
                   "bottom": 1,
                   "top": 3}
 
+    def u_d_lr(x): return np.vstack(
+        (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0])))
+
+    def u_d_tb(x): return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0])))
+
+    boundary_conditions = {"left": u_d_lr,
+                           "right": u_d_lr,
+                           "bottom": u_d_tb,
+                           "top": u_d_tb}
+
     solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries)
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions)
