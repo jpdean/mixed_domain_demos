@@ -23,7 +23,7 @@ class Scheme(Enum):
 
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions):
+          boundary_conditions, f):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
@@ -76,15 +76,10 @@ def solve(solver_type, k, nu, num_time_steps,
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
     inv_entity_map = np.full_like(entity_map, -1)
-    for i, f in enumerate(entity_map):
-        inv_entity_map[f] = i
+    for i, facet in enumerate(entity_map):
+        inv_entity_map[facet] = i
     entity_maps = {facet_mesh: inv_entity_map}
 
-    x = ufl.SpatialCoordinate(msh)
-    # f = - nu * div(grad(u_e(x))) + grad(p_e(x))
-    # if solver_type == SolverType.NAVIER_STOKES:
-    #     f += div(outer(u_e(x), u_e(x)))
-    f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
     u_n = fem.Function(V)
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -295,6 +290,14 @@ if __name__ == "__main__":
                            "bottom": u_d_tb,
                            "top": u_d_tb}
 
+    # x = ufl.SpatialCoordinate(msh)
+    # f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+    # if solver_type == SolverType.NAVIER_STOKES:
+    #     f += div(outer(u_e(x), u_e(x)))
+
+    f = fem.Constant(msh, (PETSc.ScalarType(0.0),
+                           PETSc.ScalarType(0.0)))
+
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions)
+          boundary_conditions, f)
