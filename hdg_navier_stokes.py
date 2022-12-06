@@ -56,7 +56,7 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar = ufl.TrialFunction(Qbar)
     qbar = ufl.TestFunction(Qbar)
 
-    h = ufl.CellDiameter(msh)  # TODO Fix for high order!
+    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
     gamma = 6.0 * k**2 / h
 
@@ -253,6 +253,65 @@ def solve(solver_type, k, nu, num_time_steps,
         # print(f"e_pbar = {e_pbar}")
 
 
+class Problem:
+    def create_mesh():
+        pass
+
+    def u_e(x):
+        return None
+
+    def p_e(x):
+        return None
+
+    def boundary_conditions():
+        pass
+
+    def f(msh):
+        pass
+
+
+class GaussianBump(Problem):
+    def create_mesh(self):
+        # TODO Move mesh creation code here
+        msh, mt = create_gmsh_mesh.create()
+        boundaries = {"left": 4,
+                      "right": 2,
+                      "bottom": 1,
+                      "top": 3}
+        return msh, mt, boundaries
+
+    def boundary_conditions(self):
+        def u_d_lr(x): return np.vstack(
+            (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0])))
+
+        def u_d_tb(x): return np.vstack(
+            (np.zeros_like(x[0]), np.zeros_like(x[0])))
+
+        return {"left": u_d_lr,
+                "right": u_d_lr,
+                "bottom": u_d_tb,
+                "top": u_d_tb}
+
+    def f(self, msh):
+        return fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                  PETSc.ScalarType(0.0)))
+
+
+# def u_e(x):
+#     return ufl.as_vector(
+#         (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+#          ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
+
+# def p_e(x):
+#     return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
+
+
+# x = ufl.SpatialCoordinate(msh)
+# f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+# if solver_type == SolverType.NAVIER_STOKES:
+#     f += div(outer(u_e(x), u_e(x)))
+
+
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
@@ -262,40 +321,12 @@ if __name__ == "__main__":
     delta_t = 0.1
     scheme = Scheme.DRW
 
-    # def u_e(x):
-    #     return ufl.as_vector(
-    #         (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
-    #          ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
-
-    # def p_e(x):
-    #     return ufl.sin(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])
-
     comm = MPI.COMM_WORLD
-    rank = comm.rank
+    problem = GaussianBump()
 
-    msh, mt = create_gmsh_mesh.create()
-    boundaries = {"left": 4,
-                  "right": 2,
-                  "bottom": 1,
-                  "top": 3}
-
-    def u_d_lr(x): return np.vstack(
-        (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0])))
-
-    def u_d_tb(x): return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0])))
-
-    boundary_conditions = {"left": u_d_lr,
-                           "right": u_d_lr,
-                           "bottom": u_d_tb,
-                           "top": u_d_tb}
-
-    # x = ufl.SpatialCoordinate(msh)
-    # f = - nu * div(grad(u_e(x))) + grad(p_e(x))
-    # if solver_type == SolverType.NAVIER_STOKES:
-    #     f += div(outer(u_e(x), u_e(x)))
-
-    f = fem.Constant(msh, (PETSc.ScalarType(0.0),
-                           PETSc.ScalarType(0.0)))
+    msh, mt, boundaries = problem.create_mesh()
+    boundary_conditions = problem.boundary_conditions()
+    f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
