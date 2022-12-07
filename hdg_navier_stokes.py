@@ -381,9 +381,9 @@ class Square(Problem):
     def create_mesh(self):
         comm = MPI.COMM_WORLD
         # TODO Pass params
-        n = 16
+        n = 32
         msh = mesh.create_unit_square(
-            comm, n, n, mesh.CellType.quadrilateral, mesh.GhostMode.none)
+            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
@@ -397,8 +397,10 @@ class Square(Problem):
         return msh, mt, boundaries
 
     def u_e(self, x, module=ufl):
-        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+        # u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+        u_x = x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
+        u_y = - x[1]**2 * (1 - x[1])**2 * (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
         if module == ufl:
             return ufl.as_vector((u_x, u_y))
         else:
@@ -406,7 +408,8 @@ class Square(Problem):
             return np.vstack((u_x, u_y))
 
     def p_e(self, x, module=ufl):
-        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        return x[0] * (1 - x[0])
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
@@ -424,10 +427,10 @@ if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     k = 2
-    nu = 1.0e-2
-    num_time_steps = 10
-    delta_t = 10
-    scheme = Scheme.DRW
+    nu = 1.0e-3
+    num_time_steps = 20
+    delta_t = 50
+    scheme = Scheme.RW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
     problem = Square()
