@@ -381,7 +381,7 @@ class Square(Problem):
     def create_mesh(self):
         comm = MPI.COMM_WORLD
         # TODO Pass params
-        n = 32
+        n = 16
         msh = mesh.create_unit_square(
             comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
@@ -428,7 +428,7 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1.0e-3
-    num_time_steps = 20
+    num_time_steps = 10
     delta_t = 50
     scheme = Scheme.RW  # FIXME DRW
 
