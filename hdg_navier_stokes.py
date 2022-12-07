@@ -198,6 +198,13 @@ def solve(solver_type, k, nu, num_time_steps,
     ubar_file.write(0.0)
     pbar_file.write(0.0)
 
+    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    p_offset = u_offset + \
+        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = \
+        p_offset + Vbar.dofmap.index_map.size_local * \
+        Vbar.dofmap.index_map_bs
+
     t = 0.0
     for n in range(num_time_steps):
         t += delta_t.value
@@ -214,12 +221,6 @@ def solve(solver_type, k, nu, num_time_steps,
         # Compute solution
         ksp.solve(b, x)
 
-        u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-        p_offset = u_offset + \
-            Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-        ubar_offset = \
-            p_offset + Vbar.dofmap.index_map.size_local * \
-            Vbar.dofmap.index_map_bs
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
