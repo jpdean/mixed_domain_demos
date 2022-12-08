@@ -424,17 +424,63 @@ class Square(Problem):
         return f
 
 
+# TODO Remove duplicate code
+class Kovasznay(Problem):
+    def create_mesh(self):
+        comm = MPI.COMM_WORLD
+        # TODO Pass params
+        n = 16
+        msh = mesh.create_unit_square(
+            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
+
+        fdim = msh.topology.dim - 1
+        boundary_facets = mesh.locate_entities_boundary(
+            msh, fdim,
+            lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
+            np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+        values = np.ones_like(boundary_facets, dtype=np.intc)
+        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+
+        boundaries = {"boundary": 1}
+        return msh, mt, boundaries
+
+    def u_e(self, x, module=ufl):
+        R_e = 1 / nu
+        u_x = 1 - module.exp(
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * module.cos(2 * module.pi * x[1])
+        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / (2 * module.pi) * module.exp(
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * module.sin(2 * module.pi * x[1])
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
+
+    def p_e(self, x, module=ufl):
+        R_e = 1 / nu
+        return (1 / 2) * (1 - module.exp(
+            2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]))
+
+    def boundary_conditions(self):
+        def u_bc(x): return self.u_e(x, module=np)
+        return {"boundary": u_bc}
+
+    def f(self, msh):
+        return fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                  PETSc.ScalarType(0.0)))
+
+
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     k = 2
-    nu = 1.0e-3
+    nu = 1.0e-2
     num_time_steps = 10
-    delta_t = 50
+    delta_t = 2
     scheme = Scheme.RW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = Square()
+    problem = Kovasznay()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
