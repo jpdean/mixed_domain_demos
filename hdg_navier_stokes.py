@@ -447,9 +447,12 @@ class Kovasznay(Problem):
     def u_e(self, x, module=ufl):
         R_e = 1 / nu
         u_x = 1 - module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * module.cos(2 * module.pi * x[1])
-        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / (2 * module.pi) * module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * module.sin(2 * module.pi * x[1])
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
+            module.cos(2 * module.pi * x[1])
+        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / \
+            (2 * module.pi) * module.exp(
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
+            module.sin(2 * module.pi * x[1])
         if module == ufl:
             return ufl.as_vector((u_x, u_y))
         else:
