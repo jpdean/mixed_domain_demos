@@ -95,10 +95,9 @@ a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-# x = ufl.SpatialCoordinate(msh)
-# f = - div(kappa * grad(u_e(x)))
+x = ufl.SpatialCoordinate(msh)
+f = dot(w, grad(u_e(x))) - div(kappa * grad(u_e(x)))
 
-f = fem.Constant(msh, PETSc.ScalarType(1.0))
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
