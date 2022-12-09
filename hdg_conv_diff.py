@@ -63,17 +63,17 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-kappa = fem.Constant(msh, PETSc.ScalarType(1.0))
+kappa = fem.Constant(msh, PETSc.ScalarType(0.1))
 
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
     - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets) \
     + gamma * inner(kappa * u, v) * ds_c(all_facets)
 a_01 = inner(kappa * ubar, dot(grad(v), n)) * ds_c(all_facets) \
-    - gamma * inner(ubar, v) * ds_c(all_facets)
+    - gamma * inner(kappa * ubar, v) * ds_c(all_facets)
 a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) \
     - gamma * inner(kappa * u, vbar) * ds_c(all_facets)
-a_11 = gamma * inner(ubar, vbar) * ds_c(all_facets)
+a_11 = gamma * inner(kappa * ubar, vbar) * ds_c(all_facets)
 
 a_00 = fem.form(a_00)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
