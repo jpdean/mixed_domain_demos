@@ -98,7 +98,6 @@ def boundary(x):
     return lr | tb
 
 
-# TODO Inhomogeneous BCs
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
