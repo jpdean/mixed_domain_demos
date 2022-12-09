@@ -15,16 +15,14 @@ def u_e(x):
     else:
         module = np
 
-    "Analytical solution to steady state problem from Donea and Huerta"
-    return 1 / w_x * (x[0] - (1 - module.exp(w_x / kappa.value * x[0])) /
-                      (1 - module.exp(w_x / kappa.value)))
+    return module.sin(3.0 * module.pi * x[0]) * \
+        module.sin(2.0 * module.pi * x[1])
 
 
 comm = MPI.COMM_WORLD
 
 n = 32
 msh = mesh.create_unit_square(comm, n, n)
-w_x = 1.0
 
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -67,7 +65,7 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
+kappa = fem.Constant(msh, PETSc.ScalarType(1e-3))
 
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
@@ -80,7 +78,10 @@ a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) \
 a_11 = gamma * inner(kappa * ubar, vbar) * ds_c(all_facets)
 
 # Advection terms
-w = ufl.as_vector((w_x, 0.0))
+x = ufl.SpatialCoordinate(msh)
+w = ufl.as_vector(
+    (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+     ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 0, 1)
 a_00 += - inner(w * u, grad(v)) * dx_c \
     + inner(dot(w * u, n), v) * ds_c(all_facets) \
@@ -95,7 +96,6 @@ a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-x = ufl.SpatialCoordinate(msh)
 f = dot(w, grad(u_e(x))) - div(kappa * grad(u_e(x)))
 
 L_0 = fem.form(inner(f, v) * dx_c)
