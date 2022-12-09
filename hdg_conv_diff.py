@@ -8,9 +8,18 @@ from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2
 
 
+def u_e(x):
+    if type(x) == ufl.SpatialCoordinate:
+        module = ufl
+    else:
+        module = np
+
+    return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+
+
 comm = MPI.COMM_WORLD
 
-n = 16
+n = 8
 msh = mesh.create_unit_square(comm, n, n)
 
 tdim = msh.topology.dim
@@ -72,11 +81,8 @@ a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-u_e = 1
 x = ufl.SpatialCoordinate(msh)
-for i in range(tdim):
-    u_e *= ufl.sin(ufl.pi * x[i])
-f = - div(kappa * grad(u_e))
+f = - div(kappa * grad(u_e(x)))
 
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
@@ -96,7 +102,9 @@ def boundary(x):
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
-bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
+u_bc = fem.Function(Vbar)
+u_bc.interpolate(u_e)
+bc = fem.dirichletbc(u_bc, dofs)
 
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
@@ -126,7 +134,8 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
-e_L2 = norm_L2(msh.comm, u - u_e)
+x = ufl.SpatialCoordinate(msh)
+e_L2 = norm_L2(msh.comm, u - u_e(x))
 
 if comm.rank == 0:
     print(f"e_L2 = {e_L2}")
