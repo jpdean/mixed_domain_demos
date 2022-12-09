@@ -8,19 +8,23 @@ from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2
 
 
+# TODO Try solution non-zero on inflow / outflow boundary
 def u_e(x):
     if type(x) == ufl.SpatialCoordinate:
         module = ufl
     else:
         module = np
 
-    return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+    "Analytical solution to steady state problem from Donea and Huerta"
+    return 1 / w_x * (x[0] - (1 - module.exp(w_x / kappa.value * x[0])) /
+                      (1 - module.exp(w_x / kappa.value)))
 
 
 comm = MPI.COMM_WORLD
 
 n = 8
 msh = mesh.create_unit_square(comm, n, n)
+w_x = 1.0
 
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -75,14 +79,26 @@ a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) \
     - gamma * inner(kappa * u, vbar) * ds_c(all_facets)
 a_11 = gamma * inner(kappa * ubar, vbar) * ds_c(all_facets)
 
+# Advection terms
+w = ufl.as_vector((w_x, 0.0))
+lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 0, 1)
+a_00 += - inner(w * u, grad(v)) * dx_c \
+    + inner(dot(w * u, n), v) * ds_c(all_facets) \
+    - inner(lmbda * dot(w * u, n), v) * ds_c(all_facets)
+a_01 += inner(lmbda * dot(w * ubar, n), v) * ds_c(all_facets)
+a_10 += - inner(dot(w * u, n), vbar) * ds_c(all_facets) \
+    + inner(lmbda * dot(w * u, n), vbar) * ds_c(all_facets)
+a_11 += - inner(lmbda * dot(w * ubar, n), vbar) * ds_c(all_facets)
+
 a_00 = fem.form(a_00)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-x = ufl.SpatialCoordinate(msh)
-f = - div(kappa * grad(u_e(x)))
+# x = ufl.SpatialCoordinate(msh)
+# f = - div(kappa * grad(u_e(x)))
 
+f = fem.Constant(msh, PETSc.ScalarType(1.0))
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
