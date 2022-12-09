@@ -22,7 +22,7 @@ def u_e(x):
 
 comm = MPI.COMM_WORLD
 
-n = 8
+n = 32
 msh = mesh.create_unit_square(comm, n, n)
 w_x = 1.0
 
@@ -67,7 +67,7 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-kappa = fem.Constant(msh, PETSc.ScalarType(0.1))
+kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
 
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
