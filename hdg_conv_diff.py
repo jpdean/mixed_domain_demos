@@ -48,7 +48,7 @@ n = ufl.FacetNormal(msh)
 gamma = 16.0 * k**2 / h
 
 # TODO Do this with numpy
-all_facets = 1  # TODO Change to 0
+all_facets = 0
 facet_integration_entities = {all_facets: []}
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
