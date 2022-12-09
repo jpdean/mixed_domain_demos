@@ -16,12 +16,12 @@ def u_e(x):
         module = np
 
     return module.sin(3.0 * module.pi * x[0]) * \
-        module.sin(2.0 * module.pi * x[1])
+        module.cos(2.0 * module.pi * x[1])
 
 
 comm = MPI.COMM_WORLD
 
-n = 32
+n = 16
 msh = mesh.create_unit_square(comm, n, n)
 
 tdim = msh.topology.dim
