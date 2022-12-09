@@ -63,7 +63,7 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
-kappa = 1.0  # TODO Make this a constant
+kappa = fem.Constant(msh, PETSc.ScalarType(1.0))
 
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
