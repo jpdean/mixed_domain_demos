@@ -215,12 +215,11 @@ def solve(solver_type, k, nu, num_time_steps,
     ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
-    # ksp.getPC().setFactorSolverType("mumps")
-    ksp.getPC().setFactorSolverType("umfpack")
-    # opts = PETSc.Options()
-    # opts["mat_mumps_icntl_6"] = 2
-    # opts["mat_mumps_icntl_14"] = 100
-    # ksp.setFromOptions()
+    ksp.getPC().setFactorSolverType("mumps")
+    opts = PETSc.Options()
+    opts["mat_mumps_icntl_6"] = 2
+    opts["mat_mumps_icntl_14"] = 100
+    ksp.setFromOptions()
 
     b = fem.petsc.create_vector_block(L)
     x = A.createVecRight()
