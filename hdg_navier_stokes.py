@@ -79,8 +79,11 @@ def solve(solver_type, k, nu, num_time_steps,
             facet_integration_entities[all_facets].extend([cell, local_facet])
 
     dx_c = ufl.Measure("dx", domain=msh)
+    # FIXME Figure out why this is being estimated wrong for DRW
+    quad_deg = k**2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=msh)
+        "ds", subdomain_data=facet_integration_entities, domain=msh,
+        metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
     inv_entity_map = np.full_like(entity_map, -1)
@@ -93,31 +96,35 @@ def solve(solver_type, k, nu, num_time_steps,
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
-    # TODO Double check convective terms
-    a_00 = inner(u / delta_t, v) * dx_c + \
-        nu * (inner(grad(u), grad(v)) * dx_c +
-              gamma * inner(u, v) * ds_c(all_facets)
-              - (inner(u, dot(grad(v), n))
-                 + inner(v, dot(grad(u), n))) * ds_c(all_facets))
-    a_01 = fem.form(- inner(p, div(v)) * dx_c)
-    a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(all_facets)
-                 - gamma * inner(ubar, v) * ds_c(all_facets))
-    a_03 = fem.form(inner(dot(v, n), pbar) *
-                    ds_c(all_facets), entity_maps=entity_maps)
-    a_10 = fem.form(- inner(q, div(u)) * dx_c)
-    a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(all_facets)
-                 - gamma * inner(vbar, u) * ds_c(all_facets))
+    a_00 = inner(u / delta_t, v) * dx_c \
+        + nu * inner(grad(u), grad(v)) * dx_c \
+        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets)
+    a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
+                    grad(v)) * dx_c)
+    a_02 = - nu * gamma * inner(
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets)
+    a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
+                          outer(v, n)) * ds_c(all_facets),
+                    entity_maps=entity_maps)
+    a_10 = fem.form(inner(u, grad(q)) * dx_c -
+                    inner(dot(u, n), q) * ds_c(all_facets))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets) \
+        + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
-    a_22 = nu * gamma * inner(ubar, vbar) * ds_c(all_facets)
+    a_22 = - nu * gamma * \
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets)
 
     if solver_type == SolverType.NAVIER_STOKES:
-        a_00 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-                      outer(v, n)) * ds_c(all_facets) - \
-            inner(outer(u, u_n), grad(v)) * dx_c
+        a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
         a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-        a_20 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-                      outer(vbar, n)) * ds_c(all_facets)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets) \
+            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * ds_c(all_facets)
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets)
 
@@ -397,11 +404,12 @@ class Square(Problem):
         return msh, mt, boundaries
 
     def u_e(self, x, module=ufl):
-        # u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-        # u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
-        u_x = x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
-        u_y = - x[1]**2 * (1 - x[1])**2 * \
-            (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
+        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # u_x = x[0]**2 * (1 - x[0])**2 * \
+        # (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
+        # u_y = - x[1]**2 * (1 - x[1])**2 * \
+        # (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
         if module == ufl:
             return ufl.as_vector((u_x, u_y))
         else:
@@ -409,8 +417,8 @@ class Square(Problem):
             return np.vstack((u_x, u_y))
 
     def p_e(self, x, module=ufl):
-        # return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-        return x[0] * (1 - x[0])
+        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # return x[0] * (1 - x[0])
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
@@ -429,7 +437,7 @@ class Kovasznay(Problem):
     def create_mesh(self):
         comm = MPI.COMM_WORLD
         # TODO Pass params
-        n = 16
+        n = 32
         msh = mesh.create_unit_square(
             comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
@@ -477,13 +485,13 @@ if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     k = 2
-    nu = 1.0e-2
+    nu = 1.0e-3
     num_time_steps = 10
-    delta_t = 2
-    scheme = Scheme.RW  # FIXME DRW
+    delta_t = 200
+    scheme = Scheme.DRW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = Kovasznay()
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
