@@ -401,11 +401,12 @@ class Square(Problem):
         return msh, mt, boundaries
 
     def u_e(self, x, module=ufl):
-        # u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-        # u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
-        u_x = x[0]**2 * (1 - x[0])**2 * (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
-        u_y = - x[1]**2 * (1 - x[1])**2 * \
-            (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
+        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # u_x = x[0]**2 * (1 - x[0])**2 * \
+        # (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
+        # u_y = - x[1]**2 * (1 - x[1])**2 * \
+        # (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
         if module == ufl:
             return ufl.as_vector((u_x, u_y))
         else:
@@ -413,8 +414,8 @@ class Square(Problem):
             return np.vstack((u_x, u_y))
 
     def p_e(self, x, module=ufl):
-        # return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-        return x[0] * (1 - x[0])
+        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # return x[0] * (1 - x[0])
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
@@ -482,12 +483,12 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1e-3
-    num_time_steps = 25
-    delta_t = 50
-    scheme = Scheme.DRW
+    num_time_steps = 50
+    delta_t = 100
+    scheme = Scheme.RW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = Kovasznay()
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
