@@ -89,7 +89,6 @@ def solve(solver_type, k, nu, num_time_steps,
     entity_maps = {facet_mesh: inv_entity_map}
 
     u_n = fem.Function(V)
-    # u_n.interpolate(boundary_conditions["boundary"])
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
@@ -99,82 +98,36 @@ def solve(solver_type, k, nu, num_time_steps,
         - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets) \
         + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets) \
         - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets)
-    # a_01 = fem.form(- inner(p, div(v)) * dx_c)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
-    # # a_01 = fem.form(inner(grad(p), v) * dx_c - inner(p, dot(v, n)) * ds_c(all_facets))
-    # a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(all_facets)
-    #              - gamma * inner(ubar, v) * ds_c(all_facets))
     a_02 = - nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(all_facets) \
         + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets)
-    # a_03 = fem.form(inner(dot(v, n), pbar) *
-    #                 ds_c(all_facets), entity_maps=entity_maps)
     a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
                           outer(v, n)) * ds_c(all_facets), entity_maps=entity_maps)
-    # # a_10 = fem.form(- inner(q, div(u)) * dx_c)
     a_10 = fem.form(inner(u, grad(q)) * dx_c -
                     inner(dot(u, n), q) * ds_c(all_facets))
-    # a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(all_facets)
-    #              + gamma * inner(vbar, u) * ds_c(all_facets))
     a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets) \
         + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
-    # a_22 = - nu * gamma * inner(ubar, vbar) * ds_c(all_facets)
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets)
 
     if solver_type == SolverType.NAVIER_STOKES:
-        # a_00 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-        #               outer(v, n)) * ds_c(all_facets) - \
-        #     inner(outer(u, u_n), grad(v)) * dx_c
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
             + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets) \
             - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-        # a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
         a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-        # a_20 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-        #               outer(vbar, n)) * ds_c(all_facets)
         a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets) \
             - inner(outer(u, lmbda * u_n), outer(vbar, n)) * ds_c(all_facets)
-        # a_22 += inner(outer(ubar, lmbda * u_n),
-        #               outer(vbar, n)) * ds_c(all_facets)
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets)
-    # # TODO Double check convective terms
-    # # a_00 = inner(u / delta_t, v) * dx_c + \
-    # a_00 = nu * (inner(grad(u), grad(v)) * dx_c +
-    #              gamma * inner(u, v) * ds_c(all_facets)
-    #              - (inner(u, dot(grad(v), n))
-    #              + inner(v, dot(grad(u), n))) * ds_c(all_facets))
-    # a_01 = fem.form(- inner(p, div(v)) * dx_c)
-    # a_02 = nu * (inner(ubar, dot(grad(v), n)) * ds_c(all_facets)
-    #              - gamma * inner(ubar, v) * ds_c(all_facets))
-    # a_03 = fem.form(inner(dot(v, n), pbar) *
-    #                 ds_c(all_facets), entity_maps=entity_maps)
-    # a_10 = fem.form(- inner(q, div(u)) * dx_c)
-    # a_20 = nu * (inner(vbar, dot(grad(u), n)) * ds_c(all_facets)
-    #              - gamma * inner(vbar, u) * ds_c(all_facets))
-    # a_30 = fem.form(inner(dot(u, n), qbar) *
-    #                 ds_c(all_facets), entity_maps=entity_maps)
-    # a_22 = nu * gamma * inner(ubar, vbar) * ds_c(all_facets)
-
-    # if solver_type == SolverType.NAVIER_STOKES:
-    #     a_00 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-    #                   outer(v, n)) * ds_c(all_facets) - \
-    #         inner(outer(u, u_n), grad(v)) * dx_c
-    #     a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-    #     a_20 += inner(outer(u, u_n) - outer(u, lmbda * u_n),
-    #                   outer(vbar, n)) * ds_c(all_facets)
-    #     a_22 += inner(outer(ubar, lmbda * u_n),
-    #                   outer(vbar, n)) * ds_c(all_facets)
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
     a_20 = fem.form(a_20, entity_maps=entity_maps)
     a_22 = fem.form(a_22, entity_maps=entity_maps)
 
-    # L_0 = fem.form(inner(f, v) * dx_c)
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(inner(fem.Constant(
