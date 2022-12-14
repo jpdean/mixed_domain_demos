@@ -79,8 +79,14 @@ def solve(solver_type, k, nu, num_time_steps,
             facet_integration_entities[all_facets].extend([cell, local_facet])
 
     dx_c = ufl.Measure("dx", domain=msh)
-    ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=msh)
+    # ds_c = ufl.Measure(
+    #     "ds", subdomain_data=facet_integration_entities, domain=msh)
+    # FIXME Figure out why this is being estimated wrong and calculate
+    # properly
+    quad_deg = 10
+    ds_c = ufl.Measure("ds", subdomain_data=facet_integration_entities,
+                       domain=msh,
+                       metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
     inv_entity_map = np.full_like(entity_map, -1)
@@ -482,10 +488,10 @@ if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     k = 2
-    nu = 1e-3
-    num_time_steps = 50
-    delta_t = 100
-    scheme = Scheme.RW  # FIXME DRW
+    nu = 1.0e-3
+    num_time_steps = 10
+    delta_t = 200
+    scheme = Scheme.DRW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
     problem = Square()
