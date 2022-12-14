@@ -100,10 +100,12 @@ def solve(solver_type, k, nu, num_time_steps,
         - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
-    a_02 = - nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(all_facets) \
+    a_02 = - nu * gamma * inner(
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets) \
         + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets)
     a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
-                          outer(v, n)) * ds_c(all_facets), entity_maps=entity_maps)
+                          outer(v, n)) * ds_c(all_facets),
+                    entity_maps=entity_maps)
     a_10 = fem.form(inner(u, grad(q)) * dx_c -
                     inner(dot(u, n), q) * ds_c(all_facets))
     a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets) \
