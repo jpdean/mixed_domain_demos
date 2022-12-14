@@ -484,7 +484,7 @@ if __name__ == "__main__":
     nu = 1e-3
     num_time_steps = 25
     delta_t = 50
-    scheme = Scheme.DRW  # FIXME DRW
+    scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
     problem = Kovasznay()
