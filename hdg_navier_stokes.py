@@ -121,8 +121,9 @@ def solve(solver_type, k, nu, num_time_steps,
         + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
-    a_23 = fem.form(inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(all_facets),
-                    entity_maps=entity_maps)
+    a_23 = fem.form(
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(all_facets),
+        entity_maps=entity_maps)
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
     a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
@@ -391,7 +392,6 @@ class GaussianBump(Problem):
             (np.zeros_like(x[0]),
              np.zeros_like(x[0])))
 
-        # TODO Rename
         return {"left": (BCType.Dirichlet, inlet),
                 "right": (BCType.Neumann, zero),
                 "bottom": (BCType.Dirichlet, zero),
