@@ -23,6 +23,11 @@ class Scheme(Enum):
     DRW = 2
 
 
+class BCType(Enum):
+    Dirichlet = 1
+    Neumann = 2
+
+
 def par_print(string):
     if comm.rank == 0:
         print(string)
@@ -115,6 +120,10 @@ def solve(solver_type, k, nu, num_time_steps,
         + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
+    # On the Dirichlet boundary, the contribution from this term will be
+    # added to the RHS in apply_lifting
+    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
+                    entity_maps=entity_maps)
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets)
 
@@ -138,29 +147,30 @@ def solve(solver_type, k, nu, num_time_steps,
     L_2 = fem.form(inner(fem.Constant(
         facet_mesh, (PETSc.ScalarType(0.0),
                      PETSc.ScalarType(0.0))), vbar) * dx_f)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f,
+        entity_maps=entity_maps)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
-    L_3 = 0.0
     bcs = []
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
-
+        bc_type, bc_expr = bc
         bc_func = fem.Function(Vbar)
-        bc_func.interpolate(bc)
-
-        # NOTE: Need to change this term for Neumann BCs
-        L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
-
-        facets = inv_entity_map[mt.indices[mt.values == id]]
-        dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
-        bcs.append(fem.dirichletbc(bc_func, dofs))
-    L_3 = fem.form(L_3, entity_maps=entity_maps)
+        bc_func.interpolate(bc_expr)
+        if bc_type == BCType.Dirichlet:
+            facets = inv_entity_map[mt.indices[mt.values == id]]
+            dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+            bcs.append(fem.dirichletbc(bc_func, dofs))
+        else:
+            assert bc_type == BCType.Neumann
+            raise Exception("Not implemented")
 
     a = [[a_00, a_01, a_02, a_03],
          [a_10, None, None, None],
          [a_20, None, a_22, None],
-         [a_30, None, None, None]]
+         [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
     if solver_type == SolverType.NAVIER_STOKES:
@@ -374,10 +384,10 @@ class GaussianBump(Problem):
         def u_d_tb(x): return np.vstack(
             (np.zeros_like(x[0]), np.zeros_like(x[0])))
 
-        return {"left": u_d_lr,
-                "right": u_d_lr,
-                "bottom": u_d_tb,
-                "top": u_d_tb}
+        return {"left": (BCType.Dirichlet, u_d_lr),
+                "right": (BCType.Dirichlet, u_d_lr),
+                "bottom": (BCType.Dirichlet, u_d_tb),
+                "top": (BCType.Dirichlet, u_d_tb)}
 
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
@@ -487,16 +497,16 @@ if __name__ == "__main__":
     k = 2
     nu = 1.0e-3
     num_time_steps = 10
-    delta_t = 200
+    delta_t = 1
     scheme = Scheme.DRW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = Square()
+    problem = GaussianBump()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, problem.u_e,
-          problem.p_e)
+          boundary_conditions, f, None,
+          None)
