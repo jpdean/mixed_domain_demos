@@ -381,17 +381,19 @@ class GaussianBump(Problem):
         return msh, mt, boundaries
 
     def boundary_conditions(self):
-        def u_d_lr(x): return np.vstack(
-            (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0])))
+        def inlet(x): return np.vstack(
+            (np.ones_like(x[0]),
+             np.zeros_like(x[0])))
 
-        def u_d_tb(x): return np.vstack(
-            (np.zeros_like(x[0]), np.zeros_like(x[0])))
+        def zero(x): return np.vstack(
+            (np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
 
         # TODO Rename
-        return {"left": (BCType.Dirichlet, u_d_lr),
-                "right": (BCType.Neumann, u_d_lr),
-                "bottom": (BCType.Dirichlet, u_d_tb),
-                "top": (BCType.Dirichlet, u_d_tb)}
+        return {"left": (BCType.Dirichlet, inlet),
+                "right": (BCType.Neumann, zero),
+                "bottom": (BCType.Dirichlet, zero),
+                "top": (BCType.Dirichlet, zero)}
 
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
@@ -500,7 +502,7 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1.0e-3
-    num_time_steps = 10
+    num_time_steps = 25
     delta_t = 1
     scheme = Scheme.DRW  # FIXME DRW
 
