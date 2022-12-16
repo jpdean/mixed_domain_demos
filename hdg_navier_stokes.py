@@ -406,7 +406,7 @@ class Square(Problem):
     def create_mesh(self):
         comm = MPI.COMM_WORLD
         # TODO Pass params
-        n = 16
+        n = 32
         msh = mesh.create_unit_square(
             comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
@@ -504,16 +504,17 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1.0e-3
-    num_time_steps = 25
-    delta_t = 1
-    scheme = Scheme.DRW  # FIXME DRW
+    num_time_steps = 10
+    delta_t = 200
+    scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = GaussianBump()
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, None, None)
+          boundary_conditions, f, problem.u_e,
+          problem.p_e)
