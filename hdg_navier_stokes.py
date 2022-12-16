@@ -140,6 +140,10 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets)
 
+    L_2 = inner(fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                   PETSc.ScalarType(0.0))),
+                vbar) * ds_c(all_facets)
+
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
     bcs = []
@@ -154,10 +158,10 @@ def solve(solver_type, k, nu, num_time_steps,
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
             assert bc_type == BCType.Neumann
+            L_2 += inner(bc_func, vbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
-            # TODO Add traction
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
@@ -166,9 +170,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
-    L_2 = fem.form(inner(fem.Constant(
-        facet_mesh, (PETSc.ScalarType(0.0),
-                     PETSc.ScalarType(0.0))), vbar) * dx_f)
+    L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
         facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
