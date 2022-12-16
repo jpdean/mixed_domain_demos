@@ -432,7 +432,7 @@ class Square(Problem):
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": u_bc}
+        return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def f(self, msh):
         x = ufl.SpatialCoordinate(msh)
@@ -484,7 +484,7 @@ class Kovasznay(Problem):
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": u_bc}
+        return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
@@ -496,17 +496,17 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1.0e-3
-    num_time_steps = 10
-    delta_t = 1
+    num_time_steps = 25
+    delta_t = 200
     scheme = Scheme.DRW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = GaussianBump()
+    problem = Kovasznay()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, None,
-          None)
+          boundary_conditions, f, problem.u_e,
+          problem.p_e)
