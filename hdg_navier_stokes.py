@@ -98,6 +98,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     u_n = fem.Function(V)
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+    ubar_n = fem.Function(Vbar)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
@@ -120,6 +121,8 @@ def solve(solver_type, k, nu, num_time_steps,
         + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
+    a_23 = fem.form(inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(all_facets),
+                    entity_maps=entity_maps)
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
     a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
@@ -137,20 +140,6 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets)
 
-    a_00 = fem.form(a_00)
-    a_02 = fem.form(a_02, entity_maps=entity_maps)
-    a_20 = fem.form(a_20, entity_maps=entity_maps)
-    a_22 = fem.form(a_22, entity_maps=entity_maps)
-
-    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
-    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
-    L_2 = fem.form(inner(fem.Constant(
-        facet_mesh, (PETSc.ScalarType(0.0),
-                     PETSc.ScalarType(0.0))), vbar) * dx_f)
-    L_3 = fem.form(inner(fem.Constant(
-        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f,
-        entity_maps=entity_maps)
-
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
     bcs = []
@@ -165,11 +154,27 @@ def solve(solver_type, k, nu, num_time_steps,
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
             assert bc_type == BCType.Neumann
-            raise Exception("Not implemented")
+            if solver_type == SolverType.NAVIER_STOKES:
+                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
+                                ubar, vbar) * ds_c(id)
+            # TODO Add traction
+
+    a_00 = fem.form(a_00)
+    a_02 = fem.form(a_02, entity_maps=entity_maps)
+    a_20 = fem.form(a_20, entity_maps=entity_maps)
+    a_22 = fem.form(a_22, entity_maps=entity_maps)
+
+    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
+    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
+    L_2 = fem.form(inner(fem.Constant(
+        facet_mesh, (PETSc.ScalarType(0.0),
+                     PETSc.ScalarType(0.0))), vbar) * dx_f)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
     a = [[a_00, a_01, a_02, a_03],
          [a_10, None, None, None],
-         [a_20, None, a_22, None],
+         [a_20, None, a_22, a_23],
          [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
@@ -200,14 +205,12 @@ def solve(solver_type, k, nu, num_time_steps,
     u_vis.name = "u"
     p_h = fem.Function(Q)
     p_h.name = "p"
-    ubar_h = fem.Function(Vbar)
-    ubar_h.name = "ubar"
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
     u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
     p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_h._cpp_object])
+    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
     pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
 
     u_file.write(0.0)
@@ -242,9 +245,9 @@ def solve(solver_type, k, nu, num_time_steps,
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
         p_h.x.scatter_forward()
-        ubar_h.x.array[:ubar_offset -
+        ubar_n.x.array[:ubar_offset -
                        p_offset] = x.array_r[p_offset:ubar_offset]
-        ubar_h.x.scatter_forward()
+        ubar_n.x.scatter_forward()
         pbar_h.x.array[:(len(x.array_r) - ubar_offset)
                        ] = x.array_r[ubar_offset:]
         pbar_h.x.scatter_forward()
@@ -265,7 +268,7 @@ def solve(solver_type, k, nu, num_time_steps,
     xbar = ufl.SpatialCoordinate(facet_mesh)
     if u_e is not None:
         e_u = norm_L2(msh.comm, u_n - u_e(x))
-        e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
+        e_ubar = norm_L2(msh.comm, ubar_n - u_e(xbar))
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
@@ -384,8 +387,9 @@ class GaussianBump(Problem):
         def u_d_tb(x): return np.vstack(
             (np.zeros_like(x[0]), np.zeros_like(x[0])))
 
+        # TODO Rename
         return {"left": (BCType.Dirichlet, u_d_lr),
-                "right": (BCType.Dirichlet, u_d_lr),
+                "right": (BCType.Neumann, u_d_lr),
                 "bottom": (BCType.Dirichlet, u_d_tb),
                 "top": (BCType.Dirichlet, u_d_tb)}
 
@@ -496,17 +500,16 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     k = 2
     nu = 1.0e-3
-    num_time_steps = 25
-    delta_t = 200
+    num_time_steps = 10
+    delta_t = 1
     scheme = Scheme.DRW  # FIXME DRW
 
     comm = MPI.COMM_WORLD
-    problem = Kovasznay()
+    problem = GaussianBump()
     msh, mt, boundaries = problem.create_mesh()
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, problem.u_e,
-          problem.p_e)
+          boundary_conditions, f, None, None)
