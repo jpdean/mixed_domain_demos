@@ -306,7 +306,7 @@ class Problem:
 
 
 class GaussianBump(Problem):
-    def create_mesh(self, h):
+    def create_mesh(self, h, cell_type):
         def gaussian(x, a, sigma, mu):
             return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
 
@@ -365,9 +365,10 @@ class GaussianBump(Problem):
             gmsh.model.addPhysicalGroup(1, [lines[3]], 4)
 
             gmsh.option.setNumber("Mesh.Smoothing", 5)
-            gmsh.option.setNumber("Mesh.RecombineAll", 1)
-            gmsh.option.setNumber("Mesh.Algorithm", 8)
-            gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
             gmsh.model.mesh.generate(2)
             gmsh.model.mesh.setOrder(order)
 
@@ -402,11 +403,11 @@ class GaussianBump(Problem):
 
 
 class Square(Problem):
-    def create_mesh(self, h):
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
         msh = mesh.create_unit_square(
-            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
+            comm, n, n, cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
@@ -450,11 +451,11 @@ class Square(Problem):
 
 # TODO Remove duplicate code
 class Kovasznay(Problem):
-    def create_mesh(self, h):
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
         msh = mesh.create_unit_square(
-            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
+            comm, n, n, cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
@@ -502,14 +503,15 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 16
     k = 2
+    cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 10
+    num_time_steps = 25
     delta_t = 200
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
     problem = Square()
-    msh, mt, boundaries = problem.create_mesh(h)
+    msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
