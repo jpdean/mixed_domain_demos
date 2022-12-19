@@ -19,7 +19,11 @@ class SolverType(Enum):
 
 
 class Scheme(Enum):
+    # Scheme from https://doi.org/10.1016/j.cma.2019.112619
     RW = 1
+    # Scheme from "Hybridized discontinuous Galerkin methods
+    # for incompressible flows on meshes with quadrilateral
+    # cells" by J. P. Dean, S. Rhebergen, and G. N. Wells
     DRW = 2
 
 
