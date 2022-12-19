@@ -23,6 +23,11 @@ class Scheme(Enum):
     DRW = 2
 
 
+class BCType(Enum):
+    Dirichlet = 1
+    Neumann = 2
+
+
 def par_print(string):
     if comm.rank == 0:
         print(string)
@@ -93,6 +98,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     u_n = fem.Function(V)
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+    ubar_n = fem.Function(Vbar)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
@@ -115,6 +121,13 @@ def solve(solver_type, k, nu, num_time_steps,
         + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
     a_30 = fem.form(inner(dot(u, n), qbar) *
                     ds_c(all_facets), entity_maps=entity_maps)
+    a_23 = fem.form(
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(all_facets),
+        entity_maps=entity_maps)
+    # On the Dirichlet boundary, the contribution from this term will be
+    # added to the RHS in apply_lifting
+    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
+                    entity_maps=entity_maps)
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets)
 
@@ -128,6 +141,29 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets)
 
+    L_2 = inner(fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                   PETSc.ScalarType(0.0))),
+                vbar) * ds_c(all_facets)
+
+    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
+    # MUMPS seems to cope with the small nullspace
+    bcs = []
+    for name, bc in boundary_conditions.items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        bc_func = fem.Function(Vbar)
+        bc_func.interpolate(bc_expr)
+        if bc_type == BCType.Dirichlet:
+            facets = inv_entity_map[mt.indices[mt.values == id]]
+            dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+            bcs.append(fem.dirichletbc(bc_func, dofs))
+        else:
+            assert bc_type == BCType.Neumann
+            L_2 += inner(bc_func, vbar) * ds_c(id)
+            if solver_type == SolverType.NAVIER_STOKES:
+                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
+                                ubar, vbar) * ds_c(id)
+
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
     a_20 = fem.form(a_20, entity_maps=entity_maps)
@@ -135,32 +171,14 @@ def solve(solver_type, k, nu, num_time_steps,
 
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
-    L_2 = fem.form(inner(fem.Constant(
-        facet_mesh, (PETSc.ScalarType(0.0),
-                     PETSc.ScalarType(0.0))), vbar) * dx_f)
-
-    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
-    # MUMPS seems to cope with the small nullspace
-    L_3 = 0.0
-    bcs = []
-    for name, bc in boundary_conditions.items():
-        id = boundaries[name]
-
-        bc_func = fem.Function(Vbar)
-        bc_func.interpolate(bc)
-
-        # NOTE: Need to change this term for Neumann BCs
-        L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
-
-        facets = inv_entity_map[mt.indices[mt.values == id]]
-        dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
-        bcs.append(fem.dirichletbc(bc_func, dofs))
-    L_3 = fem.form(L_3, entity_maps=entity_maps)
+    L_2 = fem.form(L_2, entity_maps=entity_maps)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
     a = [[a_00, a_01, a_02, a_03],
          [a_10, None, None, None],
-         [a_20, None, a_22, None],
-         [a_30, None, None, None]]
+         [a_20, None, a_22, a_23],
+         [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
     if solver_type == SolverType.NAVIER_STOKES:
@@ -190,14 +208,12 @@ def solve(solver_type, k, nu, num_time_steps,
     u_vis.name = "u"
     p_h = fem.Function(Q)
     p_h.name = "p"
-    ubar_h = fem.Function(Vbar)
-    ubar_h.name = "ubar"
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
     u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
     p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_h._cpp_object])
+    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
     pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
 
     u_file.write(0.0)
@@ -232,9 +248,9 @@ def solve(solver_type, k, nu, num_time_steps,
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
         p_h.x.scatter_forward()
-        ubar_h.x.array[:ubar_offset -
+        ubar_n.x.array[:ubar_offset -
                        p_offset] = x.array_r[p_offset:ubar_offset]
-        ubar_h.x.scatter_forward()
+        ubar_n.x.scatter_forward()
         pbar_h.x.array[:(len(x.array_r) - ubar_offset)
                        ] = x.array_r[ubar_offset:]
         pbar_h.x.scatter_forward()
@@ -255,7 +271,7 @@ def solve(solver_type, k, nu, num_time_steps,
     xbar = ufl.SpatialCoordinate(facet_mesh)
     if u_e is not None:
         e_u = norm_L2(msh.comm, u_n - u_e(x))
-        e_ubar = norm_L2(msh.comm, ubar_h - u_e(xbar))
+        e_ubar = norm_L2(msh.comm, ubar_n - u_e(xbar))
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
@@ -273,7 +289,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
 
 class Problem:
-    def create_mesh(self):
+    def create_mesh(self, h):
         pass
 
     def u_e(self, x):
@@ -290,7 +306,7 @@ class Problem:
 
 
 class GaussianBump(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h, cell_type):
         def gaussian(x, a, sigma, mu):
             return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
 
@@ -301,7 +317,6 @@ class GaussianBump(Problem):
         if comm.rank == 0:
             # TODO Pass options
             gmsh.model.add("gaussian_bump")
-            lc = 0.1
             a = 0.2
             sigma = 0.2
             mu = 1.0
@@ -311,10 +326,10 @@ class GaussianBump(Problem):
 
             # Point tags
             bottom_points = [
-                gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, lc)
+                gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, h)
                 for x in np.linspace(0.0, w, num_bottom_points)]
-            top_left_point = gmsh.model.geo.addPoint(0, 1, 0, lc)
-            top_right_point = gmsh.model.geo.addPoint(w, 1, 0, lc)
+            top_left_point = gmsh.model.geo.addPoint(0, 1, 0, h)
+            top_right_point = gmsh.model.geo.addPoint(w, 1, 0, h)
 
             # Line tags
             lines = []
@@ -350,9 +365,10 @@ class GaussianBump(Problem):
             gmsh.model.addPhysicalGroup(1, [lines[3]], 4)
 
             gmsh.option.setNumber("Mesh.Smoothing", 5)
-            gmsh.option.setNumber("Mesh.RecombineAll", 1)
-            gmsh.option.setNumber("Mesh.Algorithm", 8)
-            gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
             gmsh.model.mesh.generate(2)
             gmsh.model.mesh.setOrder(order)
 
@@ -368,16 +384,18 @@ class GaussianBump(Problem):
         return msh, mt, boundaries
 
     def boundary_conditions(self):
-        def u_d_lr(x): return np.vstack(
-            (5.0 * x[1] * (1 - x[1]), np.zeros_like(x[0])))
+        def inlet(x): return np.vstack(
+            (np.ones_like(x[0]),
+             np.zeros_like(x[0])))
 
-        def u_d_tb(x): return np.vstack(
-            (np.zeros_like(x[0]), np.zeros_like(x[0])))
+        def zero(x): return np.vstack(
+            (np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
 
-        return {"left": u_d_lr,
-                "right": u_d_lr,
-                "bottom": u_d_tb,
-                "top": u_d_tb}
+        return {"left": (BCType.Dirichlet, inlet),
+                "right": (BCType.Neumann, zero),
+                "bottom": (BCType.Dirichlet, zero),
+                "top": (BCType.Dirichlet, zero)}
 
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
@@ -385,12 +403,11 @@ class GaussianBump(Problem):
 
 
 class Square(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
-        # TODO Pass params
-        n = 16
+        n = round(1 / h)
         msh = mesh.create_unit_square(
-            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
+            comm, n, n, cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
@@ -422,7 +439,7 @@ class Square(Problem):
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": u_bc}
+        return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def f(self, msh):
         x = ufl.SpatialCoordinate(msh)
@@ -434,12 +451,11 @@ class Square(Problem):
 
 # TODO Remove duplicate code
 class Kovasznay(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
-        # TODO Pass params
-        n = 32
+        n = round(1 / h)
         msh = mesh.create_unit_square(
-            comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
+            comm, n, n, cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
@@ -474,7 +490,7 @@ class Kovasznay(Problem):
 
     def boundary_conditions(self):
         def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": u_bc}
+        return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
@@ -484,15 +500,17 @@ class Kovasznay(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
+    h = 1 / 16
     k = 2
+    cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 10
+    num_time_steps = 25
     delta_t = 200
-    scheme = Scheme.DRW  # FIXME DRW
+    scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
     problem = Square()
-    msh, mt, boundaries = problem.create_mesh()
+    msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
