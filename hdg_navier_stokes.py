@@ -289,7 +289,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
 
 class Problem:
-    def create_mesh(self):
+    def create_mesh(self, h):
         pass
 
     def u_e(self, x):
@@ -306,7 +306,7 @@ class Problem:
 
 
 class GaussianBump(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h):
         def gaussian(x, a, sigma, mu):
             return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
 
@@ -317,7 +317,6 @@ class GaussianBump(Problem):
         if comm.rank == 0:
             # TODO Pass options
             gmsh.model.add("gaussian_bump")
-            lc = 0.1
             a = 0.2
             sigma = 0.2
             mu = 1.0
@@ -327,10 +326,10 @@ class GaussianBump(Problem):
 
             # Point tags
             bottom_points = [
-                gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, lc)
+                gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, h)
                 for x in np.linspace(0.0, w, num_bottom_points)]
-            top_left_point = gmsh.model.geo.addPoint(0, 1, 0, lc)
-            top_right_point = gmsh.model.geo.addPoint(w, 1, 0, lc)
+            top_left_point = gmsh.model.geo.addPoint(0, 1, 0, h)
+            top_right_point = gmsh.model.geo.addPoint(w, 1, 0, h)
 
             # Line tags
             lines = []
@@ -403,10 +402,9 @@ class GaussianBump(Problem):
 
 
 class Square(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h):
         comm = MPI.COMM_WORLD
-        # TODO Pass params
-        n = 32
+        n = round(1 / h)
         msh = mesh.create_unit_square(
             comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
@@ -452,10 +450,9 @@ class Square(Problem):
 
 # TODO Remove duplicate code
 class Kovasznay(Problem):
-    def create_mesh(self):
+    def create_mesh(self, h):
         comm = MPI.COMM_WORLD
-        # TODO Pass params
-        n = 32
+        n = round(1 / h)
         msh = mesh.create_unit_square(
             comm, n, n, mesh.CellType.triangle, mesh.GhostMode.none)
 
@@ -499,9 +496,11 @@ class Kovasznay(Problem):
                                   PETSc.ScalarType(0.0)))
 
 
+# TODO CHECK CONV. RATES AND MERGE INTO MAIN
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
+    h = 1 / 16
     k = 2
     nu = 1.0e-3
     num_time_steps = 10
@@ -510,7 +509,7 @@ if __name__ == "__main__":
 
     comm = MPI.COMM_WORLD
     problem = Square()
-    msh, mt, boundaries = problem.create_mesh()
+    msh, mt, boundaries = problem.create_mesh(h)
     boundary_conditions = problem.boundary_conditions()
     f = problem.f(msh)
 
