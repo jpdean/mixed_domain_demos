@@ -497,7 +497,6 @@ class Kovasznay(Problem):
                                   PETSc.ScalarType(0.0)))
 
 
-# TODO CHECK CONV. RATES AND MERGE INTO MAIN
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
