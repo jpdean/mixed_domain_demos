@@ -1,3 +1,6 @@
+# Scheme from "A finite element method for domain decomposition
+# with non-matching grids" by Becker et al.
+
 from dolfinx import mesh, fem
 from mpi4py import MPI
 import ufl
@@ -26,6 +29,7 @@ dx = ufl.Measure("dx", domain=msh,
 # Define function spaces on each half
 V_0 = fem.FunctionSpace(left_submesh, ("Lagrange", 1))
 V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", 1))
+V = fem.FunctionSpace(msh, ("Lagrange", 1))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -123,9 +127,19 @@ a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-A = fem.petsc.assemble_matrix(a_10)
-A.assemble()
-print(A.norm())
+a = [[a_00, a_01],
+     [a_10, a_11]]
+
+f = fem.Function(V)
+f.interpolate(lambda x: np.ones_like(x[0]))
+
+L_0 = inner(f, v_0) * dx(0)
+L_1 = inner(f, v_1) * dx(1)
+
+L_0 = fem.form(L_0, entity_maps=entity_maps)
+L_1 = fem.form(L_1, entity_maps=entity_maps)
+
+L = [L_0, L_1]
 
 # TODO Pick function that is complicated on one side so most of error
 # is there and make that part high-order.
