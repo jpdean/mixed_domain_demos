@@ -22,8 +22,10 @@ right_cells = mesh.locate_entities(msh, tdim, lambda x: x[0] >= 1.0)
 right_submesh, right_entity_map = mesh.create_submesh(
     msh, tdim, right_cells)[:2]
 
-cell_integration_entities = {0: left_cells,
-                             1: right_cells}
+msh_cell_imap = msh.topology.index_map(tdim)
+cell_integration_entities = {
+    0: [c for c in left_cells if c < msh_cell_imap.size_local],
+    1: [c for c in right_cells if c < msh_cell_imap.size_local]}
 dx = ufl.Measure("dx", domain=msh,
                  subdomain_data=cell_integration_entities)
 
@@ -193,5 +195,6 @@ with io.XDMFFile(MPI.COMM_WORLD, "u_1.xdmf", "w") as f:
     f.write_mesh(right_submesh)
     f.write_function(u_1)
 
+# TODO Check error / conv. rates
 # TODO Pick function that is complicated on one side so most of error
 # is there and make that part high-order.
