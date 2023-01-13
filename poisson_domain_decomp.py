@@ -141,5 +141,24 @@ L_1 = fem.form(L_1, entity_maps=entity_maps)
 
 L = [L_0, L_1]
 
+bound_facets_0 = mesh.locate_entities_boundary(
+    left_submesh, fdim,
+    lambda x: np.isclose(x[0], 0.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+
+bound_facets_1 = mesh.locate_entities_boundary(
+    right_submesh, fdim,
+    lambda x: np.isclose(x[0], 2.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+
+bound_dofs_0 = fem.locate_dofs_topological(V_0, fdim, bound_facets_0)
+bound_dofs_1 = fem.locate_dofs_topological(V_1, fdim, bound_facets_1)
+
+u_bc_0 = fem.Function(V_0)
+u_bc_1 = fem.Function(V_1)
+
+bc_0 = fem.dirichletbc(u_bc_0, bound_dofs_0)
+bc_1 = fem.dirichletbc(u_bc_1, bound_dofs_1)
+
+bcs = [bc_0, bc_1]
+
 # TODO Pick function that is complicated on one side so most of error
 # is there and make that part high-order.
