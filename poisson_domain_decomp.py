@@ -105,15 +105,25 @@ a_00 = inner(grad(u_0), grad(v_0)) * dx(0) \
     - inner(1 / 2 * dot(grad(u_0("+")), n("+")), v_0("+")) * dS(1) \
     - inner(1 / 2 * dot(grad(v_0("+")), n("+")), u_0("+")) * dS(1)
 
+a_01 = - gamma / avg(h) * inner(u_1("-"), v_0("+")) * dS(1) \
+    + inner(1 / 2 * dot(grad(u_1("-")), n("-")), v_0("+")) * dS(1) \
+    + inner(1 / 2 * dot(grad(v_0("+")), n("+")), u_1("-")) * dS(1)
+
+a_10 = - gamma / avg(h) * inner(u_0("+"), v_1("-")) * dS(1) \
+    + inner(1 / 2 * dot(grad(u_0("+")), n("+")), v_1("-")) * dS(1) \
+    + inner(1 / 2 * dot(grad(v_1("-")), n("-")), u_0("+")) * dS(1)
+
 a_11 = inner(grad(u_1), grad(v_1)) * dx(1) \
     + gamma / avg(h) * inner(u_1("-"), v_1("-")) * dS(1) \
     - inner(1 / 2 * dot(grad(u_1("-")), n("-")), v_1("-")) * dS(1) \
     - inner(1 / 2 * dot(grad(v_1("-")), n("-")), u_1("-")) * dS(1)
 
 a_00 = fem.form(a_00, entity_maps=entity_maps)
+a_01 = fem.form(a_01, entity_maps=entity_maps)
+a_10 = fem.form(a_10, entity_maps=entity_maps)
 a_11 = fem.form(a_11, entity_maps=entity_maps)
 
-A = fem.petsc.assemble_matrix(a_11)
+A = fem.petsc.assemble_matrix(a_10)
 A.assemble()
 print(A.norm())
 
