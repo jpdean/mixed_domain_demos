@@ -1,13 +1,14 @@
 # Scheme from "A finite element method for domain decomposition
 # with non-matching grids" by Becker et al.
 
-from dolfinx import mesh, fem
+from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
 from ufl import inner, grad, dot, avg
 import numpy as np
+from petsc4py import PETSc
 
-n = 2
+n = 8
 msh = mesh.create_rectangle(
     MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
     ghost_mode=mesh.GhostMode.shared_facet)
@@ -159,6 +160,38 @@ bc_0 = fem.dirichletbc(u_bc_0, bound_dofs_0)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs_1)
 
 bcs = [bc_0, bc_1]
+
+A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+A.assemble()
+
+b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
+
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+
+x = A.createVecRight()
+
+# Compute solution
+ksp.solve(b, x)
+
+u_0 = fem.Function(V_0)
+u_1 = fem.Function(V_1)
+
+offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
+u_0.x.array[:offset] = x.array_r[:offset]
+u_1.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+u_0.x.scatter_forward()
+u_1.x.scatter_forward()
+
+with io.XDMFFile(MPI.COMM_WORLD, "u_0.xdmf", "w") as f:
+    f.write_mesh(left_submesh)
+    f.write_function(u_0)
+
+with io.XDMFFile(MPI.COMM_WORLD, "u_1.xdmf", "w") as f:
+    f.write_mesh(right_submesh)
+    f.write_function(u_1)
 
 # TODO Pick function that is complicated on one side so most of error
 # is there and make that part high-order.
