@@ -34,7 +34,6 @@ dx = ufl.Measure("dx", domain=msh,
 k = 3
 V_0 = fem.FunctionSpace(left_submesh, ("Lagrange", k))
 V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", k))
-V = fem.FunctionSpace(msh, ("Lagrange", k))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
