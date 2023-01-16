@@ -214,6 +214,5 @@ e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
 if msh.comm.rank == 0:
     print(e_L2)
 
-# TODO Check error / conv. rates
 # TODO Pick function that is complicated on one side so most of error
 # is there and make that part high-order.
