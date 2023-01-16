@@ -4,9 +4,10 @@
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
-from ufl import inner, grad, dot, avg
+from ufl import inner, grad, dot, avg, div
 import numpy as np
 from petsc4py import PETSc
+from utils import norm_L2
 
 n = 8
 msh = mesh.create_rectangle(
@@ -30,9 +31,10 @@ dx = ufl.Measure("dx", domain=msh,
                  subdomain_data=cell_integration_entities)
 
 # Define function spaces on each half
-V_0 = fem.FunctionSpace(left_submesh, ("Lagrange", 1))
-V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", 1))
-V = fem.FunctionSpace(msh, ("Lagrange", 1))
+k = 3
+V_0 = fem.FunctionSpace(left_submesh, ("Lagrange", k))
+V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", k))
+V = fem.FunctionSpace(msh, ("Lagrange", k))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -133,8 +135,17 @@ a_11 = fem.form(a_11, entity_maps=entity_maps)
 a = [[a_00, a_01],
      [a_10, a_11]]
 
-f = fem.Function(V)
-f.interpolate(lambda x: np.ones_like(x[0]))
+
+def u_e(x):
+    u_e = 1
+    for i in range(tdim):
+        u_e *= ufl.sin(ufl.pi * x[i])
+    return u_e
+
+
+# TODO Add a coefficient
+# f = - div(c * grad(u_e))
+f = - div(grad(u_e(ufl.SpatialCoordinate(msh))))
 
 L_0 = inner(f, v_0) * dx(0)
 L_1 = inner(f, v_1) * dx(1)
@@ -194,6 +205,13 @@ with io.XDMFFile(MPI.COMM_WORLD, "u_0.xdmf", "w") as f:
 with io.XDMFFile(MPI.COMM_WORLD, "u_1.xdmf", "w") as f:
     f.write_mesh(right_submesh)
     f.write_function(u_1)
+
+e_L2_0 = norm_L2(msh.comm, u_0 - u_e(ufl.SpatialCoordinate(left_submesh)))
+e_L2_1 = norm_L2(msh.comm, u_1 - u_e(ufl.SpatialCoordinate(right_submesh)))
+e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
+
+if msh.comm.rank == 0:
+    print(e_L2)
 
 # TODO Check error / conv. rates
 # TODO Pick function that is complicated on one side so most of error
