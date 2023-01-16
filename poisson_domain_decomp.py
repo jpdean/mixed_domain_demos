@@ -9,7 +9,7 @@ import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2
 
-n = 8
+n = 16
 msh = mesh.create_rectangle(
     MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
     ghost_mode=mesh.GhostMode.shared_facet)
@@ -109,23 +109,26 @@ gamma = 10
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
-a_00 = inner(grad(u_0), grad(v_0)) * dx(0) \
-    + gamma / avg(h) * inner(u_0("+"), v_0("+")) * dS(1) \
-    - inner(1 / 2 * dot(grad(u_0("+")), n("+")), v_0("+")) * dS(1) \
-    - inner(1 / 2 * dot(grad(v_0("+")), n("+")), u_0("+")) * dS(1)
+x = ufl.SpatialCoordinate(msh)
+c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
-a_01 = - gamma / avg(h) * inner(u_1("-"), v_0("+")) * dS(1) \
-    + inner(1 / 2 * dot(grad(u_1("-")), n("-")), v_0("+")) * dS(1) \
-    + inner(1 / 2 * dot(grad(v_0("+")), n("+")), u_1("-")) * dS(1)
+a_00 = inner(c * grad(u_0), grad(v_0)) * dx(0) \
+    + gamma / avg(h) * inner(c * u_0("+"), v_0("+")) * dS(1) \
+    - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")), v_0("+")) * dS(1) \
+    - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")), u_0("+")) * dS(1)
 
-a_10 = - gamma / avg(h) * inner(u_0("+"), v_1("-")) * dS(1) \
-    + inner(1 / 2 * dot(grad(u_0("+")), n("+")), v_1("-")) * dS(1) \
-    + inner(1 / 2 * dot(grad(v_1("-")), n("-")), u_0("+")) * dS(1)
+a_01 = - gamma / avg(h) * inner(c * u_1("-"), v_0("+")) * dS(1) \
+    + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")), v_0("+")) * dS(1) \
+    + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")), u_1("-")) * dS(1)
 
-a_11 = inner(grad(u_1), grad(v_1)) * dx(1) \
-    + gamma / avg(h) * inner(u_1("-"), v_1("-")) * dS(1) \
-    - inner(1 / 2 * dot(grad(u_1("-")), n("-")), v_1("-")) * dS(1) \
-    - inner(1 / 2 * dot(grad(v_1("-")), n("-")), u_1("-")) * dS(1)
+a_10 = - gamma / avg(h) * inner(c * u_0("+"), v_1("-")) * dS(1) \
+    + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")), v_1("-")) * dS(1) \
+    + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")), u_0("+")) * dS(1)
+
+a_11 = inner(c * grad(u_1), grad(v_1)) * dx(1) \
+    + gamma / avg(h) * inner(c * u_1("-"), v_1("-")) * dS(1) \
+    - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")), v_1("-")) * dS(1) \
+    - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")), u_1("-")) * dS(1)
 
 a_00 = fem.form(a_00, entity_maps=entity_maps)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
@@ -143,9 +146,7 @@ def u_e(x):
     return u_e
 
 
-# TODO Add a coefficient
-# f = - div(c * grad(u_e))
-f = - div(grad(u_e(ufl.SpatialCoordinate(msh))))
+f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh))))
 
 L_0 = inner(f, v_0) * dx(0)
 L_1 = inner(f, v_1) * dx(1)
