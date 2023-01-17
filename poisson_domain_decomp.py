@@ -99,7 +99,7 @@ msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
-k = 1
+k = 3
 V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k))
 V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k))
 
