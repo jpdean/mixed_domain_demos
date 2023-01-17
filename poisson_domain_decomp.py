@@ -9,7 +9,7 @@ import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2
 
-n = 16
+n = 8
 msh = mesh.create_rectangle(
     MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
     ghost_mode=mesh.GhostMode.shared_facet)
@@ -33,7 +33,7 @@ dx = ufl.Measure("dx", domain=msh,
 # Define function spaces on each half
 k = 3
 V_0 = fem.FunctionSpace(left_submesh, ("Lagrange", k))
-V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", k))
+V_1 = fem.FunctionSpace(right_submesh, ("Lagrange", 1))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -198,13 +198,11 @@ u_1.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 u_0.x.scatter_forward()
 u_1.x.scatter_forward()
 
-with io.XDMFFile(MPI.COMM_WORLD, "u_0.xdmf", "w") as f:
-    f.write_mesh(left_submesh)
-    f.write_function(u_0)
+with io.VTXWriter(msh.comm, "u_0.bp", u_0) as f:
+    f.write(0.0)
 
-with io.XDMFFile(MPI.COMM_WORLD, "u_1.xdmf", "w") as f:
-    f.write_mesh(right_submesh)
-    f.write_function(u_1)
+with io.VTXWriter(msh.comm, "u_1.bp", u_1) as f:
+    f.write(0.0)
 
 e_L2_0 = norm_L2(msh.comm, u_0 - u_e(ufl.SpatialCoordinate(left_submesh)))
 e_L2_1 = norm_L2(msh.comm, u_1 - u_e(ufl.SpatialCoordinate(right_submesh)))
