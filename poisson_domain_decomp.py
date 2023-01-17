@@ -19,7 +19,7 @@ if comm.rank == 0:
 
     factory = gmsh.model.geo
 
-    h = 0.1
+    h = 0.05
 
     square_points = [
         factory.addPoint(0.0, 0.0, 0.0, h),
@@ -99,9 +99,8 @@ msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
-k = 3
-V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k))
-V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k))
+V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
+V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 3))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -216,14 +215,11 @@ a = [[a_00, a_01],
      [a_10, a_11]]
 
 
-def u_e(x):
-    u_e = 1
-    for i in range(tdim):
-        u_e *= ufl.sin(ufl.pi * x[i])
-    return u_e
+def u_e(x, module=np):
+    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.05**2))
 
 
-f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh))))
+f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
 L_0 = inner(f, v_0) * dx(cell_domain_tags[0])
 L_1 = inner(f, v_1) * dx(cell_domain_tags[1])
@@ -240,6 +236,7 @@ bound_facet_sm_0 = submesh_0_ft.indices[
 bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facet_sm_0)
 
 u_bc_0 = fem.Function(V_0)
+u_bc_0.interpolate(u_e)
 bc_0 = fem.dirichletbc(u_bc_0, bound_dofs)
 
 bcs = [bc_0]
@@ -274,8 +271,10 @@ with io.VTXWriter(msh.comm, "u_0.bp", u_0) as f:
 with io.VTXWriter(msh.comm, "u_1.bp", u_1) as f:
     f.write(0.0)
 
-e_L2_0 = norm_L2(msh.comm, u_0 - u_e(ufl.SpatialCoordinate(submesh_0)))
-e_L2_1 = norm_L2(msh.comm, u_1 - u_e(ufl.SpatialCoordinate(submesh_1)))
+e_L2_0 = norm_L2(msh.comm, u_0 - u_e(
+    ufl.SpatialCoordinate(submesh_0), module=ufl))
+e_L2_1 = norm_L2(msh.comm, u_1 - u_e(
+    ufl.SpatialCoordinate(submesh_1), module=ufl))
 e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
 
 if msh.comm.rank == 0:
