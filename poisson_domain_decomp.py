@@ -74,11 +74,11 @@ if comm.rank == 0:
 
     # gmsh.fltk.run()
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    msh, ct, ft = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+msh, ct, ft = io.gmshio.model_to_mesh(
+    gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
 
-    gmsh.finalize()
+gmsh.finalize()
 
 # TODO Specify these tags in gmsh geom creation
 cell_domain_tags = [1, 2]
