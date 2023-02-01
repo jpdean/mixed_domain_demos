@@ -90,9 +90,6 @@ submesh_0, entity_map_0 = mesh.create_submesh(
 submesh_1, entity_map_1 = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == omega_1])[:2]
 
-with io.XDMFFile(msh.comm, "submesh.xdmf", "w") as file:
-    file.write_mesh(submesh_1)
-
 msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
@@ -109,13 +106,13 @@ v_1 = ufl.TestFunction(V_1)
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
-# TODO Replace with more efficient solution
-entity_maps = {submesh_0: [entity_map_0.index(entity)
-                           if entity in entity_map_0 else -1
-                           for entity in range(num_cells)],
-               submesh_1: [entity_map_1.index(entity)
-                           if entity in entity_map_1 else -1
-                           for entity in range(num_cells)]}
+inv_entity_map_0 = np.full(num_cells, -1)
+inv_entity_map_0[entity_map_0] = np.arange(len(entity_map_0))
+inv_entity_map_1 = np.full(num_cells, -1)
+inv_entity_map_1[entity_map_1] = np.arange(len(entity_map_1))
+
+entity_maps = {submesh_0: inv_entity_map_0,
+               submesh_1: inv_entity_map_1}
 
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the left cell, corresponding to the "+" restriction. Assign
