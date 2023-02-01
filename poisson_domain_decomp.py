@@ -13,6 +13,11 @@ import gmsh
 comm = MPI.COMM_WORLD
 gdim = 2
 
+omega_0 = 1
+omega_1 = 2
+boundary = 3
+interface = 4
+
 gmsh.initialize()
 if comm.rank == 0:
     gmsh.model.add("square_with_circle")
@@ -64,11 +69,10 @@ if comm.rank == 0:
 
     factory.synchronize()
 
-    square_cells = gmsh.model.addPhysicalGroup(2, [square_surface])
-    circle_cells = gmsh.model.addPhysicalGroup(2, [circle_surface])
-
-    outer_boundary = gmsh.model.addPhysicalGroup(1, square_lines)
-    interface = gmsh.model.addPhysicalGroup(1, circle_lines)
+    gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
+    gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+    gmsh.model.addPhysicalGroup(1, square_lines, boundary)
+    gmsh.model.addPhysicalGroup(1, circle_lines, interface)
 
     gmsh.model.mesh.generate(2)
 
@@ -77,20 +81,14 @@ if comm.rank == 0:
 partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
 msh, ct, ft = io.gmshio.model_to_mesh(
     gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
-
 gmsh.finalize()
-
-# TODO Specify these tags in gmsh geom creation
-cell_domain_tags = [1, 2]
-facet_boundary_tag = 3
-facet_interface_tag = 4
 
 # Create submeshes
 tdim = msh.topology.dim
 submesh_0, entity_map_0 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == cell_domain_tags[0]])[:2]
+    msh, tdim, ct.indices[ct.values == omega_0])[:2]
 submesh_1, entity_map_1 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == cell_domain_tags[1]])[:2]
+    msh, tdim, ct.indices[ct.values == omega_1])[:2]
 
 with io.XDMFFile(msh.comm, "submesh.xdmf", "w") as file:
     file.write_mesh(submesh_1)
@@ -123,16 +121,16 @@ entity_maps = {submesh_0: [entity_map_0.index(entity)
 # pair to the left cell, corresponding to the "+" restriction. Assign
 # the second (cell, local facet) pair to the right cell, corresponding
 # to the "-" restriction.
-facet_integration_entities = {facet_interface_tag: []}
+facet_integration_entities = {interface: []}
 fdim = tdim - 1
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
-domain_0_cells = ct.indices[ct.values == cell_domain_tags[0]]
-domain_1_cells = ct.indices[ct.values == cell_domain_tags[1]]
-for facet in ft.indices[ft.values == facet_interface_tag]:
+domain_0_cells = ct.indices[ct.values == omega_0]
+domain_1_cells = ct.indices[ct.values == omega_1]
+for facet in ft.indices[ft.values == interface]:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
         cells = f_to_c.links(facet)
@@ -147,7 +145,7 @@ for facet in ft.indices[ft.values == facet_interface_tag]:
             cell_plus).tolist().index(facet)
         local_facet_minus = c_to_f.links(
             cell_minus).tolist().index(facet)
-        facet_integration_entities[facet_interface_tag].extend(
+        facet_integration_entities[interface].extend(
             [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
         # HACK cell_minus does not exist in the left submesh, so it will
@@ -176,35 +174,35 @@ n = ufl.FacetNormal(msh)
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
-a_00 = inner(c * grad(u_0), grad(v_0)) * dx(cell_domain_tags[0]) \
+a_00 = inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     + gamma / avg(h) * inner(c * u_0("+"),
-                             v_0("+")) * dS(facet_interface_tag) \
+                             v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
-            v_0("+")) * dS(facet_interface_tag) \
+            v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
-            u_0("+")) * dS(facet_interface_tag)
+            u_0("+")) * dS(interface)
 
 a_01 = - gamma / avg(h) * inner(c * u_1("-"),
-                                v_0("+")) * dS(facet_interface_tag) \
+                                v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
-            v_0("+")) * dS(facet_interface_tag) \
+            v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
-            u_1("-")) * dS(facet_interface_tag)
+            u_1("-")) * dS(interface)
 
 a_10 = - gamma / avg(h) * inner(c * u_0("+"),
-                                v_1("-")) * dS(facet_interface_tag) \
+                                v_1("-")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
-            v_1("-")) * dS(facet_interface_tag) \
+            v_1("-")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
-            u_0("+")) * dS(facet_interface_tag)
+            u_0("+")) * dS(interface)
 
-a_11 = inner(c * grad(u_1), grad(v_1)) * dx(cell_domain_tags[1]) \
+a_11 = inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
     + gamma / avg(h) * inner(c * u_1("-"),
-                             v_1("-")) * dS(facet_interface_tag) \
+                             v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
-            v_1("-")) * dS(facet_interface_tag) \
+            v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
-            u_1("-")) * dS(facet_interface_tag)
+            u_1("-")) * dS(interface)
 
 a_00 = fem.form(a_00, entity_maps=entity_maps)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
@@ -221,8 +219,8 @@ def u_e(x, module=np):
 
 f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
-L_0 = inner(f, v_0) * dx(cell_domain_tags[0])
-L_1 = inner(f, v_1) * dx(cell_domain_tags[1])
+L_0 = inner(f, v_0) * dx(omega_0)
+L_1 = inner(f, v_1) * dx(omega_1)
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
@@ -231,7 +229,7 @@ L = [L_0, L_1]
 
 submesh_0_ft = convert_facet_tags(msh, submesh_0, entity_map_0, ft)
 bound_facet_sm_0 = submesh_0_ft.indices[
-    submesh_0_ft.values == facet_boundary_tag]
+    submesh_0_ft.values == boundary]
 
 bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facet_sm_0)
 
