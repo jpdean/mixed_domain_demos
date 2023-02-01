@@ -115,9 +115,8 @@ entity_maps = {submesh_0: inv_entity_map_0,
                submesh_1: inv_entity_map_1}
 
 # Create measure for integration. Assign the first (cell, local facet)
-# pair to the left cell, corresponding to the "+" restriction. Assign
-# the second (cell, local facet) pair to the right cell, corresponding
-# to the "-" restriction.
+# pair to the cell in omega_0, corresponding to the "+" restriction. Assign
+# the second pair to the omega_1 cell, corresponding to the "-" restriction.
 facet_integration_entities = {interface: []}
 fdim = tdim - 1
 facet_imap = msh.topology.index_map(fdim)
