@@ -25,7 +25,7 @@ if comm.rank == 0:
 
     factory = gmsh.model.geo
 
-    h = 0.05
+    h = 0.025
 
     square_points = [
         factory.addPoint(0.0, 0.0, 0.0, h),
@@ -95,8 +95,10 @@ msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
-V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", 1))
-V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 3))
+k_0 = 1
+k_1 = 1
+V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", k_0))
+V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -203,8 +205,8 @@ dS = ufl.Measure("dS", domain=msh,
                  subdomain_data=facet_integration_entities)
 
 # TODO Add k dependency
-gamma = 10
-gamma_dg = 10
+gamma_int = 10  # Penalty param on interface
+gamma_dg = 10 * k_0**2  # Penalty parm for DG method
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
@@ -217,22 +219,22 @@ a_00 = inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     + (gamma_dg / avg(h)) * inner(c * jump(u_0, n), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * grad(u_0), v_0 * n) * ds(boundary) \
     - inner(c * grad(v_0), u_0 * n) * ds(boundary) \
-    + (gamma / h) * inner(c * u_0, v_0) * ds(boundary) \
-    + gamma / avg(h) * inner(c * u_0("+"),
+    + (gamma_dg / h) * inner(c * u_0, v_0) * ds(boundary) \
+    + gamma_int / avg(h) * inner(c * u_0("+"),
                              v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
             v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
             u_0("+")) * dS(interface)
 
-a_01 = - gamma / avg(h) * inner(c * u_1("-"),
+a_01 = - gamma_int / avg(h) * inner(c * u_1("-"),
                                 v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
             v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
             u_1("-")) * dS(interface)
 
-a_10 = - gamma / avg(h) * inner(c * u_0("+"),
+a_10 = - gamma_int / avg(h) * inner(c * u_0("+"),
                                 v_1("-")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
             v_1("-")) * dS(interface) \
@@ -240,7 +242,7 @@ a_10 = - gamma / avg(h) * inner(c * u_0("+"),
             u_0("+")) * dS(interface)
 
 a_11 = inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
-    + gamma / avg(h) * inner(c * u_1("-"),
+    + gamma_int / avg(h) * inner(c * u_1("-"),
                              v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
             v_1("-")) * dS(interface) \
@@ -256,30 +258,22 @@ a = [[a_00, a_01],
 
 
 def u_e(x, module=np):
-    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.05**2))
+    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.15**2))
 
 
 f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
-L_0 = inner(f, v_0) * dx(omega_0)
+u_D = fem.Function(V_0)
+u_D.interpolate(u_e)
+
+L_0 = inner(f, v_0) * dx(omega_0) \
+    - inner(c * u_D * n, grad(v_0)) * ds(boundary) \
+    + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary)
 L_1 = inner(f, v_1) * dx(omega_1)
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
-
 L = [L_0, L_1]
-
-# submesh_0_ft = convert_facet_tags(msh, submesh_0, entity_map_0, ft)
-# bound_facet_sm_0 = submesh_0_ft.indices[
-#     submesh_0_ft.values == boundary]
-
-# bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facet_sm_0)
-
-# u_bc_0 = fem.Function(V_0)
-# u_bc_0.interpolate(u_e)
-# bc_0 = fem.dirichletbc(u_bc_0, bound_dofs)
-
-# bcs = [bc_0]
 
 A = fem.petsc.assemble_matrix_block(a)
 A.assemble()
@@ -319,3 +313,4 @@ e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
 
 if msh.comm.rank == 0:
     print(e_L2)
+    print(1 / np.sqrt(msh.topology.index_map(tdim).size_global))
