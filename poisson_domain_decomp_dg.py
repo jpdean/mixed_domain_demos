@@ -10,6 +10,11 @@ from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags
 import gmsh
 
+num_time_steps = 10
+k_0 = 3
+k_1 = 3
+delta_t = 1  # TODO Make constant
+
 comm = MPI.COMM_WORLD
 gdim = 2
 
@@ -95,8 +100,6 @@ msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
-k_0 = 3
-k_1 = 3
 V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", k_0))
 V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 
@@ -213,7 +216,11 @@ n = ufl.FacetNormal(msh)
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
-a_00 = inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
+u_0_n = fem.Function(V_0)
+u_1_n = fem.Function(V_1)
+
+a_00 = inner(u_0 / delta_t, v_0) * dx(omega_0) \
+    + inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(omega_0_int_facets) \
     + (gamma_dg / avg(h)) * inner(c * jump(u_0, n), jump(v_0, n)) * dS(omega_0_int_facets) \
@@ -241,7 +248,8 @@ a_10 = - gamma_int / avg(h) * inner(c * u_0("+"),
     + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
             u_0("+")) * dS(interface)
 
-a_11 = inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
+a_11 = inner(u_1 / delta_t, v_1) * dx(omega_1) \
+    + inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
     + gamma_int / avg(h) * inner(c * u_1("-"),
                              v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
@@ -267,9 +275,11 @@ u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
 
 L_0 = inner(f, v_0) * dx(omega_0) \
+    + inner(u_0_n / delta_t, v_0) * dx(omega_0) \
     - inner(c * u_D * n, grad(v_0)) * ds(boundary) \
     + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary)
-L_1 = inner(f, v_1) * dx(omega_1)
+L_1 = inner(f, v_1) * dx(omega_1) \
+    + inner(u_1_n / delta_t, v_1) * dx(omega_1)
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
@@ -278,7 +288,7 @@ L = [L_0, L_1]
 A = fem.petsc.assemble_matrix_block(a)
 A.assemble()
 
-b = fem.petsc.assemble_vector_block(L, a)
+b = fem.petsc.create_vector_block(L)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -287,27 +297,37 @@ ksp.getPC().setType("lu")
 
 x = A.createVecRight()
 
-# Compute solution
-ksp.solve(b, x)
+u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object])
+u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object])
 
-u_0 = fem.Function(V_0)
-u_1 = fem.Function(V_1)
+t = 0.0
+u_0_file.write(t)
+u_1_file.write(t)
+for n in range(num_time_steps):
+    t += delta_t
 
-offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
-u_0.x.array[:offset] = x.array_r[:offset]
-u_1.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-u_0.x.scatter_forward()
-u_1.x.scatter_forward()
+    with b.localForm() as b_loc:
+        b_loc.set(0.0)
+    fem.petsc.assemble_vector_block(b, L, a)
 
-with io.VTXWriter(msh.comm, "u_0.bp", u_0) as f:
-    f.write(0.0)
+    # Compute solution
+    ksp.solve(b, x)
 
-with io.VTXWriter(msh.comm, "u_1.bp", u_1) as f:
-    f.write(0.0)
+    offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
+    u_0_n.x.array[:offset] = x.array_r[:offset]
+    u_1_n.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+    u_0_n.x.scatter_forward()
+    u_1_n.x.scatter_forward()
 
-e_L2_0 = norm_L2(msh.comm, u_0 - u_e(
+    u_0_file.write(t)
+    u_1_file.write(t)
+
+u_0_file.close()
+u_1_file.close()
+
+e_L2_0 = norm_L2(msh.comm, u_0_n - u_e(
     ufl.SpatialCoordinate(submesh_0), module=ufl))
-e_L2_1 = norm_L2(msh.comm, u_1 - u_e(
+e_L2_1 = norm_L2(msh.comm, u_1_n - u_e(
     ufl.SpatialCoordinate(submesh_1), module=ufl))
 e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
 
