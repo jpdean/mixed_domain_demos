@@ -76,6 +76,7 @@ jobs:
           python3 neumann_bc.py
           python3 hdg_navier_stokes.py
           python3 poisson_domain_decomp.py
+          python3 cg_dg_advec_diffusion.py
 
       - name: Run demos (parallel)
         run: |
@@ -87,3 +88,4 @@ jobs:
           mpirun -n 2 python3 neumann_bc.py
           mpirun -n 2 python3 hdg_navier_stokes.py
           mpirun -n 2 python3 poisson_domain_decomp.py
+          mpirun -n 2 python3 cg_dg_advec_diffusion.py
