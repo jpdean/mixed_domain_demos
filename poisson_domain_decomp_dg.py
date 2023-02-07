@@ -1,7 +1,20 @@
-# TODO Add gmsh_testing mesh and dirichlet BC to CG scheme
+# Scheme based on "A finite element method for domain decomposition
+# with non-matching grids" by Becker et al. but with a DG scheme to
+# solve the advection diffusion equation on half of the domain, and
+# a standard CG Poisson solver on the other half.
 
-# Scheme from "A finite element method for domain decomposition
-# with non-matching grids" by Becker et al.
+# Consider a square domain on which we wish to solve the
+# advection diffusion equations. The velocity field is given by
+# (0.5 - x_1, 0.0) in the bottom half of the domain, and (0.0, 0.0)
+# in the top half. We solve the bottom half of the domain with a
+# DG advection-diffusion solver, and the top half with a standard
+# CG solver. We enforce the Dirichlet boundary condition weakly
+# for the DG scheme and strongly for the CG scheme. The assumed
+# solution is u = sin(\pi * x_0) * sin(\pi * x_1).
+
+# Note: Since the velocity goes to zero at the interface x[1] = 0.5,
+# couling is due only to the diffusion. No advective interface terms
+# have been added
 
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
