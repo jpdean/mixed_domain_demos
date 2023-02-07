@@ -1,3 +1,5 @@
+# TODO Add gmsh_testing mesh and dirichlet BC to CG scheme
+
 # Scheme from "A finite element method for domain decomposition
 # with non-matching grids" by Becker et al.
 
@@ -11,8 +13,8 @@ from utils import norm_L2, convert_facet_tags
 import gmsh
 
 num_time_steps = 10
-k_0 = 3
-k_1 = 3
+k_0 = 1
+k_1 = 1
 delta_t = 1  # TODO Make constant
 
 comm = MPI.COMM_WORLD
@@ -20,65 +22,60 @@ gdim = 2
 
 omega_0 = 1
 omega_1 = 2
-boundary = 3
-interface = 4
-omega_0_int_facets = 5
+boundary_0 = 3
+boundary_1 = 4
+interface = 5
+omega_0_int_facets = 6
 
 gmsh.initialize()
 if comm.rank == 0:
-    gmsh.model.add("square_with_circle")
-
+    gmsh.model.add("model")
     factory = gmsh.model.geo
 
-    h = 0.025
+    h = 0.05
+    points = [
+            factory.addPoint(0.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 0.5, 0.0, h),
+            factory.addPoint(0.0, 0.5, 0.0, h),
+            factory.addPoint(0.0, 1.0, 0.0, h),
+            factory.addPoint(1.0, 1.0, 0.0, h)
+        ]
 
-    square_points = [
-        factory.addPoint(0.0, 0.0, 0.0, h),
-        factory.addPoint(1.0, 0.0, 0.0, h),
-        factory.addPoint(1.0, 1.0, 0.0, h),
-        factory.addPoint(0.0, 1.0, 0.0, h)
-    ]
+    square_0_lines = [
+            factory.addLine(points[0], points[1]),
+            factory.addLine(points[1], points[2]),
+            factory.addLine(points[2], points[3]),
+            factory.addLine(points[3], points[0])
+        ]
 
-    c = 0.5
-    r = 0.25
-    circle_points = [
-        factory.addPoint(c, c, 0.0, h),
-        factory.addPoint(c + r, c, 0.0, h),
-        factory.addPoint(c, c + r, 0.0, h),
-        factory.addPoint(c - r, c, 0.0, h),
-        factory.addPoint(c, c - r, 0.0, h)
-    ]
+    square_1_lines = [
+            square_0_lines[2],
+            factory.addLine(points[3], points[4]),
+            factory.addLine(points[4], points[5]),
+            factory.addLine(points[5], points[2]),
+        ]
 
-    square_lines = [
-        factory.addLine(square_points[0], square_points[1]),
-        factory.addLine(square_points[1], square_points[2]),
-        factory.addLine(square_points[2], square_points[3]),
-        factory.addLine(square_points[3], square_points[0])
-    ]
+    square_0_curve = factory.addCurveLoop(square_0_lines)
+    square_1_curve = factory.addCurveLoop(square_1_lines)
 
-    circle_lines = [
-        factory.addCircleArc(
-            circle_points[1], circle_points[0], circle_points[2]),
-        factory.addCircleArc(
-            circle_points[2], circle_points[0], circle_points[3]),
-        factory.addCircleArc(
-            circle_points[3], circle_points[0], circle_points[4]),
-        factory.addCircleArc(
-            circle_points[4], circle_points[0], circle_points[1])
-    ]
-
-    square_curve = factory.addCurveLoop(square_lines)
-    circle_curve = factory.addCurveLoop(circle_lines)
-
-    square_surface = factory.addPlaneSurface([square_curve, circle_curve])
-    circle_surface = factory.addPlaneSurface([circle_curve])
+    square_0_surface = factory.addPlaneSurface([square_0_curve])
+    square_1_surface = factory.addPlaneSurface([square_1_curve])
 
     factory.synchronize()
 
-    gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
-    gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
-    gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-    gmsh.model.addPhysicalGroup(1, circle_lines, interface)
+    gmsh.model.addPhysicalGroup(2, [square_0_surface], omega_0)
+    gmsh.model.addPhysicalGroup(2, [square_1_surface], omega_1)
+
+    gmsh.model.addPhysicalGroup(1, [square_0_lines[0],
+                                    square_0_lines[1],
+                                    square_0_lines[3]], boundary_0)
+
+    gmsh.model.addPhysicalGroup(1, [square_1_lines[1],
+                                    square_1_lines[2],
+                                    square_1_lines[3]], boundary_1)
+
+    gmsh.model.addPhysicalGroup(1, [square_0_lines[2]], interface)
 
     gmsh.model.mesh.generate(2)
 
@@ -168,8 +165,8 @@ for facet in interface_facets:
         entity_maps[submesh_1][cell_plus] = \
             entity_maps[submesh_1][cell_minus]
 
-ext_facet_integration_entities = {boundary: []}
-boundary_facets = ft.indices[ft.values == boundary]
+ext_facet_integration_entities = {boundary_0: []}
+boundary_facets = ft.indices[ft.values == boundary_0]
 for facet in boundary_facets:
     # TODO Remove (bondary facets not shared)
     if facet < facet_imap.size_local:
@@ -180,12 +177,11 @@ for facet in boundary_facets:
         local_facet = c_to_f.links(
             cell).tolist().index(facet)
 
-        ext_facet_integration_entities[boundary].extend(
+        ext_facet_integration_entities[boundary_0].extend(
             [cell, local_facet])
 ds = ufl.Measure("ds", domain=msh,
                  subdomain_data=ext_facet_integration_entities)
 
-# FIXME this is wrong
 # FIXME Do this more efficiently
 submesh_0.topology.create_entities(fdim)
 submesh_0.topology.create_connectivity(tdim, fdim)
@@ -219,7 +215,7 @@ c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
 
-w = 1e3 * ufl.as_vector((- (x[1] - 0.5), x[0] - 0.5))
+w = ufl.as_vector((0.5 - x[1], 0.0))  # TODO Set w properly
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
 # TODO Figure out advectve ds term (just integrated over boundary,
@@ -229,14 +225,14 @@ a_00 = inner(u_0 / delta_t, v_0) * dx(omega_0) \
     + inner(lmbda("+") * dot(w("+"), n("+")) * u_0("+") -
             lmbda("-") * dot(w("-"), n("-")) * u_0("-"),
             jump(v_0)) * dS(omega_0_int_facets) \
-    + inner(lmbda * dot(w, n) * u_0, v_0) * ds(boundary) + \
+    + inner(lmbda * dot(w, n) * u_0, v_0) * ds(boundary_0) + \
     + inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(omega_0_int_facets) \
     + (gamma_dg / avg(h)) * inner(c * jump(u_0, n), jump(v_0, n)) * dS(omega_0_int_facets) \
-    - inner(c * grad(u_0), v_0 * n) * ds(boundary) \
-    - inner(c * grad(v_0), u_0 * n) * ds(boundary) \
-    + (gamma_dg / h) * inner(c * u_0, v_0) * ds(boundary) \
+    - inner(c * grad(u_0), v_0 * n) * ds(boundary_0) \
+    - inner(c * grad(v_0), u_0 * n) * ds(boundary_0) \
+    + (gamma_dg / h) * inner(c * u_0, v_0) * ds(boundary_0) \
     + gamma_int / avg(h) * inner(c * u_0("+"),
                              v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
@@ -289,10 +285,10 @@ u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
 
 L_0 = inner(f_0, v_0) * dx(omega_0) \
-    - inner((1 - lmbda) * dot(w, n) * u_D, v_0) * ds(boundary) \
+    - inner((1 - lmbda) * dot(w, n) * u_D, v_0) * ds(boundary_0) \
     + inner(u_0_n / delta_t, v_0) * dx(omega_0) \
-    - inner(c * u_D * n, grad(v_0)) * ds(boundary) \
-    + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary)
+    - inner(c * u_D * n, grad(v_0)) * ds(boundary_0) \
+    + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary_0)
 L_1 = inner(f_0, v_1) * dx(omega_1) \
     + inner(u_1_n / delta_t, v_1) * dx(omega_1)
 
@@ -300,7 +296,17 @@ L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
 L = [L_0, L_1]
 
-A = fem.petsc.assemble_matrix_block(a)
+
+submesh_1_ft = convert_facet_tags(msh, submesh_1, entity_map_1, ft)
+bound_facet_sm_1 = submesh_1_ft.indices[
+    submesh_1_ft.values == boundary_1]
+bound_dofs = fem.locate_dofs_topological(V_1, fdim, bound_facet_sm_1)
+u_bc_1 = fem.Function(V_1)
+u_bc_1.interpolate(u_e)
+bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
+bcs = [bc_1]
+
+A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
 
 b = fem.petsc.create_vector_block(L)
@@ -323,7 +329,7 @@ for n in range(num_time_steps):
 
     with b.localForm() as b_loc:
         b_loc.set(0.0)
-    fem.petsc.assemble_vector_block(b, L, a)
+    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
     # Compute solution
     ksp.solve(b, x)
