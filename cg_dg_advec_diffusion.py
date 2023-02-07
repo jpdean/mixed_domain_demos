@@ -369,5 +369,4 @@ e_L2_1 = norm_L2(msh.comm, u_1_n - u_e(
 e_L2 = np.sqrt(e_L2_0**2 + e_L2_1**2)
 
 if msh.comm.rank == 0:
-    print(e_L2)
-    print(1 / np.sqrt(msh.topology.index_map(tdim).size_global))
+    print(f"e_L2 = {e_L2}")
