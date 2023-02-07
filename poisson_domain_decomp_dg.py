@@ -219,7 +219,17 @@ c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
 
+w = 1e3 * ufl.as_vector((- (x[1] - 0.5), x[0] - 0.5))
+lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
+
+# TODO Figure out advectve ds term (just integrated over boundary,
+# or boundary + interface)
 a_00 = inner(u_0 / delta_t, v_0) * dx(omega_0) \
+    - inner(w * u_0, grad(v_0)) * dx(omega_0) \
+    + inner(lmbda("+") * dot(w("+"), n("+")) * u_0("+") -
+            lmbda("-") * dot(w("-"), n("-")) * u_0("-"),
+            jump(v_0)) * dS(omega_0_int_facets) \
+    + inner(lmbda * dot(w, n) * u_0, v_0) * ds(boundary) + \
     + inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(omega_0_int_facets) \
@@ -266,19 +276,24 @@ a = [[a_00, a_01],
 
 
 def u_e(x, module=np):
-    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.15**2))
+    # return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.15**2))
+    return module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
 
 
-f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) \
+    - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+# f_0 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+f_1 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
 u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
 
-L_0 = inner(f, v_0) * dx(omega_0) \
+L_0 = inner(f_0, v_0) * dx(omega_0) \
+    - inner((1 - lmbda) * dot(w, n) * u_D, v_0) * ds(boundary) \
     + inner(u_0_n / delta_t, v_0) * dx(omega_0) \
     - inner(c * u_D * n, grad(v_0)) * ds(boundary) \
     + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary)
-L_1 = inner(f, v_1) * dx(omega_1) \
+L_1 = inner(f_0, v_1) * dx(omega_1) \
     + inner(u_1_n / delta_t, v_1) * dx(omega_1)
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
