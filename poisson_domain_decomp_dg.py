@@ -10,7 +10,9 @@
 # DG advection-diffusion solver, and the top half with a standard
 # CG solver. We enforce the Dirichlet boundary condition weakly
 # for the DG scheme and strongly for the CG scheme. The assumed
-# solution is u = sin(\pi * x_0) * sin(\pi * x_1).
+# solution is u = sin(\pi * x_0) * sin(\pi * x_1). In this problem,
+# the bottom half can be thought of as a fluid and the top half
+# a solid, and the unknown u is the temperature field.
 
 # Note: Since the velocity goes to zero at the interface x[1] = 0.5,
 # couling is due only to the diffusion. No advective interface terms
