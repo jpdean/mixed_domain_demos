@@ -49,27 +49,27 @@ if comm.rank == 0:
 
     h = 0.05
     points = [
-            factory.addPoint(0.0, 0.0, 0.0, h),
-            factory.addPoint(1.0, 0.0, 0.0, h),
-            factory.addPoint(1.0, 0.5, 0.0, h),
-            factory.addPoint(0.0, 0.5, 0.0, h),
-            factory.addPoint(0.0, 1.0, 0.0, h),
-            factory.addPoint(1.0, 1.0, 0.0, h)
-        ]
+        factory.addPoint(0.0, 0.0, 0.0, h),
+        factory.addPoint(1.0, 0.0, 0.0, h),
+        factory.addPoint(1.0, 0.5, 0.0, h),
+        factory.addPoint(0.0, 0.5, 0.0, h),
+        factory.addPoint(0.0, 1.0, 0.0, h),
+        factory.addPoint(1.0, 1.0, 0.0, h)
+    ]
 
     square_0_lines = [
-            factory.addLine(points[0], points[1]),
-            factory.addLine(points[1], points[2]),
-            factory.addLine(points[2], points[3]),
-            factory.addLine(points[3], points[0])
-        ]
+        factory.addLine(points[0], points[1]),
+        factory.addLine(points[1], points[2]),
+        factory.addLine(points[2], points[3]),
+        factory.addLine(points[3], points[0])
+    ]
 
     square_1_lines = [
-            square_0_lines[2],
-            factory.addLine(points[3], points[4]),
-            factory.addLine(points[4], points[5]),
-            factory.addLine(points[5], points[2]),
-        ]
+        square_0_lines[2],
+        factory.addLine(points[3], points[4]),
+        factory.addLine(points[4], points[5]),
+        factory.addLine(points[5], points[2]),
+    ]
 
     square_0_curve = factory.addCurveLoop(square_0_lines)
     square_1_curve = factory.addCurveLoop(square_1_lines)
@@ -245,26 +245,27 @@ a_00 = inner(u_0 / delta_t, v_0) * dx(omega_0) \
     + inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
     - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(omega_0_int_facets) \
-    + (gamma_dg / avg(h)) * inner(c * jump(u_0, n), jump(v_0, n)) * dS(omega_0_int_facets) \
+    + (gamma_dg / avg(h)) * inner(
+        c * jump(u_0, n), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * grad(u_0), v_0 * n) * ds(boundary_0) \
     - inner(c * grad(v_0), u_0 * n) * ds(boundary_0) \
     + (gamma_dg / h) * inner(c * u_0, v_0) * ds(boundary_0) \
     + gamma_int / avg(h) * inner(c * u_0("+"),
-                             v_0("+")) * dS(interface) \
+                                 v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
             v_0("+")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
             u_0("+")) * dS(interface)
 
 a_01 = - gamma_int / avg(h) * inner(c * u_1("-"),
-                                v_0("+")) * dS(interface) \
+                                    v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
             v_0("+")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
             u_1("-")) * dS(interface)
 
 a_10 = - gamma_int / avg(h) * inner(c * u_0("+"),
-                                v_1("-")) * dS(interface) \
+                                    v_1("-")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
             v_1("-")) * dS(interface) \
     + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
@@ -273,7 +274,7 @@ a_10 = - gamma_int / avg(h) * inner(c * u_0("+"),
 a_11 = inner(u_1 / delta_t, v_1) * dx(omega_1) \
     + inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
     + gamma_int / avg(h) * inner(c * u_1("-"),
-                             v_1("-")) * dS(interface) \
+                                 v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
             v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
