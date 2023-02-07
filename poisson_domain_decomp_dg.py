@@ -13,8 +13,8 @@ from utils import norm_L2, convert_facet_tags
 import gmsh
 
 num_time_steps = 10
-k_0 = 1
-k_1 = 1
+k_0 = 3
+k_1 = 3
 delta_t = 1  # TODO Make constant
 
 comm = MPI.COMM_WORLD
@@ -215,7 +215,8 @@ c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
 
-w = ufl.as_vector((0.5 - x[1], 0.0))  # TODO Set w properly
+w = ufl.as_vector((0.5 - x[1], 0.0))
+# w = ufl.as_vector((1e-12, 0.0))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
 # TODO Figure out advectve ds term (just integrated over boundary,
@@ -278,7 +279,6 @@ def u_e(x, module=np):
 
 f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) \
     - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
-# f_0 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 f_1 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
 u_D = fem.Function(V_0)
@@ -289,7 +289,7 @@ L_0 = inner(f_0, v_0) * dx(omega_0) \
     + inner(u_0_n / delta_t, v_0) * dx(omega_0) \
     - inner(c * u_D * n, grad(v_0)) * ds(boundary_0) \
     + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary_0)
-L_1 = inner(f_0, v_1) * dx(omega_1) \
+L_1 = inner(f_1, v_1) * dx(omega_1) \
     + inner(u_1_n / delta_t, v_1) * dx(omega_1)
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
