@@ -119,8 +119,8 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 5
-t_end = 0.3
+num_time_steps = 10
+t_end = 0.6
 R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
@@ -171,7 +171,8 @@ delta_t = t_end / num_time_steps  # TODO Make constant
 # alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
 alpha = 6.0 * k**2  # TODO Make constant
 R_e_const = fem.Constant(submesh_f, PETSc.ScalarType(R_e))
-kappa_f = fem.Constant(submesh_f, PETSc.ScalarType(0.001))
+# kappa_f = fem.Constant(submesh_f, PETSc.ScalarType(0.001))
+kappa_f = 0.001
 
 # List of tuples of form (id, expression)
 dirichlet_bcs = [(boundary_id["bottom"],
@@ -424,14 +425,14 @@ T_s = TrialFunction(Q_s)
 w_s = TestFunction(Q_s)
 T_s_n = fem.Function(Q_s)
 
-a_T_01 = - kappa_f * (gamma_int / avg(h_T) * inner(
+a_T_01 = kappa_f * (- gamma_int / avg(h_T) * inner(
     T_s("-"), w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
             w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-a_T_10 = - kappa_f * (gamma_int / avg(h_T) * inner(
+a_T_10 = kappa_f * (- gamma_int / avg(h_T) * inner(
     T("+"), w_s("-")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T("+")), n_T("+")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
@@ -459,8 +460,7 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-f = 1.0
-L_T_1 = inner(f, w_s) * dx_T(volume_id["solid"]) \
+L_T_1 = inner(1.0, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
