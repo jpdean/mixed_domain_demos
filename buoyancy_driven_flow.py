@@ -151,7 +151,6 @@ ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
 #     file.write_mesh(submesh_f)
 #     file.write_meshtags(ft_f)
 
-
 # Function space for the velocity
 V = fem.FunctionSpace(submesh_f, ("Raviart-Thomas", k + 1))
 # Function space for the pressure
@@ -372,7 +371,8 @@ T_file.write(t)
 # T_0 to be 0
 g = as_vector((0.0, -9.81))
 rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(1.0))
-eps = fem.Constant(submesh_f, PETSc.ScalarType(10.0))  # Thermal expansion coeff
+# Thermal expansion coeff
+eps = fem.Constant(submesh_f, PETSc.ScalarType(10.0))
 
 u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
 a_00 += inner(u / delta_t, v) * dx - \
