@@ -300,12 +300,12 @@ p_file.write(t)
 
 T_n = fem.Function(Q)
 
-dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0]))]
+dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
+                   (boundary_id["right"], lambda x: np.zeros_like(x[0])),
+                   (boundary_id["top"], lambda x: np.zeros_like(x[0])),
+                   (boundary_id["left"], lambda x: np.zeros_like(x[0]))]
 neumann_bcs_T = []
-robin_bcs_T = [(boundary_id["right"], (0.0, 0.0)),
-               (boundary_id["top"], (0.0, 0.0)),
-               (boundary_id["left"], (0.0, 0.0)),
-               (boundary_id["obstacle"], (1.0, 1.0))]
+robin_bcs_T = [(boundary_id["obstacle"], (1.0, 1.0))]
 
 
 # Create function to store solution and previous time step
