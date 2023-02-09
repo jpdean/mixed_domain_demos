@@ -119,8 +119,8 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 50
-t_end = 3
+num_time_steps = 5
+t_end = 0.3
 R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
@@ -553,6 +553,8 @@ for n in range(num_time_steps):
     offset_T = Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
     T_n.x.array[:offset_T] = x_T.array_r[:offset_T]
     T_n.x.scatter_forward()
+    T_s_n.x.array[:(len(x_T.array_r) - offset_T)] = x_T.array_r[offset_T:]
+    T_s_n.x.scatter_forward()
 
     u_vis.interpolate(u_h)
 
