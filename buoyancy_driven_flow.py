@@ -15,10 +15,11 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
     volume_id = {"fluid": 1}
 
-    boundary_id = {"inlet": 2,
-                   "outlet": 3,
-                   "wall": 4,
-                   "obstacle": 5}
+    boundary_id = {"left": 2,
+                   "right": 3,
+                   "bottom": 4,
+                   "top": 5,
+                   "obstacle": 6}
     gdim = 2
 
     if comm.rank == 0:
@@ -26,9 +27,9 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 2.2
-        height = 0.41
-        c = (0.2, 0.2)
+        length = 1
+        height = 2
+        c = (0.49, 0.5)
         r = 0.05
 
         rectangle_points = [
@@ -77,12 +78,13 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
         # gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
 
         gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[0], rectangle_lines[2]],
-            boundary_id["wall"])
+            1, [rectangle_lines[0]], boundary_id["bottom"])
         gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[1]], boundary_id["outlet"])
+            1, [rectangle_lines[1]], boundary_id["right"])
         gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[3]], boundary_id["inlet"])
+            1, [rectangle_lines[2]], boundary_id["top"])
+        gmsh.model.addPhysicalGroup(
+            1, [rectangle_lines[3]], boundary_id["left"])
         gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
 
         gmsh.model.mesh.generate(2)
@@ -116,9 +118,9 @@ def domain_average(msh, v):
 
 # We define some simulation parameters
 
-num_time_steps = 100
-t_end = 2
-R_e = 1000  # Reynolds Number
+num_time_steps = 50
+t_end = 3
+R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
@@ -148,20 +150,24 @@ T, w = TrialFunction(Q), TestFunction(Q)
 delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
 alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
 R_e_const = fem.Constant(msh, PETSc.ScalarType(R_e))
-kappa = fem.Constant(msh, PETSc.ScalarType(0.01))
+kappa = fem.Constant(msh, PETSc.ScalarType(0.001))
 
 # List of tuples of form (id, expression)
-dirichlet_bcs = [(boundary_id["inlet"],
-                  lambda x: np.vstack(
-                    ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
-                     np.zeros_like(x[0])))),
-                 (boundary_id["wall"], lambda x: np.vstack(
+dirichlet_bcs = [(boundary_id["bottom"],
+                  lambda x: np.vstack((
+                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
+                 (boundary_id["right"], lambda x: np.vstack(
                      (np.zeros_like(x[0]), np.zeros_like(x[0])))),
+                 (boundary_id["top"],
+                  lambda x: np.vstack((
+                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
+                 (boundary_id["left"],
+                  lambda x: np.vstack((
+                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
                  (boundary_id["obstacle"],
                   lambda x: np.vstack((
-                    np.zeros_like(x[0]), np.zeros_like(x[0]))))]
-neumann_bcs = [(boundary_id["outlet"], fem.Constant(
-    msh, np.array([0.0, 0.0], dtype=PETSc.ScalarType)))]
+                      np.zeros_like(x[0]), np.zeros_like(x[0]))))]
+neumann_bcs = []
 
 ds = Measure("ds", domain=msh, subdomain_data=mt)
 
@@ -196,7 +202,7 @@ for bc in dirichlet_bcs:
     a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds(bc[0])
                              - inner(outer(u, n), grad(v)) * ds(bc[0])
                              + alpha / h * inner(
-                                outer(u, n), outer(v, n)) * ds(bc[0]))
+        outer(u, n), outer(v, n)) * ds(bc[0]))
     u_D = fem.Function(V)
     u_D.interpolate(bc[1])
     L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds(bc[0])
@@ -275,9 +281,11 @@ p_file.write(t)
 
 T_n = fem.Function(Q)
 
-dirichlet_bcs_T = [(boundary_id["inlet"], lambda x: np.zeros_like(x[0]))]
-neumann_bcs_T = [(boundary_id["outlet"], lambda x: np.zeros_like(x[0]))]
-robin_bcs_T = [(boundary_id["wall"], (0.0, 0.0)),
+dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0]))]
+neumann_bcs_T = []
+robin_bcs_T = [(boundary_id["right"], (0.0, 0.0)),
+               (boundary_id["top"], (0.0, 0.0)),
+               (boundary_id["left"], (0.0, 0.0)),
                (boundary_id["obstacle"], (1.0, 1.0))]
 
 
