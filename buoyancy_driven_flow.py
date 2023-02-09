@@ -419,6 +419,34 @@ a_T_00 = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
     - inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
+Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+T_s = TrialFunction(Q_s)
+w_s = TestFunction(Q_s)
+T_s_n = fem.Function(Q_s)
+
+a_T_01 = - kappa_f * (gamma_int / avg(h_T) * inner(
+    T_s("-"), w("+")) * dS_T(boundary_id["obstacle"])
+    + inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
+            w("+")) * dS_T(boundary_id["obstacle"])
+    + inner(1 / 2 * dot(grad(w("+")), n_T("+")),
+            T_s("-")) * dS_T(boundary_id["obstacle"]))
+
+a_T_10 = - kappa_f * (gamma_int / avg(h_T) * inner(
+    T("+"), w_s("-")) * dS_T(boundary_id["obstacle"])
+    + inner(1 / 2 * dot(grad(T("+")), n_T("+")),
+            w_s("-")) * dS_T(boundary_id["obstacle"])
+    + inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
+            T("+")) * dS_T(boundary_id["obstacle"]))
+
+a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
+    + kappa_f * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
+                 + gamma_int / avg(h_T) * inner(
+        T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"])
+    - inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
+            w_s("-")) * dS_T(boundary_id["obstacle"])
+    - inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
+            T_s("-")) * dS_T(boundary_id["obstacle"]))
+
 L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 for bc in dirichlet_bcs_T:
@@ -431,17 +459,31 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-a_T = fem.form(a_T_00, entity_maps=entity_maps)
-L_T = fem.form(L_T_0, entity_maps=entity_maps)
+f = 1.0
+L_T_1 = inner(f, w_s) * dx_T(volume_id["solid"]) \
+    + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
-A_T = fem.petsc.create_matrix(a_T)
-b_T = fem.petsc.create_vector(L_T)
+a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
+a_T_01 = fem.form(a_T_01, entity_maps=entity_maps)
+a_T_10 = fem.form(a_T_10, entity_maps=entity_maps)
+a_T_11 = fem.form(a_T_11, entity_maps=entity_maps)
+
+L_T_0 = fem.form(L_T_0, entity_maps=entity_maps)
+L_T_1 = fem.form(L_T_1, entity_maps=entity_maps)
+
+a_T = [[a_T_00, a_T_01],
+       [a_T_10, a_T_11]]
+L_T = [L_T_0, L_T_1]
+
+A_T = fem.petsc.create_matrix_block(a_T)
+b_T = fem.petsc.create_vector_block(L_T)
 
 ksp_T = PETSc.KSP().create(msh.comm)
 ksp_T.setOperators(A_T)
 ksp_T.setType("preonly")
 ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
+x_T = A_T.createVecRight()
 
 T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
 T_file.write(t)
@@ -500,15 +542,16 @@ for n in range(num_time_steps):
         p_h.x.array[:] -= domain_average(submesh_f, p_h)
 
     A_T.zeroEntries()
-    fem.petsc.assemble_matrix(A_T, a_T)
+    fem.petsc.assemble_matrix_block(A_T, a_T)
     A_T.assemble()
 
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
-    fem.petsc.assemble_vector(b_T, L_T)
-    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    fem.petsc.assemble_vector_block(b_T, L_T, a_T)
 
-    ksp_T.solve(b_T, T_n.vector)
+    ksp_T.solve(b_T, x_T)
+    offset_T = Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    T_n.x.array[:offset_T] = x_T.array_r[:offset_T]
     T_n.x.scatter_forward()
 
     u_vis.interpolate(u_h)
