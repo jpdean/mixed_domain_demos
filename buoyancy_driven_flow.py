@@ -1,4 +1,4 @@
-from dolfinx import fem, io
+from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
 import numpy as np
@@ -7,13 +7,14 @@ from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
-from dolfinx.mesh import create_cell_partitioner, GhostMode
+from utils import convert_facet_tags
 
 
 def generate_mesh(comm, h=0.1, h_fac=1/3):
     gmsh.initialize()
 
-    volume_id = {"fluid": 1}
+    volume_id = {"fluid": 1,
+                 "solid": 2}
 
     boundary_id = {"left": 2,
                    "right": 3,
@@ -70,12 +71,12 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
         square_surface = factory.addPlaneSurface(
             [rectangle_curve, circle_curve])
-        # circle_surface = factory.addPlaneSurface([circle_curve])
+        circle_surface = factory.addPlaneSurface([circle_curve])
 
         factory.synchronize()
 
         gmsh.model.addPhysicalGroup(2, [square_surface], volume_id["fluid"])
-        # gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+        gmsh.model.addPhysicalGroup(2, [circle_surface], volume_id["solid"])
 
         gmsh.model.addPhysicalGroup(
             1, [rectangle_lines[0]], boundary_id["bottom"])
@@ -91,12 +92,12 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
         # gmsh.fltk.run()
 
-    partitioner = create_cell_partitioner(GhostMode.shared_facet)
-    msh, _, ft = io.gmshio.model_to_mesh(
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+    msh, ct, ft = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
     ft.name = "Facet markers"
 
-    return msh, ft, boundary_id
+    return msh, ct, ft, volume_id, boundary_id
 
 # We also define some helper functions that will be used later
 
@@ -132,14 +133,31 @@ comm = MPI.COMM_WORLD
 # space, we also create a vector valued discontinuous Lagrange space
 # to interpolate into for artifact free visualisation.
 
-msh, mt, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
+msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
+
+# with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
+#     file.write_mesh(msh)
+#     file.write_meshtags(ct)
+#     file.write_meshtags(ft)
+
+tdim = msh.topology.dim
+submesh_f, entity_map_f = mesh.create_submesh(
+    msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
+fdim = tdim - 1
+submesh_f.topology.create_connectivity(fdim, tdim)
+ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
+
+# with io.XDMFFile(msh.comm, "submesh_f.xdmf", "w") as file:
+#     file.write_mesh(submesh_f)
+#     file.write_meshtags(ft_f)
+
 
 # Function space for the velocity
-V = fem.FunctionSpace(msh, ("Raviart-Thomas", k + 1))
+V = fem.FunctionSpace(submesh_f, ("Raviart-Thomas", k + 1))
 # Function space for the pressure
-Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
+Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
 # Funcion space for visualising the velocity field
-W = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+W = fem.VectorFunctionSpace(submesh_f, ("Discontinuous Lagrange", k + 1))
 
 # Define trial and test functions
 
@@ -147,10 +165,12 @@ u, v = TrialFunction(V), TestFunction(V)
 p, q = TrialFunction(Q), TestFunction(Q)
 T, w = TrialFunction(Q), TestFunction(Q)
 
-delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-R_e_const = fem.Constant(msh, PETSc.ScalarType(R_e))
-kappa = fem.Constant(msh, PETSc.ScalarType(0.001))
+# delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
+delta_t = t_end / num_time_steps  # TODO Make constant
+# alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
+alpha = 6.0 * k**2  # TODO Make constant
+R_e_const = fem.Constant(submesh_f, PETSc.ScalarType(R_e))
+kappa_f = fem.Constant(submesh_f, PETSc.ScalarType(0.001))
 
 # List of tuples of form (id, expression)
 dirichlet_bcs = [(boundary_id["bottom"],
@@ -169,10 +189,10 @@ dirichlet_bcs = [(boundary_id["bottom"],
                       np.zeros_like(x[0]), np.zeros_like(x[0]))))]
 neumann_bcs = []
 
-ds = Measure("ds", domain=msh, subdomain_data=mt)
+ds_f = Measure("ds", domain=submesh_f, subdomain_data=ft_f)
 
-h = CellDiameter(msh)
-n = FacetNormal(msh)
+h = CellDiameter(submesh_f)
+n = FacetNormal(submesh_f)
 
 
 def jump(phi, n):
@@ -195,28 +215,28 @@ f = fem.Function(W)
 # etc. TODO Check this. NOTE Consider changing formulation to one with momentum
 # law in conservative form to be able to specify momentum flux
 L_0 = inner(f, v) * dx
-L_1 = inner(fem.Constant(msh, PETSc.ScalarType(0.0)), q) * dx
+L_1 = inner(fem.Constant(submesh_f, PETSc.ScalarType(0.0)), q) * dx
 
 bcs = []
 for bc in dirichlet_bcs:
-    a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds(bc[0])
-                             - inner(outer(u, n), grad(v)) * ds(bc[0])
+    a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds_f(bc[0])
+                             - inner(outer(u, n), grad(v)) * ds_f(bc[0])
                              + alpha / h * inner(
-        outer(u, n), outer(v, n)) * ds(bc[0]))
+        outer(u, n), outer(v, n)) * ds_f(bc[0]))
     u_D = fem.Function(V)
     u_D.interpolate(bc[1])
-    L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds(bc[0])
+    L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds_f(bc[0])
                             + alpha / h * inner(
-                                outer(u_D, n), outer(v, n)) * ds(bc[0]))
+                                outer(u_D, n), outer(v, n)) * ds_f(bc[0]))
 
-    bc_boundary_facets = mt.indices[mt.values == bc[0]]
+    bc_boundary_facets = ft_f.indices[ft_f.values == bc[0]]
     bc_dofs = fem.locate_dofs_topological(
-        V, msh.topology.dim - 1, bc_boundary_facets)
+        V, submesh_f.topology.dim - 1, bc_boundary_facets)
     bcs.append(fem.dirichletbc(u_D, bc_dofs))
 
 
 for bc in neumann_bcs:
-    L_0 += 1 / R_e_const * inner(bc[1], v) * ds(bc[0])
+    L_0 += 1 / R_e_const * inner(bc[1], v) * ds_f(bc[0])
 
 a = fem.form([[a_00, a_01],
               [a_10, None]])
@@ -265,7 +285,7 @@ u_h.x.scatter_forward()
 p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 p_h.x.scatter_forward()
 if len(neumann_bcs) == 0:
-    p_h.x.array[:] -= domain_average(msh, p_h)
+    p_h.x.array[:] -= domain_average(submesh_f, p_h)
 
 u_vis = fem.Function(W)
 u_vis.name = "u"
@@ -278,6 +298,8 @@ p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
 t = 0.0
 u_file.write(t)
 p_file.write(t)
+
+exit()
 
 T_n = fem.Function(Q)
 
@@ -301,8 +323,8 @@ a_T = inner(T / delta_t, w) * dx - \
     inner(u_h * T, grad(w)) * dx + \
     inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
           lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
-    inner(lmbda * dot(u_h, n) * T, w) * ds + \
-    kappa * (inner(grad(T), grad(w)) * dx -
+    inner(lmbda * dot(u_h, n) * T, w) * ds_f + \
+    kappa_f * (inner(grad(T), grad(w)) * dx -
              inner(avg(grad(T)), jump_T(w, n)) * dS -
              inner(jump_T(T, n), avg(grad(w))) * dS +
              (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
@@ -312,22 +334,22 @@ L_T = inner(T_n / delta_t, w) * dx
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T += kappa * (- inner(grad(T), w * n) * ds(bc[0]) -
-                    inner(grad(w), T * n) * ds(bc[0]) +
-                    (alpha / h) * inner(T, w) * ds(bc[0]))
-    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds(bc[0]) + \
-        kappa * (- inner(T_D * n, grad(w)) * ds(bc[0]) +
-                 (alpha / h) * inner(T_D, w) * ds(bc[0]))
+    a_T += kappa_f * (- inner(grad(T), w * n) * ds_f(bc[0]) -
+                    inner(grad(w), T * n) * ds_f(bc[0]) +
+                    (alpha / h) * inner(T, w) * ds_f(bc[0]))
+    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds_f(bc[0]) + \
+        kappa_f * (- inner(T_D * n, grad(w)) * ds_f(bc[0]) +
+                 (alpha / h) * inner(T_D, w) * ds_f(bc[0]))
 
 for bc in neumann_bcs_T:
     g_T = fem.Function(Q)
     g_T.interpolate(bc[1])
-    L_T += kappa * inner(g_T, w) * ds(bc[0])
+    L_T += kappa_f * inner(g_T, w) * ds_f(bc[0])
 
 for bc in robin_bcs_T:
     alpha_R, beta_R = bc[1]
-    a_T += kappa * inner(alpha_R * T, w) * ds(bc[0])
-    L_T += kappa * inner(beta_R, w) * ds(bc[0])
+    a_T += kappa_f * inner(alpha_R * T, w) * ds_f(bc[0])
+    L_T += kappa_f * inner(beta_R, w) * ds_f(bc[0])
 
 a_T = fem.form(a_T)
 L_T = fem.form(L_T)
@@ -360,7 +382,7 @@ a_00 += inner(u / delta_t, v) * dx - \
     inner(u, div(outer(v, u_n))) * dx + \
     inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
     inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
-    inner(dot(u_n, n) * lmbda * u, v) * ds
+    inner(dot(u_n, n) * lmbda * u, v) * ds_f
 a = fem.form([[a_00, a_01],
               [a_10, None]])
 
@@ -369,7 +391,7 @@ L_0 += inner(u_n / delta_t - eps * rho_0 * T_n * g, v) * dx
 for bc in dirichlet_bcs:
     u_D = fem.Function(V)
     u_D.interpolate(bc[1])
-    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds(bc[0])
+    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds_f(bc[0])
 L = fem.form([L_0,
               L_1])
 
