@@ -146,10 +146,12 @@ submesh_f, entity_map_f = mesh.create_submesh(
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
-
 # with io.XDMFFile(msh.comm, "submesh_f.xdmf", "w") as file:
 #     file.write_mesh(submesh_f)
 #     file.write_meshtags(ft_f)
+
+submesh_s, entity_map_s = mesh.create_submesh(
+    msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
 # Function space for the velocity
 V = fem.FunctionSpace(submesh_f, ("Raviart-Thomas", k + 1))
@@ -304,9 +306,6 @@ dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["right"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["top"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["left"], lambda x: np.zeros_like(x[0]))]
-neumann_bcs_T = []
-robin_bcs_T = [(boundary_id["obstacle"], (1.0, 1.0))]
-
 
 # Create function to store solution and previous time step
 
@@ -315,40 +314,114 @@ u_n.x.array[:] = u_h.x.array
 
 lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 
-a_T = inner(T / delta_t, w) * dx - \
-    inner(u_h * T, grad(w)) * dx + \
-    inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
-          lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
-    inner(lmbda * dot(u_h, n) * T, w) * ds_f + \
-    kappa_f * (inner(grad(T), grad(w)) * dx -
-               inner(avg(grad(T)), jump_T(w, n)) * dS -
-               inner(jump_T(T, n), avg(grad(w))) * dS +
-               (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
+# Create entity maps
+cell_imap = msh.topology.index_map(tdim)
+num_cells = cell_imap.size_local + cell_imap.num_ghosts
+inv_entity_map_f = np.full(num_cells, -1)
+inv_entity_map_f[entity_map_f] = np.arange(len(entity_map_f))
+inv_entity_map_s = np.full(num_cells, -1)
+inv_entity_map_s[entity_map_s] = np.arange(len(entity_map_s))
+entity_maps = {submesh_f: inv_entity_map_f,
+               submesh_s: inv_entity_map_s}
 
-L_T = inner(T_n / delta_t, w) * dx
+dx_T = Measure("dx", domain=msh, subdomain_data=ct)
+ds_T = Measure("ds", domain=msh, subdomain_data=ft)
+
+# Create measure for integration. Assign the first (cell, local facet)
+# pair to the cell in omega_0, corresponding to the "+" restriction. Assign
+# the second pair to the omega_1 cell, corresponding to the "-" restriction.
+fluid_int_facets = 7  # FIXME Don't hardcode
+facet_integration_entities = {boundary_id["obstacle"]: [],
+                              fluid_int_facets: []}
+facet_imap = msh.topology.index_map(fdim)
+msh.topology.create_connectivity(tdim, fdim)
+msh.topology.create_connectivity(fdim, tdim)
+c_to_f = msh.topology.connectivity(tdim, fdim)
+f_to_c = msh.topology.connectivity(fdim, tdim)
+domain_f_cells = ct.indices[ct.values == volume_id["fluid"]]
+domain_s_cells = ct.indices[ct.values == volume_id["solid"]]
+interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
+for facet in interface_facets:
+    # Check if this facet is owned
+    if facet < facet_imap.size_local:
+        cells = f_to_c.links(facet)
+        assert len(cells) == 2
+        cell_plus = cells[0] if cells[0] in domain_f_cells else cells[1]
+        cell_minus = cells[0] if cells[0] in domain_s_cells else cells[1]
+        assert cell_plus in domain_f_cells
+        assert cell_minus in domain_s_cells
+
+        # FIXME Don't use tolist
+        local_facet_plus = c_to_f.links(
+            cell_plus).tolist().index(facet)
+        local_facet_minus = c_to_f.links(
+            cell_minus).tolist().index(facet)
+        facet_integration_entities[boundary_id["obstacle"]].extend(
+            [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
+
+        # HACK cell_minus does not exist in the left submesh, so it will
+        # be mapped to index -1. This is problematic for the assembler,
+        # which assumes it is possible to get the full macro dofmap for the
+        # trial and test functions, despite the restriction meaning we
+        # don't need the non-existant dofs. To fix this, we just map
+        # cell_minus to the cell corresponding to cell plus. This will
+        # just add zeros to the assembled system, since there are no
+        # u("-") terms. Could map this to any cell in the submesh, but
+        # I think using the cell on the other side of the facet means a
+        # facet space coefficient could be used
+        entity_maps[submesh_f][cell_minus] = \
+            entity_maps[submesh_f][cell_plus]
+        # Same hack for the right submesh
+        entity_maps[submesh_s][cell_plus] = \
+            entity_maps[submesh_s][cell_minus]
+
+# FIXME Do this more efficiently
+submesh_f.topology.create_entities(fdim)
+submesh_f.topology.create_connectivity(tdim, fdim)
+submesh_f.topology.create_connectivity(fdim, tdim)
+c_to_f_submesh_f = submesh_f.topology.connectivity(tdim, fdim)
+f_to_c_submesh_f = submesh_f.topology.connectivity(fdim, tdim)
+for facet in range(submesh_f.topology.index_map(fdim).size_local):
+    cells = f_to_c_submesh_f.links(facet)
+    if len(cells) == 2:
+        # FIXME Don't use tolist
+        local_facet_plus = c_to_f_submesh_f.links(
+            cells[0]).tolist().index(facet)
+        local_facet_minus = c_to_f_submesh_f.links(
+            cells[1]).tolist().index(facet)
+
+        facet_integration_entities[fluid_int_facets].extend(
+            [entity_map_f[cells[0]], local_facet_plus,
+             entity_map_f[cells[1]], local_facet_minus])
+dS_T = Measure("dS", domain=msh,
+               subdomain_data=facet_integration_entities)
+
+a_T = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
+    inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
+    inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
+          lmbda("-") * dot(u_h("-"), n("-")) * T("-"),
+          jump_T(w)) * dS_T(fluid_int_facets) + \
+    inner(lmbda * dot(u_h, n) * T, w) * ds_T + \
+    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
+               inner(avg(grad(T)), jump_T(w, n)) * dS_T(fluid_int_facets) -
+               inner(jump_T(T, n), avg(grad(w))) * dS_T(fluid_int_facets) +
+               (alpha / avg(h)) * inner(jump_T(T, n),
+               jump_T(w, n)) * dS_T(fluid_int_facets))
+
+L_T = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T += kappa_f * (- inner(grad(T), w * n) * ds_f(bc[0]) -
-                      inner(grad(w), T * n) * ds_f(bc[0]) +
-                      (alpha / h) * inner(T, w) * ds_f(bc[0]))
-    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds_f(bc[0]) + \
-        kappa_f * (- inner(T_D * n, grad(w)) * ds_f(bc[0]) +
-                   (alpha / h) * inner(T_D, w) * ds_f(bc[0]))
+    a_T += kappa_f * (- inner(grad(T), w * n) * ds_T(bc[0]) -
+                      inner(grad(w), T * n) * ds_T(bc[0]) +
+                      (alpha / h) * inner(T, w) * ds_T(bc[0]))
+    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds_T(bc[0]) + \
+        kappa_f * (- inner(T_D * n, grad(w)) * ds_T(bc[0]) +
+                   (alpha / h) * inner(T_D, w) * ds_T(bc[0]))
 
-for bc in neumann_bcs_T:
-    g_T = fem.Function(Q)
-    g_T.interpolate(bc[1])
-    L_T += kappa_f * inner(g_T, w) * ds_f(bc[0])
-
-for bc in robin_bcs_T:
-    alpha_R, beta_R = bc[1]
-    a_T += kappa_f * inner(alpha_R * T, w) * ds_f(bc[0])
-    L_T += kappa_f * inner(beta_R, w) * ds_f(bc[0])
-
-a_T = fem.form(a_T)
-L_T = fem.form(L_T)
+a_T = fem.form(a_T, entity_maps=entity_maps)
+L_T = fem.form(L_T, entity_maps=entity_maps)
 
 A_T = fem.petsc.create_matrix(a_T)
 b_T = fem.petsc.create_vector(L_T)
