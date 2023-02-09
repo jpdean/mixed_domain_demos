@@ -299,8 +299,6 @@ t = 0.0
 u_file.write(t)
 p_file.write(t)
 
-exit()
-
 T_n = fem.Function(Q)
 
 dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0]))]
@@ -318,16 +316,15 @@ u_n.x.array[:] = u_h.x.array
 
 lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 
-# FIXME Use u_h not u_n
 a_T = inner(T / delta_t, w) * dx - \
     inner(u_h * T, grad(w)) * dx + \
     inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
           lmbda("-") * dot(u_h("-"), n("-")) * T("-"), jump_T(w)) * dS + \
     inner(lmbda * dot(u_h, n) * T, w) * ds_f + \
     kappa_f * (inner(grad(T), grad(w)) * dx -
-             inner(avg(grad(T)), jump_T(w, n)) * dS -
-             inner(jump_T(T, n), avg(grad(w))) * dS +
-             (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
+               inner(avg(grad(T)), jump_T(w, n)) * dS -
+               inner(jump_T(T, n), avg(grad(w))) * dS +
+               (alpha / avg(h)) * inner(jump_T(T, n), jump_T(w, n)) * dS)
 
 L_T = inner(T_n / delta_t, w) * dx
 
@@ -335,11 +332,11 @@ for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
     a_T += kappa_f * (- inner(grad(T), w * n) * ds_f(bc[0]) -
-                    inner(grad(w), T * n) * ds_f(bc[0]) +
-                    (alpha / h) * inner(T, w) * ds_f(bc[0]))
+                      inner(grad(w), T * n) * ds_f(bc[0]) +
+                      (alpha / h) * inner(T, w) * ds_f(bc[0]))
     L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds_f(bc[0]) + \
         kappa_f * (- inner(T_D * n, grad(w)) * ds_f(bc[0]) +
-                 (alpha / h) * inner(T_D, w) * ds_f(bc[0]))
+                   (alpha / h) * inner(T_D, w) * ds_f(bc[0]))
 
 for bc in neumann_bcs_T:
     g_T = fem.Function(Q)
@@ -374,8 +371,8 @@ T_file.write(t)
 # lumping gravity in with pressure, see 2P4 notes) and taken
 # T_0 to be 0
 g = as_vector((0.0, -9.81))
-rho_0 = fem.Constant(msh, PETSc.ScalarType(1.0))
-eps = fem.Constant(msh, PETSc.ScalarType(10.0))  # Thermal expansion coeff
+rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(1.0))
+eps = fem.Constant(submesh_f, PETSc.ScalarType(10.0))  # Thermal expansion coeff
 
 u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
 a_00 += inner(u / delta_t, v) * dx - \
@@ -398,7 +395,8 @@ L = fem.form([L_0,
 # Time stepping loop
 
 for n in range(num_time_steps):
-    t += delta_t.value
+    # t += delta_t.value
+    t += delta_t
 
     A.zeroEntries()
     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
@@ -415,7 +413,7 @@ for n in range(num_time_steps):
     p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
     p_h.x.scatter_forward()
     if len(neumann_bcs) == 0:
-        p_h.x.array[:] -= domain_average(msh, p_h)
+        p_h.x.array[:] -= domain_average(submesh_f, p_h)
 
     A_T.zeroEntries()
     fem.petsc.assemble_matrix(A_T, a_T)
