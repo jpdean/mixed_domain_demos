@@ -396,32 +396,43 @@ for facet in range(submesh_f.topology.index_map(fdim).size_local):
 dS_T = Measure("dS", domain=msh,
                subdomain_data=facet_integration_entities)
 
-a_T = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
-    inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
-    inner(lmbda("+") * dot(u_h("+"), n("+")) * T("+") -
-          lmbda("-") * dot(u_h("-"), n("-")) * T("-"),
-          jump_T(w)) * dS_T(fluid_int_facets) + \
-    inner(lmbda * dot(u_h, n) * T, w) * ds_T + \
-    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
-               inner(avg(grad(T)), jump_T(w, n)) * dS_T(fluid_int_facets) -
-               inner(jump_T(T, n), avg(grad(w))) * dS_T(fluid_int_facets) +
-               (alpha / avg(h)) * inner(jump_T(T, n),
-               jump_T(w, n)) * dS_T(fluid_int_facets))
+h_T = CellDiameter(msh)
+n_T = FacetNormal(msh)
+lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 
-L_T = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
+gamma_int = 10  # Penalty param on interface
+a_T_00 = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
+    inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
+    inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
+          lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
+          jump_T(w)) * dS_T(fluid_int_facets) + \
+    inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T + \
+    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
+               inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
+               inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
+               (alpha / avg(h_T)) * inner(jump_T(T, n_T),
+               jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
+    + kappa_f * (gamma_int / avg(h_T) * inner(
+        T("+"), w("+")) * dS_T(boundary_id["obstacle"])
+    - inner(1 / 2 * dot(grad(T("+")), n_T("+")),
+            w("+")) * dS_T(boundary_id["obstacle"])
+    - inner(1 / 2 * dot(grad(w("+")), n_T("+")),
+            T("+")) * dS_T(boundary_id["obstacle"]))
+
+L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T += kappa_f * (- inner(grad(T), w * n) * ds_T(bc[0]) -
-                      inner(grad(w), T * n) * ds_T(bc[0]) +
-                      (alpha / h) * inner(T, w) * ds_T(bc[0]))
-    L_T += - inner((1 - lmbda) * dot(u_h, n) * T_D, w) * ds_T(bc[0]) + \
-        kappa_f * (- inner(T_D * n, grad(w)) * ds_T(bc[0]) +
-                   (alpha / h) * inner(T_D, w) * ds_T(bc[0]))
+    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
+                         inner(grad(w), T * n_T) * ds_T(bc[0]) +
+                         (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
+    L_T_0 += - inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w) * ds_T(bc[0]) + \
+        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
+                   (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-a_T = fem.form(a_T, entity_maps=entity_maps)
-L_T = fem.form(L_T, entity_maps=entity_maps)
+a_T = fem.form(a_T_00, entity_maps=entity_maps)
+L_T = fem.form(L_T_0, entity_maps=entity_maps)
 
 A_T = fem.petsc.create_matrix(a_T)
 b_T = fem.petsc.create_vector(L_T)
