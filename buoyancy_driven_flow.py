@@ -1,3 +1,5 @@
+# TODO This demo needs tidying and simplifying
+
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
