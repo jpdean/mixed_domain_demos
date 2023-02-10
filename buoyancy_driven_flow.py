@@ -8,6 +8,7 @@ from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
 from ufl import jump as jump_T
 import gmsh
 from utils import convert_facet_tags
+import sys
 
 
 def generate_mesh(comm, h=0.1, h_fac=1/3):
@@ -117,14 +118,20 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
+def par_print(string):
+    if comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
+
+
 # We define some simulation parameters
 
-num_time_steps = 10
-t_end = 0.6
+num_time_steps = 30
+t_end = 2
 R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
-k = 2  # Polynomial degree
+k = 3  # Polynomial degree
 
 comm = MPI.COMM_WORLD
 
@@ -460,7 +467,7 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-L_T_1 = inner(1.0, w_s) * dx_T(volume_id["solid"]) \
+L_T_1 = inner(5.0, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
@@ -525,6 +532,8 @@ L = fem.form([L_0,
 for n in range(num_time_steps):
     # t += delta_t.value
     t += delta_t
+
+    par_print(f"t = {t}")
 
     A.zeroEntries()
     fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
