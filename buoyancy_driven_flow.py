@@ -31,8 +31,10 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
         length = 1
         height = 2
-        c = (0.49, 0.5)
-        r = 0.05
+        c = (0.49, 0.1)
+
+        o_w = 0.075
+        o_h = 0.02
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -41,12 +43,13 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             factory.addPoint(0.0, height, 0.0, h)
         ]
 
-        circle_points = [
-            factory.addPoint(c[0], c[1], 0.0, h),
-            factory.addPoint(c[0] + r, c[1], 0.0, h * h_fac),
-            factory.addPoint(c[0], c[1] + r, 0.0, h * h_fac),
-            factory.addPoint(c[0] - r, c[1], 0.0, h * h_fac),
-            factory.addPoint(c[0], c[1] - r, 0.0, h * h_fac)
+        centre_point = factory.addPoint(c[0], c[1], 0.0, h * h_fac)
+        obstacle_points = [
+            factory.addPoint(c[0] + o_w / 2, c[1], 0.0, h * h_fac),
+            factory.addPoint(c[0], c[1] - o_w / 2, 0.0, h * h_fac),
+            factory.addPoint(c[0] - o_w / 2, c[1], 0.0, h * h_fac),
+            factory.addPoint(c[0] - o_w / 2, c[1] + o_h, 0.0, h * h_fac),
+            factory.addPoint(c[0] + o_w / 2, c[1] + o_h, 0.0, h * h_fac)
         ]
 
         rectangle_lines = [
@@ -56,19 +59,18 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             factory.addLine(rectangle_points[3], rectangle_points[0])
         ]
 
-        circle_lines = [
+        obstacle_lines = [
             factory.addCircleArc(
-                circle_points[1], circle_points[0], circle_points[2]),
+                obstacle_points[0], centre_point, obstacle_points[1]),
             factory.addCircleArc(
-                circle_points[2], circle_points[0], circle_points[3]),
-            factory.addCircleArc(
-                circle_points[3], circle_points[0], circle_points[4]),
-            factory.addCircleArc(
-                circle_points[4], circle_points[0], circle_points[1])
+                obstacle_points[1], centre_point, obstacle_points[2]),
+            factory.addLine(obstacle_points[2], obstacle_points[3]),
+            factory.addLine(obstacle_points[3], obstacle_points[4]),
+            factory.addLine(obstacle_points[4], obstacle_points[0]),
         ]
 
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
-        circle_curve = factory.addCurveLoop(circle_lines)
+        circle_curve = factory.addCurveLoop(obstacle_lines)
 
         square_surface = factory.addPlaneSurface(
             [rectangle_curve, circle_curve])
@@ -87,7 +89,7 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             1, [rectangle_lines[2]], boundary_id["top"])
         gmsh.model.addPhysicalGroup(
             1, [rectangle_lines[3]], boundary_id["left"])
-        gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
+        gmsh.model.addPhysicalGroup(1, obstacle_lines, boundary_id["obstacle"])
 
         gmsh.model.mesh.generate(2)
 
@@ -126,8 +128,8 @@ def par_print(string):
 
 # We define some simulation parameters
 
-num_time_steps = 30
-t_end = 2
+num_time_steps = 10
+t_end = 0.1
 R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
@@ -467,7 +469,7 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-L_T_1 = inner(5.0, w_s) * dx_T(volume_id["solid"]) \
+L_T_1 = inner(100.0, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
