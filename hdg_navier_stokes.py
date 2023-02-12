@@ -79,7 +79,7 @@ def solve(solver_type, k, nu, num_time_steps,
     gamma = 6.0 * k**2 / h
 
     facet_integration_entities = compute_integration_domains(
-        fem.IntegralType.exterior_facet, mt)
+        fem.IntegralType.exterior_facet, mt._cpp_object)
 
     all_facets = 0
     facet_integration_entities[all_facets] = []
