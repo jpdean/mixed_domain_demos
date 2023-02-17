@@ -1,3 +1,9 @@
+# TODO https://www.dealii.org/current/doxygen/deal.II/step_60.html
+# Create mesh of FEniCS logo
+
+# TODO 3D
+
+import gmsh
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
@@ -6,14 +12,86 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
 
+comm = MPI.COMM_WORLD
+gdim = 2
 
-n = 8
-assert n % 2 == 0  # NOTE n must be even
+omega_0 = 0
+omega_1 = 1
+boundary = 2
+interface = 3
+
+gmsh.initialize()
+if comm.rank == 0:
+    gmsh.model.add("square_with_circle")
+
+    factory = gmsh.model.geo
+
+    h = 0.025
+
+    square_points = [
+        factory.addPoint(0.0, 0.0, 0.0, h),
+        factory.addPoint(1.0, 0.0, 0.0, h),
+        factory.addPoint(1.0, 1.0, 0.0, h),
+        factory.addPoint(0.0, 1.0, 0.0, h)
+    ]
+
+    c = 0.5
+    r = 0.2
+    circle_points = [
+        factory.addPoint(c, c, 0.0, h),
+        factory.addPoint(c + r, c, 0.0, h),
+        factory.addPoint(c, c + r, 0.0, h),
+        factory.addPoint(c - r, c, 0.0, h),
+        factory.addPoint(c, c - r, 0.0, h)
+    ]
+
+    square_lines = [
+        factory.addLine(square_points[0], square_points[1]),
+        factory.addLine(square_points[1], square_points[2]),
+        factory.addLine(square_points[2], square_points[3]),
+        factory.addLine(square_points[3], square_points[0])
+    ]
+
+    circle_lines = [
+        factory.addCircleArc(
+            circle_points[1], circle_points[0], circle_points[2]),
+        factory.addCircleArc(
+            circle_points[2], circle_points[0], circle_points[3]),
+        factory.addCircleArc(
+            circle_points[3], circle_points[0], circle_points[4]),
+        factory.addCircleArc(
+            circle_points[4], circle_points[0], circle_points[1])
+    ]
+
+    square_curve = factory.addCurveLoop(square_lines)
+    circle_curve = factory.addCurveLoop(circle_lines)
+
+    square_surface = factory.addPlaneSurface([square_curve, circle_curve])
+    circle_surface = factory.addPlaneSurface([circle_curve])
+
+    factory.synchronize()
+
+    gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
+    gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+
+    gmsh.model.addPhysicalGroup(1, square_lines, boundary)
+    gmsh.model.addPhysicalGroup(1, circle_lines, interface)
+
+    gmsh.model.mesh.generate(2)
+
+    # gmsh.fltk.run()
+
+partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+msh, ct, ft = io.gmshio.model_to_mesh(
+    gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+gmsh.finalize()
+
+with io.XDMFFile(comm, "msh.xdmf", "w") as f:
+    f.write_mesh(msh)
+    f.write_meshtags(ct)
+    f.write_meshtags(ft)
+
 k = 1
-msh = mesh.create_unit_square(
-    MPI.COMM_WORLD, n, n, ghost_mode=mesh.GhostMode.none)
-# msh = mesh.create_unit_cube(
-#     MPI.COMM_WORLD, n, n, n, ghost_mode=mesh.GhostMode.none)
 
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 u = ufl.TrialFunction(V)
@@ -23,16 +101,15 @@ v = ufl.TestFunction(V)
 tdim = msh.topology.dim
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
-dirichlet_facets = mesh.locate_entities_boundary(
-    msh, fdim, lambda x: np.logical_or(np.isclose(x[0], 0.0),
-                                       np.isclose(x[0], 1.0)))
+dirichlet_facets = ft.indices[ft.values == boundary]
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
-# Create submesh of centre facets
-centre_facets = mesh.locate_entities(
-    msh, fdim, lambda x: np.isclose(x[0], 0.5))
-submesh, entity_map = mesh.create_submesh(msh, fdim, centre_facets)[0:2]
+
+# Create submesh for Lagrange multiplier
+interface_facets = ft.indices[ft.values == interface]
+submesh, entity_map = mesh.create_submesh(msh, fdim, interface_facets)[0:2]
+
 
 # Create function space for the Lagrange multiplier
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
@@ -41,34 +118,34 @@ eta = ufl.TestFunction(W)
 
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
-entity_maps = {submesh: [entity_map.index(entity)
-                         if entity in entity_map else -1
-                         for entity in range(num_facets)]}
+inv_entity_map = np.full(num_facets, -1)
+inv_entity_map[entity_map] = np.arange(len(entity_map))
+entity_maps = {submesh: inv_entity_map}
 
 # Create measure for integration
-facet_integration_entities = {1: []}
+facet_integration_entities = {interface: []}
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
-for facet in centre_facets:
+for facet in interface_facets:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
         # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
         local_facet = c_to_f.links(cell).tolist().index(facet)
-        facet_integration_entities[1].extend([cell, local_facet])
+        facet_integration_entities[interface].extend([cell, local_facet])
 ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 
 
 def u_e(x):
-    return x[0] * (1 - x[0])
+    return ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) 
 
 
 # Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
-a_01 = fem.form(inner(lmbda, v) * ds(1), entity_maps=entity_maps)
-a_10 = fem.form(inner(u, eta) * ds(1), entity_maps=entity_maps)
+a_01 = fem.form(inner(lmbda, v) * ds(interface), entity_maps=entity_maps)
+a_10 = fem.form(inner(u, eta) * ds(interface), entity_maps=entity_maps)
 
 # f = fem.Constant(msh, PETSc.ScalarType(2.0))
 x_msh = ufl.SpatialCoordinate(msh)
