@@ -13,7 +13,7 @@ from petsc4py import PETSc
 from utils import norm_L2
 
 comm = MPI.COMM_WORLD
-gdim = 2
+gdim = 3
 
 omega_0 = 0
 omega_1 = 1
@@ -22,76 +22,106 @@ interface = 3
 
 gmsh.initialize()
 if comm.rank == 0:
-    gmsh.model.add("square_with_circle")
+    h = 0.1
+    if gdim == 2:
+        gmsh.model.add("square_with_circle")
 
-    factory = gmsh.model.geo
+        factory = gmsh.model.geo
 
-    h = 0.025
+        square_points = [
+            factory.addPoint(0.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 1.0, 0.0, h),
+            factory.addPoint(0.0, 1.0, 0.0, h)
+        ]
 
-    square_points = [
-        factory.addPoint(0.0, 0.0, 0.0, h),
-        factory.addPoint(1.0, 0.0, 0.0, h),
-        factory.addPoint(1.0, 1.0, 0.0, h),
-        factory.addPoint(0.0, 1.0, 0.0, h)
-    ]
+        c = 0.5
+        r = 0.2
+        circle_points = [
+            factory.addPoint(c, c, 0.0, h),
+            factory.addPoint(c + r, c, 0.0, h),
+            factory.addPoint(c, c + r, 0.0, h),
+            factory.addPoint(c - r, c, 0.0, h),
+            factory.addPoint(c, c - r, 0.0, h)
+        ]
 
-    c = 0.5
-    r = 0.2
-    circle_points = [
-        factory.addPoint(c, c, 0.0, h),
-        factory.addPoint(c + r, c, 0.0, h),
-        factory.addPoint(c, c + r, 0.0, h),
-        factory.addPoint(c - r, c, 0.0, h),
-        factory.addPoint(c, c - r, 0.0, h)
-    ]
+        square_lines = [
+            factory.addLine(square_points[0], square_points[1]),
+            factory.addLine(square_points[1], square_points[2]),
+            factory.addLine(square_points[2], square_points[3]),
+            factory.addLine(square_points[3], square_points[0])
+        ]
 
-    square_lines = [
-        factory.addLine(square_points[0], square_points[1]),
-        factory.addLine(square_points[1], square_points[2]),
-        factory.addLine(square_points[2], square_points[3]),
-        factory.addLine(square_points[3], square_points[0])
-    ]
+        circle_lines = [
+            factory.addCircleArc(
+                circle_points[1], circle_points[0], circle_points[2]),
+            factory.addCircleArc(
+                circle_points[2], circle_points[0], circle_points[3]),
+            factory.addCircleArc(
+                circle_points[3], circle_points[0], circle_points[4]),
+            factory.addCircleArc(
+                circle_points[4], circle_points[0], circle_points[1])
+        ]
 
-    circle_lines = [
-        factory.addCircleArc(
-            circle_points[1], circle_points[0], circle_points[2]),
-        factory.addCircleArc(
-            circle_points[2], circle_points[0], circle_points[3]),
-        factory.addCircleArc(
-            circle_points[3], circle_points[0], circle_points[4]),
-        factory.addCircleArc(
-            circle_points[4], circle_points[0], circle_points[1])
-    ]
+        square_curve = factory.addCurveLoop(square_lines)
+        circle_curve = factory.addCurveLoop(circle_lines)
 
-    square_curve = factory.addCurveLoop(square_lines)
-    circle_curve = factory.addCurveLoop(circle_lines)
+        square_surface = factory.addPlaneSurface([square_curve, circle_curve])
+        circle_surface = factory.addPlaneSurface([circle_curve])
 
-    square_surface = factory.addPlaneSurface([square_curve, circle_curve])
-    circle_surface = factory.addPlaneSurface([circle_curve])
+        factory.synchronize()
 
-    factory.synchronize()
+        gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
+        gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
 
-    gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
-    gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+        gmsh.model.addPhysicalGroup(1, square_lines, boundary)
+        gmsh.model.addPhysicalGroup(1, circle_lines, interface)
 
-    gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-    gmsh.model.addPhysicalGroup(1, circle_lines, interface)
+        gmsh.model.mesh.generate(2)
 
-    gmsh.model.mesh.generate(2)
+    elif gdim == 3:
+        gmsh.model.add("box_with_sphere")
+        box = gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
+        sphere = gmsh.model.occ.addSphere(0.5, 0.5, 0.5, 0.25)
 
-    # gmsh.fltk.run()
+        ov, ovv = gmsh.model.occ.fragment([(3, box)], [(3, sphere)])
+
+        # print("fragment produced volumes:")
+        # for e in ov:
+        #     print(e)
+
+        # print("before/after fragment relations:")
+        # for e in zip([(3, box), (3, sphere)], ovv):
+        #     print("parent " + str(e[0]) + " -> child " + str(e[1]))
+
+        gmsh.model.occ.synchronize()
+
+        boundary_dim_tags = gmsh.model.getBoundary([ov[0], ov[1]])
+        interface_dim_tags = gmsh.model.getBoundary([ov[0]])
+
+        gmsh.model.addPhysicalGroup(3, [ov[0][1]], omega_0)
+        gmsh.model.addPhysicalGroup(3, [ov[1][1]], omega_1)
+        gmsh.model.addPhysicalGroup(
+            2, [surface[1] for surface in boundary_dim_tags], boundary)
+        gmsh.model.addPhysicalGroup(
+            2, [surface[1] for surface in interface_dim_tags], interface)
+
+        # Assign a mesh size to all the points:
+        gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
+
+        gmsh.model.mesh.generate(3)
 
 partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
 msh, ct, ft = io.gmshio.model_to_mesh(
     gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
 gmsh.finalize()
 
-with io.XDMFFile(comm, "msh.xdmf", "w") as f:
-    f.write_mesh(msh)
-    f.write_meshtags(ct)
-    f.write_meshtags(ft)
+# with io.XDMFFile(comm, "msh.xdmf", "w") as f:
+#     f.write_mesh(msh)
+#     f.write_meshtags(ct)
+#     f.write_meshtags(ft)
 
-k = 1
+k = 3
 
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 u = ufl.TrialFunction(V)
@@ -139,7 +169,10 @@ ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
 
 
 def u_e(x):
-    return ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) 
+    u_e = 1
+    for i in range(tdim):
+        u_e *= ufl.sin(ufl.pi * x[i])
+    return u_e
 
 
 # Define forms
@@ -195,3 +228,4 @@ e_L2 = norm_L2(msh.comm, u - u_e(x_msh))
 rank = msh.comm.Get_rank()
 if rank == 0:
     print(f"e_L2 = {e_L2}")
+    print(1 / (msh.topology.index_map(2).size_global)**(1/3))
