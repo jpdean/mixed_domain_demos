@@ -22,7 +22,7 @@ interface = 3
 
 gmsh.initialize()
 if comm.rank == 0:
-    h = 0.1
+    h = 0.2
     if gdim == 2:
         gmsh.model.add("square_with_circle")
 
@@ -228,4 +228,4 @@ e_L2 = norm_L2(msh.comm, u - u_e(x_msh))
 rank = msh.comm.Get_rank()
 if rank == 0:
     print(f"e_L2 = {e_L2}")
-    print(1 / (msh.topology.index_map(2).size_global)**(1/3))
+    # print(1 / (msh.topology.index_map(2).size_global)**(1/msh.topology.dim))
