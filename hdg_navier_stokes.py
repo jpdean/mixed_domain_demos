@@ -406,6 +406,121 @@ class GaussianBump(Problem):
                                   PETSc.ScalarType(0.0)))
 
 
+class Cylinder(Problem):
+    def create_mesh(self, h, cell_type):
+        # TODO Add cell type
+
+        h_fac = 1 / 3
+
+        comm = MPI.COMM_WORLD
+        gdim = 2
+
+        volume_id = {"fluid": 1}
+
+        boundary_id = {"inlet": 2,
+                       "outlet": 3,
+                       "wall": 4,
+                       "obstacle": 5}
+
+        gmsh.initialize()
+        if comm.rank == 0:
+            gmsh.model.add("model")
+            factory = gmsh.model.geo
+
+            length = 2.2
+            height = 0.41
+            c = (0.2, 0.2)
+            r = 0.05
+            order = 1
+
+            rectangle_points = [
+                factory.addPoint(0.0, 0.0, 0.0, h),
+                factory.addPoint(length, 0.0, 0.0, h),
+                factory.addPoint(length, height, 0.0, h),
+                factory.addPoint(0.0, height, 0.0, h)
+            ]
+
+            circle_points = [
+                factory.addPoint(c[0], c[1], 0.0, h),
+                factory.addPoint(c[0] + r, c[1], 0.0, h * h_fac),
+                factory.addPoint(c[0], c[1] + r, 0.0, h * h_fac),
+                factory.addPoint(c[0] - r, c[1], 0.0, h * h_fac),
+                factory.addPoint(c[0], c[1] - r, 0.0, h * h_fac)
+            ]
+
+            rectangle_lines = [
+                factory.addLine(rectangle_points[0], rectangle_points[1]),
+                factory.addLine(rectangle_points[1], rectangle_points[2]),
+                factory.addLine(rectangle_points[2], rectangle_points[3]),
+                factory.addLine(rectangle_points[3], rectangle_points[0])
+            ]
+
+            circle_lines = [
+                factory.addCircleArc(
+                    circle_points[1], circle_points[0], circle_points[2]),
+                factory.addCircleArc(
+                    circle_points[2], circle_points[0], circle_points[3]),
+                factory.addCircleArc(
+                    circle_points[3], circle_points[0], circle_points[4]),
+                factory.addCircleArc(
+                    circle_points[4], circle_points[0], circle_points[1])
+            ]
+
+            rectangle_curve = factory.addCurveLoop(rectangle_lines)
+            circle_curve = factory.addCurveLoop(circle_lines)
+
+            square_surface = factory.addPlaneSurface(
+                [rectangle_curve, circle_curve])
+            # circle_surface = factory.addPlaneSurface([circle_curve])
+
+            factory.synchronize()
+
+            gmsh.model.addPhysicalGroup(2, [square_surface], volume_id["fluid"])
+            # gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+
+            gmsh.model.addPhysicalGroup(
+                1, [rectangle_lines[0], rectangle_lines[2]],
+                boundary_id["wall"])
+            gmsh.model.addPhysicalGroup(
+                1, [rectangle_lines[1]], boundary_id["outlet"])
+            gmsh.model.addPhysicalGroup(
+                1, [rectangle_lines[3]], boundary_id["inlet"])
+            gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
+
+            gmsh.option.setNumber("Mesh.Smoothing", 5)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            gmsh.model.mesh.generate(2)
+            gmsh.model.mesh.setOrder(order)
+
+        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+        msh, _, mt = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+        gmsh.finalize()
+
+        return msh, mt, boundary_id
+
+    def boundary_conditions(self):
+        def inlet(x): return np.vstack(
+            ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
+             np.zeros_like(x[0])))
+
+        def zero(x): return np.vstack(
+            (np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
+
+        return {"inlet": (BCType.Dirichlet, inlet),
+                "outlet": (BCType.Neumann, zero),
+                "wall": (BCType.Dirichlet, zero),
+                "obstacle": (BCType.Dirichlet, zero)}
+
+    def f(self, msh):
+        return fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                  PETSc.ScalarType(0.0)))
+
+
 class Square(Problem):
     def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
