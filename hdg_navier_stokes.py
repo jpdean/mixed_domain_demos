@@ -475,7 +475,8 @@ class Cylinder(Problem):
 
             factory.synchronize()
 
-            gmsh.model.addPhysicalGroup(2, [square_surface], volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(
+                2, [square_surface], volume_id["fluid"])
             # gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
 
             gmsh.model.addPhysicalGroup(
@@ -485,7 +486,8 @@ class Cylinder(Problem):
                 1, [rectangle_lines[1]], boundary_id["outlet"])
             gmsh.model.addPhysicalGroup(
                 1, [rectangle_lines[3]], boundary_id["inlet"])
-            gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
+            gmsh.model.addPhysicalGroup(
+                1, circle_lines, boundary_id["obstacle"])
 
             gmsh.option.setNumber("Mesh.Smoothing", 5)
             if cell_type == mesh.CellType.quadrilateral:
