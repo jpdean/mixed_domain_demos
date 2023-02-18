@@ -1,7 +1,7 @@
-# TODO https://www.dealii.org/current/doxygen/deal.II/step_60.html
-# Create mesh of FEniCS logo
-
-# TODO 3D
+# NOTE: See problem in
+# https://www.dealii.org/current/doxygen/deal.II/step_60.html
+# and also note the comments on precondition (the Schur
+# complement behaves like a Neumann-to-Dirichlet map)
 
 import gmsh
 import numpy as np
