@@ -627,10 +627,9 @@ class Wannier(Problem):
         self.v_0 = v_0
         self.v_1 = v_1
 
-    def create_mesh(self, h, cell_type):
+    def create_mesh(self, h, cell_type, order=2):
         comm = MPI.COMM_WORLD
         gdim = 2
-        order = 1
 
         volume_id = {"fluid": 1}
         boundary_id = {"wall_0": 2,
