@@ -696,6 +696,57 @@ class Wannier(Problem):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
 
+    def u_e(self, x, module=ufl):
+        r1 = self.r_0
+        r2 = self.r_1
+        e = - self.e
+        v1 = self.v_0
+        v2 = self.v_1
+
+        d1 = (r2 * r2 - r1 * r1) / (2 * e) - e / 2
+        d2 = d1 + e
+        s = module.sqrt((r2 - r1 - e) * (r2 - r1 + e) *
+                        (r2 + r1 + e) * (r2 + r1 - e)) / (2 * e)
+        l1 = module.ln((d1 + s) / (d1 - s))
+        l2 = module.ln((d2 + s) / (d2 - s))
+        den = (r2 * r2 + r1 * r1) * (l1 - l2) - 4 * s * e
+        curlb = 2 * (d2 * d2 - d1 * d1) * (r1 * v1 + r2 * v2) \
+            / ((r2 * r2 + r1 * r1) * den) + r1 * r1 * r2 * r2 \
+            * (v1 / r1 - v2 / r2) / (s * (r1 * r1 + r2 * r2) * (d2 - d1))
+        A = - 0.5 * (d1 * d2 - s * s) * curlb
+        B = (d1 + s) * (d2 + s) * curlb
+        C = (d1 - s) * (d2 - s) * curlb
+        D = (d1 * l2 - d2 * l1) * (r1 * v1 + r2 * v2) / den - 2 * s \
+            * ((r2 * r2 - r1 * r1) / (r2 * r2 + r1 * r1)) \
+            * (r1 * v1 + r2 * v2) / den - r1 * r1 * r2 * r2 \
+            * (v1 / r1 - v2 / r2) / ((r1 * r1 + r2 * r2) * e)
+        E = 0.5 * (l1 - l2) * (r1 * v1 + r2 * v2) / den
+        F = e * (r1 * v1 + r2 * v2) / den
+
+        y_offset = x[1] + d2
+        spy = s + y_offset
+        smy = s - y_offset
+        zp = x[0] * x[0] + spy * spy
+        zm = x[0] * x[0] + smy * smy
+        lz = module.ln(zp / zm)
+        zr = 2 * (spy / zp + smy / zm)
+
+        u_x = - A * zr - B * ((s + 2 * y_offset) * zp - 2 * spy * spy
+                              * y_offset) / (zp * zp) - C * ((s - 2 * y_offset)
+                                                             * zm + 2 * smy
+                                                             * smy * y_offset) \
+            / (zm * zm) - D - E * 2 * y_offset - F * (lz + y_offset * zr)
+        u_y = - A * 8 * s * x[0] * y_offset / (zp * zm) \
+            - B * 2 * x[0] * y_offset * spy / (zp * zp) - C * 2 \
+            * x[0] * y_offset * smy / (zm * zm) + E * 2 * x[0] - F * 8 * s \
+            * x[0] * y_offset * y_offset / (zp * zm)
+
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
+
 
 if __name__ == "__main__":
     # Simulation parameters
