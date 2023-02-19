@@ -697,33 +697,33 @@ class Wannier(Problem):
                                   PETSc.ScalarType(0.0)))
 
     def u_e(self, x, module=ufl):
-        r1 = self.r_0
-        r2 = self.r_1
+        r_0 = self.r_0
+        r_1 = self.r_1
         e = - self.e
-        v1 = self.v_0
-        v2 = self.v_1
+        v_0 = self.v_0
+        v_1 = self.v_1
 
-        d1 = (r2 * r2 - r1 * r1) / (2 * e) - e / 2
-        d2 = d1 + e
-        s = module.sqrt((r2 - r1 - e) * (r2 - r1 + e) *
-                        (r2 + r1 + e) * (r2 + r1 - e)) / (2 * e)
-        l1 = module.ln((d1 + s) / (d1 - s))
-        l2 = module.ln((d2 + s) / (d2 - s))
-        den = (r2 * r2 + r1 * r1) * (l1 - l2) - 4 * s * e
-        curlb = 2 * (d2 * d2 - d1 * d1) * (r1 * v1 + r2 * v2) \
-            / ((r2 * r2 + r1 * r1) * den) + r1 * r1 * r2 * r2 \
-            * (v1 / r1 - v2 / r2) / (s * (r1 * r1 + r2 * r2) * (d2 - d1))
-        A = - 0.5 * (d1 * d2 - s * s) * curlb
-        B = (d1 + s) * (d2 + s) * curlb
-        C = (d1 - s) * (d2 - s) * curlb
-        D = (d1 * l2 - d2 * l1) * (r1 * v1 + r2 * v2) / den - 2 * s \
-            * ((r2 * r2 - r1 * r1) / (r2 * r2 + r1 * r1)) \
-            * (r1 * v1 + r2 * v2) / den - r1 * r1 * r2 * r2 \
-            * (v1 / r1 - v2 / r2) / ((r1 * r1 + r2 * r2) * e)
-        E = 0.5 * (l1 - l2) * (r1 * v1 + r2 * v2) / den
-        F = e * (r1 * v1 + r2 * v2) / den
+        d_0 = (r_1 * r_1 - r_0 * r_0) / (2 * e) - e / 2
+        d_1 = d_0 + e
+        s = module.sqrt((r_1 - r_0 - e) * (r_1 - r_0 + e) *
+                        (r_1 + r_0 + e) * (r_1 + r_0 - e)) / (2 * e)
+        l_0 = module.ln((d_0 + s) / (d_0 - s))
+        l_1 = module.ln((d_1 + s) / (d_1 - s))
+        den = (r_1 * r_1 + r_0 * r_0) * (l_0 - l_1) - 4 * s * e
+        curlb = 2 * (d_1 * d_1 - d_0 * d_0) * (r_0 * v_0 + r_1 * v_1) \
+            / ((r_1 * r_1 + r_0 * r_0) * den) + r_0 * r_0 * r_1 * r_1 \
+            * (v_0 / r_0 - v_1 / r_1) / (s * (r_0 * r_0 + r_1 * r_1) * (d_1 - d_0))
+        A = - 0.5 * (d_0 * d_1 - s * s) * curlb
+        B = (d_0 + s) * (d_1 + s) * curlb
+        C = (d_0 - s) * (d_1 - s) * curlb
+        D = (d_0 * l_1 - d_1 * l_0) * (r_0 * v_0 + r_1 * v_1) / den - 2 * s \
+            * ((r_1 * r_1 - r_0 * r_0) / (r_1 * r_1 + r_0 * r_0)) \
+            * (r_0 * v_0 + r_1 * v_1) / den - r_0 * r_0 * r_1 * r_1 \
+            * (v_0 / r_0 - v_1 / r_1) / ((r_0 * r_0 + r_1 * r_1) * e)
+        E = 0.5 * (l_0 - l_1) * (r_0 * v_0 + r_1 * v_1) / den
+        F = e * (r_0 * v_0 + r_1 * v_1) / den
 
-        y_offset = x[1] + d2
+        y_offset = x[1] + d_1
         spy = s + y_offset
         smy = s - y_offset
         zp = x[0] * x[0] + spy * spy
