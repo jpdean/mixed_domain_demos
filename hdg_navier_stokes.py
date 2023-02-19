@@ -279,6 +279,8 @@ def solve(solver_type, k, nu, num_time_steps,
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
+    par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
+
     if p_e is not None:
         p_h_avg = domain_average(msh, p_h)
         p_e_avg = domain_average(msh, p_e(x))
@@ -627,7 +629,7 @@ class Wannier(Problem):
         self.v_0 = v_0
         self.v_1 = v_1
 
-    def create_mesh(self, h, cell_type, order=2):
+    def create_mesh(self, h, cell_type, order=1):
         comm = MPI.COMM_WORLD
         gdim = 2
 
