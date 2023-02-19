@@ -733,9 +733,10 @@ class Wannier(Problem):
         zr = 2 * (spy / zp + smy / zm)
 
         u_x = - A * zr - B * ((s + 2 * y_offset) * zp - 2 * spy * spy
-                              * y_offset) / (zp * zp) - C * ((s - 2 * y_offset)
-                                                             * zm + 2 * smy
-                                                             * smy * y_offset) \
+                              * y_offset) / (zp * zp) - C * (
+            (s - 2 * y_offset)
+            * zm + 2 * smy
+            * smy * y_offset) \
             / (zm * zm) - D - E * 2 * y_offset - F * (lz + y_offset * zr)
         u_y = - A * 8 * s * x[0] * y_offset / (zp * zm) \
             - B * 2 * x[0] * y_offset * spy / (zp * zp) - C * 2 \
