@@ -279,6 +279,8 @@ def solve(solver_type, k, nu, num_time_steps,
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
+    par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
+
     if p_e is not None:
         p_h_avg = domain_average(msh, p_h)
         p_e_avg = domain_average(msh, p_e(x))
@@ -616,6 +618,137 @@ class Kovasznay(Problem):
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
+
+
+class Wannier(Problem):
+    def __init__(self, r_0=0.7, r_1=1.0, e=-0.15, v_0=1.0, v_1=0):
+        super().__init__()
+        self.r_0 = r_0
+        self.r_1 = r_1
+        self.e = e
+        self.v_0 = v_0
+        self.v_1 = v_1
+
+    def create_mesh(self, h, cell_type, order=1):
+        comm = MPI.COMM_WORLD
+        gdim = 2
+
+        volume_id = {"fluid": 1}
+        boundary_id = {"wall_0": 2,
+                       "wall_1": 3}
+
+        gmsh.initialize()
+        if comm.rank == 0:
+            gmsh.model.add("model")
+            factory = gmsh.model.occ
+
+            circle_0 = factory.addDisk(0.0, self.e, 0.0, self.r_0, self.r_0)
+            circle_1 = factory.addDisk(0.0, 0.0, 0.0, self.r_1, self.r_1)
+
+            ov, ovv = factory.cut([(2, circle_1)], [(2, circle_0)])
+
+            gmsh.model.occ.synchronize()
+
+            boundary_dim_tags = gmsh.model.getBoundary([ov[0]], oriented=False)
+
+            gmsh.model.addPhysicalGroup(2, [ov[0][1]], volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(
+                1, [boundary_dim_tags[1][1]], boundary_id["wall_0"])
+            gmsh.model.addPhysicalGroup(
+                1, [boundary_dim_tags[0][1]], boundary_id["wall_1"])
+
+            gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
+
+            boundary_dim_tags = gmsh.model.getBoundary([ov[0]], oriented=False)
+            gmsh.option.setNumber("Mesh.Smoothing", 5)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            gmsh.model.mesh.generate(2)
+            gmsh.model.mesh.setOrder(order)
+
+        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+        msh, _, mt = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+        gmsh.finalize()
+
+        return msh, mt, boundary_id
+
+    def boundary_conditions(self):
+        def u_D_0(x):
+            r = np.vstack((x[0], x[1] - self.e))
+            r_hat = r / self.r_0
+            t_hat = np.vstack((
+                - (r_hat[1]),
+                r_hat[0]
+            ))
+            return self.v_0 * t_hat
+
+        def u_D_1(x):
+            r_hat = x / self.r_1
+            t_hat = np.vstack((-r_hat[1], r_hat[0]))
+            return self.v_1 * t_hat
+
+        return {"wall_0": (BCType.Dirichlet, u_D_0),
+                "wall_1": (BCType.Dirichlet, u_D_1)}
+
+    def f(self, msh):
+        return fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                  PETSc.ScalarType(0.0)))
+
+    def u_e(self, x, module=ufl):
+        r_0 = self.r_0
+        r_1 = self.r_1
+        e = - self.e
+        v_0 = self.v_0
+        v_1 = self.v_1
+
+        d_0 = (r_1 * r_1 - r_0 * r_0) / (2 * e) - e / 2
+        d_1 = d_0 + e
+        s = module.sqrt((r_1 - r_0 - e) * (r_1 - r_0 + e) *
+                        (r_1 + r_0 + e) * (r_1 + r_0 - e)) / (2 * e)
+        l_0 = module.ln((d_0 + s) / (d_0 - s))
+        l_1 = module.ln((d_1 + s) / (d_1 - s))
+        den = (r_1 * r_1 + r_0 * r_0) * (l_0 - l_1) - 4 * s * e
+        curlb = 2 * (d_1 * d_1 - d_0 * d_0) * (r_0 * v_0 + r_1 * v_1) \
+            / ((r_1 * r_1 + r_0 * r_0) * den) + r_0 * r_0 * r_1 * r_1 \
+            * (v_0 / r_0 - v_1 / r_1) / (s * (r_0 * r_0 + r_1 * r_1)
+                                         * (d_1 - d_0))
+        A = - 0.5 * (d_0 * d_1 - s * s) * curlb
+        B = (d_0 + s) * (d_1 + s) * curlb
+        C = (d_0 - s) * (d_1 - s) * curlb
+        D = (d_0 * l_1 - d_1 * l_0) * (r_0 * v_0 + r_1 * v_1) / den - 2 * s \
+            * ((r_1 * r_1 - r_0 * r_0) / (r_1 * r_1 + r_0 * r_0)) \
+            * (r_0 * v_0 + r_1 * v_1) / den - r_0 * r_0 * r_1 * r_1 \
+            * (v_0 / r_0 - v_1 / r_1) / ((r_0 * r_0 + r_1 * r_1) * e)
+        E = 0.5 * (l_0 - l_1) * (r_0 * v_0 + r_1 * v_1) / den
+        F = e * (r_0 * v_0 + r_1 * v_1) / den
+
+        y_offset = x[1] + d_1
+        spy = s + y_offset
+        smy = s - y_offset
+        zp = x[0] * x[0] + spy * spy
+        zm = x[0] * x[0] + smy * smy
+        lz = module.ln(zp / zm)
+        zr = 2 * (spy / zp + smy / zm)
+
+        u_x = - A * zr - B * ((s + 2 * y_offset) * zp - 2 * spy * spy
+                              * y_offset) / (zp * zp) - C * (
+            (s - 2 * y_offset)
+            * zm + 2 * smy
+            * smy * y_offset) \
+            / (zm * zm) - D - E * 2 * y_offset - F * (lz + y_offset * zr)
+        u_y = - A * 8 * s * x[0] * y_offset / (zp * zm) \
+            - B * 2 * x[0] * y_offset * spy / (zp * zp) - C * 2 \
+            * x[0] * y_offset * smy / (zm * zm) + E * 2 * x[0] - F * 8 * s \
+            * x[0] * y_offset * y_offset / (zp * zm)
+
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
 
 
 if __name__ == "__main__":
