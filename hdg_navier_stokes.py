@@ -618,6 +618,85 @@ class Kovasznay(Problem):
                                   PETSc.ScalarType(0.0)))
 
 
+class Wannier(Problem):
+    def __init__(self, r_0=0.7, r_1=1.0, e=-0.15, v_0=1.0, v_1=0):
+        super().__init__()
+        self.r_0 = r_0
+        self.r_1 = r_1
+        self.e = e
+        self.v_0 = v_0
+        self.v_1 = v_1
+
+    def create_mesh(self, h, cell_type):
+        comm = MPI.COMM_WORLD
+        gdim = 2
+        order = 1
+
+        volume_id = {"fluid": 1}
+        boundary_id = {"wall_0": 2,
+                       "wall_1": 3}
+
+        gmsh.initialize()
+        if comm.rank == 0:
+            gmsh.model.add("model")
+            factory = gmsh.model.occ
+
+            circle_0 = factory.addDisk(0.0, self.e, 0.0, self.r_0, self.r_0)
+            circle_1 = factory.addDisk(0.0, 0.0, 0.0, self.r_1, self.r_1)
+
+            ov, ovv = factory.cut([(2, circle_1)], [(2, circle_0)])
+
+            gmsh.model.occ.synchronize()
+
+            boundary_dim_tags = gmsh.model.getBoundary([ov[0]], oriented=False)
+
+            gmsh.model.addPhysicalGroup(2, [ov[0][1]], volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(
+                1, [boundary_dim_tags[1][1]], boundary_id["wall_0"])
+            gmsh.model.addPhysicalGroup(
+                1, [boundary_dim_tags[0][1]], boundary_id["wall_1"])
+
+            gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
+
+            boundary_dim_tags = gmsh.model.getBoundary([ov[0]], oriented=False)
+            gmsh.option.setNumber("Mesh.Smoothing", 5)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            gmsh.model.mesh.generate(2)
+            gmsh.model.mesh.setOrder(order)
+
+        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+        msh, _, mt = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+        gmsh.finalize()
+
+        return msh, mt, boundary_id
+
+    def boundary_conditions(self):
+        def u_D_0(x):
+            r = np.vstack((x[0], x[1] - self.e))
+            r_hat = r / self.r_0
+            t_hat = np.vstack((
+                - (r_hat[1]),
+                r_hat[0]
+            ))
+            return self.v_0 * t_hat
+
+        def u_D_1(x):
+            r_hat = x / self.r_1
+            t_hat = np.vstack((-r_hat[1], r_hat[0]))
+            return self.v_1 * t_hat
+
+        return {"wall_0": (BCType.Dirichlet, u_D_0),
+                "wall_1": (BCType.Dirichlet, u_D_1)}
+
+    def f(self, msh):
+        return fem.Constant(msh, (PETSc.ScalarType(0.0),
+                                  PETSc.ScalarType(0.0)))
+
+
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
