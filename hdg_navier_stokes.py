@@ -712,7 +712,8 @@ class Wannier(Problem):
         den = (r_1 * r_1 + r_0 * r_0) * (l_0 - l_1) - 4 * s * e
         curlb = 2 * (d_1 * d_1 - d_0 * d_0) * (r_0 * v_0 + r_1 * v_1) \
             / ((r_1 * r_1 + r_0 * r_0) * den) + r_0 * r_0 * r_1 * r_1 \
-            * (v_0 / r_0 - v_1 / r_1) / (s * (r_0 * r_0 + r_1 * r_1) * (d_1 - d_0))
+            * (v_0 / r_0 - v_1 / r_1) / (s * (r_0 * r_0 + r_1 * r_1)
+                                         * (d_1 - d_0))
         A = - 0.5 * (d_0 * d_1 - s * s) * curlb
         B = (d_0 + s) * (d_1 + s) * curlb
         C = (d_0 - s) * (d_1 - s) * curlb
