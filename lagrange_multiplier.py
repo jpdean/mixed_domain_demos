@@ -13,7 +13,7 @@ from petsc4py import PETSc
 from utils import norm_L2
 
 comm = MPI.COMM_WORLD
-gdim = 3
+gdim = 2
 
 omega_0 = 0
 omega_1 = 1
@@ -22,7 +22,7 @@ interface = 3
 
 gmsh.initialize()
 if comm.rank == 0:
-    h = 0.2
+    h = 0.05
     if gdim == 2:
         gmsh.model.add("square_with_circle")
 
@@ -35,14 +35,90 @@ if comm.rank == 0:
             factory.addPoint(0.0, 1.0, 0.0, h)
         ]
 
-        c = 0.5
-        r = 0.2
         circle_points = [
-            factory.addPoint(c, c, 0.0, h),
-            factory.addPoint(c + r, c, 0.0, h),
-            factory.addPoint(c, c + r, 0.0, h),
-            factory.addPoint(c - r, c, 0.0, h),
-            factory.addPoint(c, c - r, 0.0, h)
+            factory.addPoint(0.6017391304347826, 0.7981132075471697, 0.0, h),
+            factory.addPoint(0.5782608695652174, 0.7584905660377359, 0.0, h),
+            factory.addPoint(0.56, 0.730188679245283, 0.0, h),
+            factory.addPoint(0.5417391304347826, 0.6924528301886792, 0.0, h),
+            factory.addPoint(0.5417391304347826, 0.6584905660377358, 0.0, h),
+            factory.addPoint(0.5730434782608695, 0.6320754716981132, 0.0, h),
+            factory.addPoint(0.6252173913043478, 0.5962264150943397, 0.0, h),
+            factory.addPoint(0.6643478260869564, 0.5641509433962264, 0.0, h),
+            factory.addPoint(0.7008695652173913, 0.5320754716981132, 0.0, h),
+            factory.addPoint(0.7373913043478262, 0.5037735849056604, 0.0, h),
+            factory.addPoint(0.7660869565217392, 0.469811320754717, 0.0, h),
+            factory.addPoint(0.7895652173913044, 0.4377358490566038, 0.0, h),
+            factory.addPoint(0.8, 0.4037735849056604, 0.0, h),
+            factory.addPoint(0.8052173913043479, 0.369811320754717, 0.0, h),
+            factory.addPoint(0.7843478260869565, 0.34150943396226413, 0.0, h),
+            factory.addPoint(0.7530434782608695, 0.3150943396226415, 0.0, h),
+            factory.addPoint(0.708695652173913, 0.29245283018867924, 0.0, h),
+            factory.addPoint(0.6434782608695652, 0.26037735849056604, 0.0, h),
+            factory.addPoint(0.586086956521739, 0.23962264150943396, 0.0, h),
+            factory.addPoint(0.5234782608695652, 0.22075471698113208, 0.0, h),
+            factory.addPoint(0.4791304347826087, 0.20566037735849058, 0.0, h),
+            factory.addPoint(0.4191304347826087, 0.19811320754716977, 0.0, h),
+            factory.addPoint(0.46608695652173915, 0.23962264150943396, 0.0, h),
+            factory.addPoint(0.5026086956521739, 0.27169811320754716, 0.0, h),
+            factory.addPoint(0.5365217391304348, 0.3018867924528302, 0.0, h),
+            factory.addPoint(0.557391304347826, 0.3339622641509434, 0.0, h),
+            factory.addPoint(0.557391304347826, 0.36415094339622645, 0.0, h),
+            factory.addPoint(0.528695652173913, 0.4018867924528302, 0.0, h),
+            factory.addPoint(0.4921739130434783, 0.44716981132075473, 0.0, h),
+            factory.addPoint(0.46608695652173915, 0.4811320754716981, 0.0, h),
+            factory.addPoint(0.44, 0.5150943396226415, 0.0, h),
+            factory.addPoint(0.4165217391304348, 0.5509433962264151, 0.0, h),
+            factory.addPoint(0.39304347826086955, 0.5867924528301887, 0.0, h),
+            factory.addPoint(0.3826086956521739, 0.6113207547169812, 0.0, h),
+            factory.addPoint(0.3826086956521739, 0.6396226415094339, 0.0, h),
+            factory.addPoint(0.4165217391304348, 0.6735849056603773, 0.0, h),
+            factory.addPoint(0.45565217391304347, 0.7037735849056603, 0.0, h),
+            factory.addPoint(0.5078260869565218, 0.7415094339622641, 0.0, h),
+            factory.addPoint(0.5469565217391305, 0.7641509433962264, 0.0, h)
+        ]
+
+        logo_points_1 = [
+            factory.addPoint(0.30695652173913046,
+                             0.5792452830188679, 0.0, h),
+            factory.addPoint(0.2808695652173913,
+                             0.5509433962264151, 0.0, h),
+            factory.addPoint(0.24434782608695654,
+                             0.5075471698113208, 0.0, h),
+            factory.addPoint(0.22086956521739132,
+                             0.47358490566037736, 0.0, h),
+            factory.addPoint(0.20782608695652174,
+                             0.41132075471698115, 0.0, h),
+            factory.addPoint(0.20521739130434782,
+                             0.3754716981132076, 0.0, h),
+            factory.addPoint(0.23391304347826086,
+                             0.3452830188679245, 0.0, h),
+            factory.addPoint(0.2782608695652174,
+                             0.3169811320754717, 0.0, h),
+            factory.addPoint(0.3173913043478261,
+                             0.2962264150943396, 0.0, h),
+            factory.addPoint(0.3669565217391304,
+                             0.27735849056603773, 0.0, h),
+            factory.addPoint(0.3956521739130435,
+                             0.2679245283018868, 0.0, h),
+            factory.addPoint(0.4217391304347826,
+                             0.28679245283018867, 0.0, h),
+            factory.addPoint(0.44, 0.30377358490566037, 0.0, h),
+            factory.addPoint(0.48434782608695653,
+                             0.33962264150943394, 0.0, h),
+            factory.addPoint(0.5026086956521739,
+                             0.36415094339622645, 0.0, h),
+            factory.addPoint(0.4973913043478261,
+                             0.3905660377358491, 0.0, h),
+            factory.addPoint(0.4608695652173913,
+                             0.4339622641509434, 0.0, h),
+            factory.addPoint(0.4295652173913044,
+                             0.4660377358490566, 0.0, h),
+            factory.addPoint(0.3956521739130435,
+                             0.4962264150943396, 0.0, h),
+            factory.addPoint(0.3669565217391304,
+                             0.5245283018867924, 0.0, h),
+            factory.addPoint(0.3356521739130435,
+                             0.5547169811320755, 0.0, h)
         ]
 
         square_lines = [
@@ -52,30 +128,38 @@ if comm.rank == 0:
             factory.addLine(square_points[3], square_points[0])
         ]
 
-        circle_lines = [
-            factory.addCircleArc(
-                circle_points[1], circle_points[0], circle_points[2]),
-            factory.addCircleArc(
-                circle_points[2], circle_points[0], circle_points[3]),
-            factory.addCircleArc(
-                circle_points[3], circle_points[0], circle_points[4]),
-            factory.addCircleArc(
-                circle_points[4], circle_points[0], circle_points[1])
-        ]
+        circle_lines = []
+        circle_lines.append(factory.addSpline(circle_points[0:22]))
+        circle_lines.append(factory.addSpline(circle_points[21:] + [circle_points[0]]))
+
+        logo_lines_1 = []
+        for i in range(len(logo_points_1) - 1):
+            logo_lines_1.append(
+                factory.addLine(logo_points_1[i], logo_points_1[i + 1]))
+        logo_lines_1.append(
+            factory.addLine(logo_points_1[-1], logo_points_1[0]))
 
         square_curve = factory.addCurveLoop(square_lines)
         circle_curve = factory.addCurveLoop(circle_lines)
+        logo_curve_1 = factory.addCurveLoop(logo_lines_1)
 
-        square_surface = factory.addPlaneSurface([square_curve, circle_curve])
+        square_surface = factory.addPlaneSurface([square_curve, circle_curve, logo_curve_1])
         circle_surface = factory.addPlaneSurface([circle_curve])
+        logo_surface_1 = factory.addPlaneSurface([logo_curve_1])
 
         factory.synchronize()
 
         gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
-        gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+        gmsh.model.addPhysicalGroup(2, [circle_surface, logo_surface_1], omega_1)
 
         gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-        gmsh.model.addPhysicalGroup(1, circle_lines, interface)
+
+        logo_lines = []
+        for cl in circle_lines:
+            logo_lines.append(cl)
+        for ll in logo_lines_1:
+            logo_lines.append(ll)
+        gmsh.model.addPhysicalGroup(1, logo_lines, interface)
 
         gmsh.model.mesh.generate(2)
 
@@ -182,12 +266,14 @@ a_10 = fem.form(inner(u, eta) * ds(interface), entity_maps=entity_maps)
 
 # f = fem.Constant(msh, PETSc.ScalarType(2.0))
 x_msh = ufl.SpatialCoordinate(msh)
-f = - div(grad(u_e(x_msh)))
+# f = - div(grad(u_e(x_msh)))
+f = 1e-12
 L_0 = fem.form(inner(f, v) * ufl.dx)
 
 # c = fem.Constant(submesh, PETSc.ScalarType(0.25))
 x_sm = ufl.SpatialCoordinate(submesh)
-L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
+# L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
+L_1 = fem.form(inner(0.5 + 0.05 * ufl.sin(4 * ufl.pi * x_sm[0]), eta) * ufl.dx)
 
 a = [[a_00, a_01],
      [a_10, None]]
