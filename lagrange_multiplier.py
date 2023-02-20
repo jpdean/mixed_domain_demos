@@ -130,27 +130,28 @@ if comm.rank == 0:
 
         circle_lines = []
         circle_lines.append(factory.addSpline(circle_points[0:22]))
-        circle_lines.append(factory.addSpline(circle_points[21:] + [circle_points[0]]))
+        circle_lines.append(factory.addSpline(
+            circle_points[21:] + [circle_points[0]]))
 
         logo_lines_1 = []
-        for i in range(len(logo_points_1) - 1):
-            logo_lines_1.append(
-                factory.addLine(logo_points_1[i], logo_points_1[i + 1]))
-        logo_lines_1.append(
-            factory.addLine(logo_points_1[-1], logo_points_1[0]))
+        logo_lines_1.append(factory.addSpline(logo_points_1[0:11]))
+        logo_lines_1.append(factory.addSpline(
+            logo_points_1[10:] + [logo_points_1[0]]))
 
         square_curve = factory.addCurveLoop(square_lines)
         circle_curve = factory.addCurveLoop(circle_lines)
         logo_curve_1 = factory.addCurveLoop(logo_lines_1)
 
-        square_surface = factory.addPlaneSurface([square_curve, circle_curve, logo_curve_1])
+        square_surface = factory.addPlaneSurface(
+            [square_curve, circle_curve, logo_curve_1])
         circle_surface = factory.addPlaneSurface([circle_curve])
         logo_surface_1 = factory.addPlaneSurface([logo_curve_1])
 
         factory.synchronize()
 
         gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
-        gmsh.model.addPhysicalGroup(2, [circle_surface, logo_surface_1], omega_1)
+        gmsh.model.addPhysicalGroup(
+            2, [circle_surface, logo_surface_1], omega_1)
 
         gmsh.model.addPhysicalGroup(1, square_lines, boundary)
 
