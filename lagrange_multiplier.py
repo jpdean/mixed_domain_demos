@@ -22,7 +22,7 @@ interface = 3
 
 gmsh.initialize()
 if comm.rank == 0:
-    h = 0.01
+    h = 0.05
     if gdim == 2:
         gmsh.model.add("square_with_fenics_logo")
 
@@ -269,14 +269,14 @@ a_10 = fem.form(inner(u, eta) * ds(interface), entity_maps=entity_maps)
 
 # f = fem.Constant(msh, PETSc.ScalarType(2.0))
 x_msh = ufl.SpatialCoordinate(msh)
-# f = - div(grad(u_e(x_msh)))
-f = 1e-12
+f = - div(grad(u_e(x_msh)))
+# f = 1e-12
 L_0 = fem.form(inner(f, v) * ufl.dx)
 
 # c = fem.Constant(submesh, PETSc.ScalarType(0.25))
 x_sm = ufl.SpatialCoordinate(submesh)
-# L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
-L_1 = fem.form(inner(0.25 + 0.3 * ufl.sin(ufl.pi * x_sm[0]), eta) * ufl.dx)
+L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
+# L_1 = fem.form(inner(0.25 + 0.3 * ufl.sin(ufl.pi * x_sm[0]), eta) * ufl.dx)
 
 a = [[a_00, a_01],
      [a_10, None]]
