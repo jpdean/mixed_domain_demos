@@ -22,9 +22,9 @@ interface = 3
 
 gmsh.initialize()
 if comm.rank == 0:
-    h = 0.05
+    h = 0.01
     if gdim == 2:
-        gmsh.model.add("square_with_circle")
+        gmsh.model.add("square_with_fenics_logo")
 
         factory = gmsh.model.geo
 
@@ -35,7 +35,8 @@ if comm.rank == 0:
             factory.addPoint(0.0, 1.0, 0.0, h)
         ]
 
-        circle_points = [
+        # Points for the first closed loop in the FEniCS logo
+        logo_points_0 = [
             factory.addPoint(0.6017391304347826, 0.7981132075471697, 0.0, h),
             factory.addPoint(0.5782608695652174, 0.7584905660377359, 0.0, h),
             factory.addPoint(0.56, 0.730188679245283, 0.0, h),
@@ -77,6 +78,7 @@ if comm.rank == 0:
             factory.addPoint(0.5469565217391305, 0.7641509433962264, 0.0, h)
         ]
 
+        # Points for the second closed loop in the FEniCS logo
         logo_points_1 = [
             factory.addPoint(0.30695652173913046,
                              0.5792452830188679, 0.0, h),
@@ -128,39 +130,39 @@ if comm.rank == 0:
             factory.addLine(square_points[3], square_points[0])
         ]
 
-        circle_lines = []
-        circle_lines.append(factory.addSpline(circle_points[0:22]))
-        circle_lines.append(factory.addSpline(
-            circle_points[21:] + [circle_points[0]]))
+        # Approximate the first closed loop in the logo as two splines
+        logo_lines_0 = []
+        logo_lines_0.append(factory.addSpline(logo_points_0[0:22]))
+        logo_lines_0.append(factory.addSpline(
+            logo_points_0[21:] + [logo_points_0[0]]))
 
+        # Approximate the second closed loop in the logo as two splines
         logo_lines_1 = []
         logo_lines_1.append(factory.addSpline(logo_points_1[0:11]))
         logo_lines_1.append(factory.addSpline(
             logo_points_1[10:] + [logo_points_1[0]]))
 
+        # Create curves
         square_curve = factory.addCurveLoop(square_lines)
-        circle_curve = factory.addCurveLoop(circle_lines)
+        logo_curve_0 = factory.addCurveLoop(logo_lines_0)
         logo_curve_1 = factory.addCurveLoop(logo_lines_1)
 
+        # Create surfaces
         square_surface = factory.addPlaneSurface(
-            [square_curve, circle_curve, logo_curve_1])
-        circle_surface = factory.addPlaneSurface([circle_curve])
+            [square_curve, logo_curve_0, logo_curve_1])
+        circle_surface = factory.addPlaneSurface([logo_curve_0])
         logo_surface_1 = factory.addPlaneSurface([logo_curve_1])
 
         factory.synchronize()
 
+        # Add 2D physical groups
         gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
         gmsh.model.addPhysicalGroup(
             2, [circle_surface, logo_surface_1], omega_1)
 
+        # Add 1D physical groups
         gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-
-        logo_lines = []
-        for cl in circle_lines:
-            logo_lines.append(cl)
-        for ll in logo_lines_1:
-            logo_lines.append(ll)
-        gmsh.model.addPhysicalGroup(1, logo_lines, interface)
+        gmsh.model.addPhysicalGroup(1, logo_lines_0 + logo_lines_1, interface)
 
         gmsh.model.mesh.generate(2)
 
@@ -274,7 +276,7 @@ L_0 = fem.form(inner(f, v) * ufl.dx)
 # c = fem.Constant(submesh, PETSc.ScalarType(0.25))
 x_sm = ufl.SpatialCoordinate(submesh)
 # L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
-L_1 = fem.form(inner(0.5 + 0.05 * ufl.sin(4 * ufl.pi * x_sm[0]), eta) * ufl.dx)
+L_1 = fem.form(inner(0.25 + 0.3 * ufl.sin(ufl.pi * x_sm[0]), eta) * ufl.dx)
 
 a = [[a_00, a_01],
      [a_10, None]]
