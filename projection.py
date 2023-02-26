@@ -19,8 +19,9 @@ u.interpolate(lambda x: np.sin(2 * np.pi * x[0]))
 # Create a submesh of the boundary
 tdim = msh.topology.dim
 facets = mesh.locate_entities_boundary(
-    msh, tdim - 1, lambda x: np.isclose(
-        x[0], 0.0) | np.isclose(x[0], 1.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+    msh, tdim - 1, lambda x:
+        np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
+        np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
 submsh, sm_to_msh = mesh.create_submesh(msh, tdim - 1, facets)[:2]
 
 # Create msh to submsh entity map
