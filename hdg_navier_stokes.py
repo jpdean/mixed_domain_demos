@@ -82,16 +82,17 @@ def solve(solver_type, k, nu, num_time_steps,
         fem.IntegralType.exterior_facet, mt._cpp_object)
 
     all_facets = 0
-    facet_integration_entities[all_facets] = []
+    facet_integration_entities = []
     for cell in range(msh.topology.index_map(tdim).size_local):
         for local_facet in range(num_cell_facets):
-            facet_integration_entities[all_facets].extend([cell, local_facet])
+            facet_integration_entities.extend([cell, local_facet])
 
     dx_c = ufl.Measure("dx", domain=msh)
     # FIXME Figure out why this is being estimated wrong for DRW
     quad_deg = k**2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=msh,
+        "ds", subdomain_data=[
+            (all_facets, facet_integration_entities)], domain=msh,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
