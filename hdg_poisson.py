@@ -46,13 +46,14 @@ n = ufl.FacetNormal(msh)
 gamma = 16.0 * k**2 / h
 
 # TODO Do this with numpy
-facet_integration_entities = {1: []}
+facet_integration_entities = []
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
-        facet_integration_entities[1].extend([cell, local_facet])
+        facet_integration_entities.extend([cell, local_facet])
 
 dx_c = ufl.Measure("dx", domain=msh)
-ds_c = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
+ds_c = ufl.Measure("ds", subdomain_data=[
+                   (1, facet_integration_entities)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = np.full_like(entity_map, -1)

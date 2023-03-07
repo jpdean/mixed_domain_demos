@@ -266,7 +266,7 @@ inv_entity_map[entity_map] = np.arange(len(entity_map))
 entity_maps = {submesh: inv_entity_map}
 
 # Create measure for integration
-facet_integration_entities = {interface: []}
+facet_integration_entities = []
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
@@ -277,8 +277,9 @@ for facet in interface_facets:
         # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
         local_facet = c_to_f.links(cell).tolist().index(facet)
-        facet_integration_entities[interface].extend([cell, local_facet])
-ds = ufl.Measure("ds", subdomain_data=facet_integration_entities, domain=msh)
+        facet_integration_entities.extend([cell, local_facet])
+ds = ufl.Measure("ds", subdomain_data=[
+                 (interface, facet_integration_entities)], domain=msh)
 timings[timer.name] = timer.stop()
 
 

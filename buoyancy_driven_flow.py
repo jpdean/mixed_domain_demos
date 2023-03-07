@@ -343,8 +343,9 @@ ds_T = Measure("ds", domain=msh, subdomain_data=ft)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
 fluid_int_facets = 7  # FIXME Don't hardcode
-facet_integration_entities = {boundary_id["obstacle"]: [],
-                              fluid_int_facets: []}
+# facet_integration_entities = {boundary_id["obstacle"]: [],
+#                               fluid_int_facets: []}
+obstacle_facet_entities = []
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
@@ -368,7 +369,7 @@ for facet in interface_facets:
             cell_plus).tolist().index(facet)
         local_facet_minus = c_to_f.links(
             cell_minus).tolist().index(facet)
-        facet_integration_entities[boundary_id["obstacle"]].extend(
+        obstacle_facet_entities.extend(
             [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
         # HACK cell_minus does not exist in the left submesh, so it will
@@ -393,6 +394,7 @@ submesh_f.topology.create_connectivity(tdim, fdim)
 submesh_f.topology.create_connectivity(fdim, tdim)
 c_to_f_submesh_f = submesh_f.topology.connectivity(tdim, fdim)
 f_to_c_submesh_f = submesh_f.topology.connectivity(fdim, tdim)
+fluid_int_facet_entities = []
 for facet in range(submesh_f.topology.index_map(fdim).size_local):
     cells = f_to_c_submesh_f.links(facet)
     if len(cells) == 2:
@@ -402,9 +404,12 @@ for facet in range(submesh_f.topology.index_map(fdim).size_local):
         local_facet_minus = c_to_f_submesh_f.links(
             cells[1]).tolist().index(facet)
 
-        facet_integration_entities[fluid_int_facets].extend(
+        fluid_int_facet_entities.extend(
             [entity_map_f[cells[0]], local_facet_plus,
              entity_map_f[cells[1]], local_facet_minus])
+facet_integration_entities = [
+    (boundary_id["obstacle"], obstacle_facet_entities),
+    (fluid_int_facets, fluid_int_facet_entities)]
 dS_T = Measure("dS", domain=msh,
                subdomain_data=facet_integration_entities)
 

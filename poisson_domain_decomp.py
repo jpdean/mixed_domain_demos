@@ -117,7 +117,7 @@ entity_maps = {submesh_0: inv_entity_map_0,
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
-facet_integration_entities = {interface: []}
+facet_integration_entities = []
 fdim = tdim - 1
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
@@ -141,7 +141,7 @@ for facet in ft.indices[ft.values == interface]:
             cell_plus).tolist().index(facet)
         local_facet_minus = c_to_f.links(
             cell_minus).tolist().index(facet)
-        facet_integration_entities[interface].extend(
+        facet_integration_entities.extend(
             [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
         # HACK cell_minus does not exist in the left submesh, so it will
@@ -160,7 +160,7 @@ for facet in ft.indices[ft.values == interface]:
         entity_maps[submesh_1][cell_plus] = \
             entity_maps[submesh_1][cell_minus]
 dS = ufl.Measure("dS", domain=msh,
-                 subdomain_data=facet_integration_entities)
+                 subdomain_data=[(interface, facet_integration_entities)])
 
 # TODO Add k dependency
 gamma = 10

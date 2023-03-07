@@ -135,8 +135,9 @@ entity_maps = {submesh_0: inv_entity_map_0,
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
-facet_integration_entities = {interface: [],
-                              omega_0_int_facets: []}
+# facet_integration_entities = {interface: [],
+#                               omega_0_int_facets: []}
+interface_entities = []
 fdim = tdim - 1
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
@@ -161,7 +162,7 @@ for facet in interface_facets:
             cell_plus).tolist().index(facet)
         local_facet_minus = c_to_f.links(
             cell_minus).tolist().index(facet)
-        facet_integration_entities[interface].extend(
+        interface_entities.extend(
             [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
         # HACK cell_minus does not exist in the left submesh, so it will
@@ -180,7 +181,8 @@ for facet in interface_facets:
         entity_maps[submesh_1][cell_plus] = \
             entity_maps[submesh_1][cell_minus]
 
-ext_facet_integration_entities = {boundary_0: []}
+# ext_facet_integration_entities = {boundary_0: []}
+boundary_0_entites = []
 boundary_facets = ft.indices[ft.values == boundary_0]
 for facet in boundary_facets:
     # TODO Remove (bondary facets not shared)
@@ -192,10 +194,9 @@ for facet in boundary_facets:
         local_facet = c_to_f.links(
             cell).tolist().index(facet)
 
-        ext_facet_integration_entities[boundary_0].extend(
-            [cell, local_facet])
+        boundary_0_entites.extend([cell, local_facet])
 ds = ufl.Measure("ds", domain=msh,
-                 subdomain_data=ext_facet_integration_entities)
+                 subdomain_data=[(boundary_0, boundary_0_entites)])
 
 # FIXME Do this more efficiently
 submesh_0.topology.create_entities(fdim)
@@ -203,6 +204,7 @@ submesh_0.topology.create_connectivity(tdim, fdim)
 submesh_0.topology.create_connectivity(fdim, tdim)
 c_to_f_submesh_0 = submesh_0.topology.connectivity(tdim, fdim)
 f_to_c_submesh_0 = submesh_0.topology.connectivity(fdim, tdim)
+omega_0_int_entities = []
 for facet in range(submesh_0.topology.index_map(fdim).size_local):
     cells = f_to_c_submesh_0.links(facet)
     if len(cells) == 2:
@@ -212,11 +214,12 @@ for facet in range(submesh_0.topology.index_map(fdim).size_local):
         local_facet_minus = c_to_f_submesh_0.links(
             cells[1]).tolist().index(facet)
 
-        facet_integration_entities[omega_0_int_facets].extend(
+        omega_0_int_entities.extend(
             [entity_map_0[cells[0]], local_facet_plus,
              entity_map_0[cells[1]], local_facet_minus])
 dS = ufl.Measure("dS", domain=msh,
-                 subdomain_data=facet_integration_entities)
+                 subdomain_data=[(interface, interface_entities),
+                                 (omega_0_int_facets, omega_0_int_entities)])
 
 # TODO Add k dependency
 gamma_int = 10  # Penalty param on interface
