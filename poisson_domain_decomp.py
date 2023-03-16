@@ -210,7 +210,8 @@ a = [[a_00, a_01],
 
 
 def u_e(x, module=np):
-    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.05**2))
+    return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.05**2)) \
+        + x[0]
 
 
 f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
