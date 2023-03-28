@@ -367,6 +367,7 @@ a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
 
 L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
+# Apply Dirichlet BCs for the thermal problem
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
@@ -380,6 +381,7 @@ for bc in dirichlet_bcs_T:
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
+# Compile forms
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
 a_T_01 = fem.form(a_T_01, entity_maps=entity_maps)
 a_T_10 = fem.form(a_T_10, entity_maps=entity_maps)
@@ -392,6 +394,7 @@ a_T = [[a_T_00, a_T_01],
        [a_T_10, a_T_11]]
 L_T = [L_T_0, L_T_1]
 
+# Assemble matrix and vector for thermal problem
 A_T = fem.petsc.create_matrix_block(a_T)
 b_T = fem.petsc.create_vector_block(L_T)
 
@@ -403,20 +406,14 @@ ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
 
 # Set up files for visualisation
-u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
-pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
+vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+             for (file_name, func)
+             in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+                 ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
 
 t = 0.0
-u_file.write(t)
-p_file.write(t)
-ubar_file.write(t)
-pbar_file.write(t)
-T_file.write(t)
-T_s_file.write(t)
+for vis_file in vis_files:
+    vis_file.write(t)
 for n in range(num_time_steps):
     t += delta_t
 
@@ -463,20 +460,14 @@ for n in range(num_time_steps):
 
     u_vis.interpolate(u_n)
 
-    u_file.write(t)
-    p_file.write(t)
-    ubar_file.write(t)
-    pbar_file.write(t)
-    T_file.write(t)
-    T_s_file.write(t)
+    for vis_file in vis_files:
+        vis_file.write(t)
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
 
-u_file.close()
-p_file.close()
-T_file.close()
-T_s_file.close()
+for vis_file in vis_files:
+    vis_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
