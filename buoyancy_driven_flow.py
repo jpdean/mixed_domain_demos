@@ -1,5 +1,6 @@
 # TODO This demo needs tidying and simplifying
 
+from hdg_navier_stokes import SolverType, Scheme, set_up, BCType
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -132,10 +133,10 @@ def par_print(string):
 
 num_time_steps = 10
 t_end = 0.1
-R_e = 1e6  # Reynolds Number
+# R_e = 1e6  # Reynolds Number
 h = 0.05
 h_fac = 1 / 3  # Factor scaling h near the cylinder
-k = 3  # Polynomial degree
+k = 2  # Polynomial degree
 
 comm = MPI.COMM_WORLD
 
@@ -160,6 +161,88 @@ ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
 # with io.XDMFFile(msh.comm, "submesh_f.xdmf", "w") as file:
 #     file.write_mesh(submesh_f)
 #     file.write_meshtags(ft_f)
+
+
+def zero(x): return np.vstack(
+    (np.zeros_like(x[0]),
+     np.zeros_like(x[0])))
+
+
+boundary_conditions = {"bottom": (BCType.Dirichlet, zero),
+                       "right": (BCType.Dirichlet, zero),
+                       "top": (BCType.Dirichlet, zero),
+                       "left": (BCType.Dirichlet, zero),
+                       "obstacle": (BCType.Dirichlet, zero)}
+from ufl import SpatialCoordinate
+x_f = SpatialCoordinate(submesh_f)
+f = as_vector((0.5 - x_f[1], x_f[0] - 0.5))
+delta_t = t_end / num_time_steps
+nu = 0.1
+solver_type = SolverType.NAVIER_STOKES
+
+(A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
+ bcs, u_n, facet_mesh) = set_up(
+    submesh_f, Scheme.DRW, ft_f, k, solver_type, boundary_conditions,
+    boundary_id, f, delta_t, nu)
+
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+ksp.getPC().setFactorSolverType("mumps")
+opts = PETSc.Options()
+opts["mat_mumps_icntl_6"] = 2
+opts["mat_mumps_icntl_14"] = 100
+ksp.setFromOptions()
+
+b = fem.petsc.create_vector_block(L)
+x = A.createVecRight()
+
+u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
+p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
+ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
+pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
+
+u_file.write(0.0)
+p_file.write(0.0)
+ubar_file.write(0.0)
+pbar_file.write(0.0)
+
+t = 0.0
+for n in range(num_time_steps):
+    t += delta_t
+
+    if solver_type == SolverType.NAVIER_STOKES:
+        A.zeroEntries()
+        fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+        A.assemble()
+
+    with b.localForm() as b_loc:
+        b_loc.set(0)
+    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+
+    # Compute solution
+    ksp.solve(b, x)
+
+    u_n.x.array[:u_offset] = x.array_r[:u_offset]
+    u_n.x.scatter_forward()
+    p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+    p_h.x.scatter_forward()
+    ubar_n.x.array[:ubar_offset -
+                   p_offset] = x.array_r[p_offset:ubar_offset]
+    ubar_n.x.scatter_forward()
+    pbar_h.x.array[:(len(x.array_r) - ubar_offset)
+                   ] = x.array_r[ubar_offset:]
+    pbar_h.x.scatter_forward()
+
+    u_vis.interpolate(u_n)
+
+    u_file.write(t)
+    p_file.write(t)
+    ubar_file.write(t)
+    pbar_file.write(t)
+
+exit()
 
 submesh_s, entity_map_s = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]

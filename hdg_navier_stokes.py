@@ -38,10 +38,8 @@ def par_print(string):
         sys.stdout.flush()
 
 
-def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_e=None,
-          p_e=None):
+def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
+           boundaries, f, delta_t, nu):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
@@ -192,6 +190,37 @@ def solve(solver_type, k, nu, num_time_steps,
         A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
         A.assemble()
 
+    if scheme == Scheme.RW:
+        u_vis = fem.Function(V)
+    else:
+        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+        u_vis = fem.Function(V_vis)
+    u_vis.name = "u"
+    p_h = fem.Function(Q)
+    p_h.name = "p"
+    pbar_h = fem.Function(Qbar)
+    pbar_h.name = "pbar"
+
+    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    p_offset = u_offset + \
+        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = \
+        p_offset + Vbar.dofmap.index_map.size_local * \
+        Vbar.dofmap.index_map_bs
+
+    return (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset,
+            ubar_offset, bcs, u_n, facet_mesh)
+
+
+def solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions, f, u_e=None,
+          p_e=None):
+    (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
+     bcs, u_n, facet_mesh) = set_up(
+        msh, scheme, mt, k, solver_type, boundary_conditions,
+        boundaries, f, delta_t, nu)
+
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
     ksp.setType("preonly")
@@ -205,17 +234,6 @@ def solve(solver_type, k, nu, num_time_steps,
     b = fem.petsc.create_vector_block(L)
     x = A.createVecRight()
 
-    if scheme == Scheme.RW:
-        u_vis = fem.Function(V)
-    else:
-        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
-        u_vis = fem.Function(V_vis)
-    u_vis.name = "u"
-    p_h = fem.Function(Q)
-    p_h.name = "p"
-    pbar_h = fem.Function(Qbar)
-    pbar_h.name = "pbar"
-
     u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
     p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
     ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
@@ -226,16 +244,9 @@ def solve(solver_type, k, nu, num_time_steps,
     ubar_file.write(0.0)
     pbar_file.write(0.0)
 
-    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    p_offset = u_offset + \
-        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-    ubar_offset = \
-        p_offset + Vbar.dofmap.index_map.size_local * \
-        Vbar.dofmap.index_map_bs
-
     t = 0.0
     for n in range(num_time_steps):
-        t += delta_t.value
+        t += delta_t
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
@@ -267,6 +278,8 @@ def solve(solver_type, k, nu, num_time_steps,
         ubar_file.write(t)
         pbar_file.write(t)
 
+    # TODO Close files
+
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
     par_print(f"e_div_u = {e_div_u}")
@@ -280,7 +293,7 @@ def solve(solver_type, k, nu, num_time_steps,
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
-    par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
+    # par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
 
     if p_e is not None:
         p_h_avg = domain_average(msh, p_h)
