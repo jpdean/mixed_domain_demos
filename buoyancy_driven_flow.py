@@ -106,8 +106,6 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
     return msh, ct, ft, volume_id, boundary_id
 
-# We also define some helper functions that will be used later
-
 
 def norm_L2(comm, v):
     """Compute the L2(Ω)-norm of v"""
@@ -131,27 +129,21 @@ def par_print(string):
 
 
 # We define some simulation parameters
-
 num_time_steps = 10
 t_end = 0.1
-# R_e = 1e6  # Reynolds Number
 h = 0.05
+nu = 1e-3
 h_fac = 1 / 3  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
+solver_type = SolverType.NAVIER_STOKES
+g = as_vector((0.0, -9.81))
+rho_0 = 1.0  # Reference density (buoyancy term)
+eps = 10.0  # Thermal expansion coefficient
+f_T = 100.0  # Thermal source
 
 comm = MPI.COMM_WORLD
 
-# Next, we create a mesh and the required functions spaces over
-# it. Since the velocity uses an $H(\textnormal{div})$-conforming function
-# space, we also create a vector valued discontinuous Lagrange space
-# to interpolate into for artifact free visualisation.
-
 msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
-
-# with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-#     file.write_meshtags(ct)
-#     file.write_meshtags(ft)
 
 tdim = msh.topology.dim
 submesh_f, entity_map_f = mesh.create_submesh(
@@ -159,9 +151,6 @@ submesh_f, entity_map_f = mesh.create_submesh(
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
-# with io.XDMFFile(msh.comm, "submesh_f.xdmf", "w") as file:
-#     file.write_mesh(submesh_f)
-#     file.write_meshtags(ft_f)
 
 
 def zero(x): return np.vstack(
@@ -176,9 +165,6 @@ boundary_conditions = {"bottom": (BCType.Dirichlet, zero),
                        "obstacle": (BCType.Dirichlet, zero)}
 x_f = SpatialCoordinate(submesh_f)
 delta_t = t_end / num_time_steps  # TODO Make constant
-nu = 0.1
-solver_type = SolverType.NAVIER_STOKES
-
 
 submesh_s, entity_map_s = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
@@ -195,11 +181,10 @@ T_s_n = fem.Function(Q_s)
 # where I've omitted the rho g h part (can think of this is
 # lumping gravity in with pressure, see 2P4 notes) and taken
 # T_0 to be 0
-g = as_vector((0.0, -9.81))
-rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(1.0))
+rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(rho_0))
 # Thermal expansion coeff
-eps = fem.Constant(submesh_f, PETSc.ScalarType(10.0))
-
+eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
+# Buoyancy force
 f = - eps * rho_0 * T_n * g
 
 (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
@@ -390,7 +375,7 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-L_T_1 = inner(100.0, w_s) * dx_T(volume_id["solid"]) \
+L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
