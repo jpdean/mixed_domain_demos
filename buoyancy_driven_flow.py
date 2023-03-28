@@ -145,6 +145,10 @@ g = as_vector((0.0, -9.81))
 rho_0 = 1.0  # Reference density (buoyancy term)
 eps = 10.0  # Thermal expansion coefficient
 f_T = 100.0  # Thermal source
+gamma_int = 10  # Penalty param for temperature on interface
+kappa = 0.001  # Thermal conductivity
+alpha = 6.0 * k**2  # Penalty param for DG temp solver
+# TODO Add other params
 
 # Create mesh
 comm = MPI.COMM_WORLD
@@ -209,21 +213,17 @@ ksp.setFromOptions()
 b = fem.petsc.create_vector_block(L)
 x = A.createVecRight()
 
-u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
-pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
-
+# Trial and test function for fluid temperature
 T, w = TrialFunction(Q), TestFunction(Q)
+# Trial and test funcitons for the solid temperature
+T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 
-# delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-# alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-alpha = 6.0 * k**2  # TODO Make constant
-# kappa_f = fem.Constant(submesh_f, PETSc.ScalarType(0.001))
-kappa_f = 0.001
+# Convert to Constants
+delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
+alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
+kappa = fem.Constant(msh, PETSc.ScalarType(kappa))
 
+# Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["right"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["top"], lambda x: np.zeros_like(x[0])),
@@ -320,38 +320,36 @@ h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 
+# Fluid velocity at current time step
 u_h = u_n.copy()
 
-gamma_int = 10  # Penalty param on interface
+# Define forms for the thermal problem
 a_T_00 = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
     inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
     inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
           lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
           jump_T(w)) * dS_T(fluid_int_facets) + \
     inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T + \
-    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
-               inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
-               inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
-               (alpha / avg(h_T)) * inner(jump_T(T, n_T),
-               jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
-    + kappa_f * (gamma_int / avg(h_T) * inner(
+    kappa * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
+             inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
+             inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
+             (alpha / avg(h_T)) * inner(
+        jump_T(T, n_T), jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
+    + kappa * (gamma_int / avg(h_T) * inner(
         T("+"), w("+")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(T("+")), n_T("+")),
             w("+")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
-T_s = TrialFunction(Q_s)
-w_s = TestFunction(Q_s)
-
-a_T_01 = kappa_f * (- gamma_int / avg(h_T) * inner(
+a_T_01 = kappa * (- gamma_int / avg(h_T) * inner(
     T_s("-"), w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
             w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-a_T_10 = kappa_f * (- gamma_int / avg(h_T) * inner(
+a_T_10 = kappa * (- gamma_int / avg(h_T) * inner(
     T("+"), w_s("-")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T("+")), n_T("+")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
@@ -359,8 +357,8 @@ a_T_10 = kappa_f * (- gamma_int / avg(h_T) * inner(
             T("+")) * dS_T(boundary_id["obstacle"]))
 
 a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
-    + kappa_f * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
-                 + gamma_int / avg(h_T) * inner(
+    + kappa * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
+               + gamma_int / avg(h_T) * inner(
         T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
@@ -372,12 +370,12 @@ L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
-                         inner(grad(w), T * n_T) * ds_T(bc[0]) +
-                         (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
+    a_T_00 += kappa * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
+                       inner(grad(w), T * n_T) * ds_T(bc[0]) +
+                       (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
     L_T_0 += - inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w) * ds_T(bc[0]) + \
-        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
-                   (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
+        kappa * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
+                 (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
@@ -403,6 +401,14 @@ ksp_T.setType("preonly")
 ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
+
+# Set up files for visualisation
+u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
+p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
+ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
+pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
+T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
+T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
 
 t = 0.0
 u_file.write(t)
