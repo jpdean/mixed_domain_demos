@@ -122,6 +122,11 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
+def zero(x): return np.vstack(
+    (np.zeros_like(x[0]),
+     np.zeros_like(x[0])))
+
+
 def par_print(string):
     if comm.rank == 0:
         print(string)
@@ -141,40 +146,39 @@ rho_0 = 1.0  # Reference density (buoyancy term)
 eps = 10.0  # Thermal expansion coefficient
 f_T = 100.0  # Thermal source
 
+# Create mesh
 comm = MPI.COMM_WORLD
-
 msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
 
+# Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
 submesh_f, entity_map_f = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
+submesh_s, entity_map_s = mesh.create_submesh(
+    msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
+
+# Convert meshtags to fluid submesh
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
 
-
-def zero(x): return np.vstack(
-    (np.zeros_like(x[0]),
-     np.zeros_like(x[0])))
-
-
+# Define boundary conditions for fluid solver
 boundary_conditions = {"bottom": (BCType.Dirichlet, zero),
                        "right": (BCType.Dirichlet, zero),
                        "top": (BCType.Dirichlet, zero),
                        "left": (BCType.Dirichlet, zero),
                        "obstacle": (BCType.Dirichlet, zero)}
-x_f = SpatialCoordinate(submesh_f)
-delta_t = t_end / num_time_steps  # TODO Make constant
 
-submesh_s, entity_map_s = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
-
+# Function spaces for fluid and solid temperature
 Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
 Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+# Fluid and solid temperature at previous time step
 T_n = fem.Function(Q)
 T_s_n = fem.Function(Q_s)
 
-# Now we add the buoyancy force
+# Time step
+delta_t = t_end / num_time_steps  # TODO Make constant
+# Buoyancy force
 # TODO Figure out correct way of "linearising"
 # For buoyancy term, see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
@@ -182,11 +186,11 @@ T_s_n = fem.Function(Q_s)
 # lumping gravity in with pressure, see 2P4 notes) and taken
 # T_0 to be 0
 rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(rho_0))
-# Thermal expansion coeff
 eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 # Buoyancy force
 f = - eps * rho_0 * T_n * g
 
+# Set up fluid solver
 (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
  bcs, u_n, facet_mesh) = set_up(
     submesh_f, Scheme.DRW, ft_f, k, solver_type, boundary_conditions,
