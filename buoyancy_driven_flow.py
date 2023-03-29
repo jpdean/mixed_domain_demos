@@ -144,7 +144,6 @@ h_fac = 1 / 3  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
 solver_type = SolverType.NAVIER_STOKES
 g = as_vector((0.0, -9.81))
-rho_0 = 1.0  # Fluid reference density (buoyancy term) TODO Just use rho
 eps = 10.0  # Thermal expansion coefficient
 f_T = 100.0  # Thermal source
 gamma_int = 10  # Penalty param for temperature on interface
@@ -153,7 +152,6 @@ alpha = 6.0 * k**2  # Penalty param for DG temp solver
 rho_s = 1.0  # Solid density
 c_s = 1.0  # Solid specific heat
 c_f = 1.0  # Fluid specific heat
-# TODO Add other params
 
 # Create mesh
 comm = MPI.COMM_WORLD
@@ -187,17 +185,16 @@ T_s_n = fem.Function(Q_s)
 
 # Time step
 delta_t = t_end / num_time_steps  # TODO Make constant
-# Buoyancy force
+# Buoyancy force (taking rho as reference density)
 # TODO Figure out correct way of "linearising"
 # For buoyancy term, see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
 # where I've omitted the rho g h part (can think of this is
 # lumping gravity in with pressure, see 2P4 notes) and taken
 # T_0 to be 0
-rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(rho_0))
 eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 # Buoyancy force
-f = - eps * rho_0 * T_n * g
+f = - eps * rho * T_n * g
 
 # Set up fluid solver
 (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
@@ -226,6 +223,7 @@ T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 # Convert to Constants
 delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
 alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
+gamma_int = fem.Constant(msh, PETSc.ScalarType(gamma_int))
 kappa = fem.Constant(msh, PETSc.ScalarType(kappa))
 rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
 c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
