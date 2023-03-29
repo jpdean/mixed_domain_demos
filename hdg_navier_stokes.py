@@ -38,12 +38,10 @@ def par_print(string):
         sys.stdout.flush()
 
 
-def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
-           boundaries, f, delta_t, nu):
+def create_facet_mesh(msh):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
-    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
     msh.topology.create_entities(fdim)
     facet_imap = msh.topology.index_map(fdim)
     num_facets = facet_imap.size_local + facet_imap.num_ghosts
@@ -53,6 +51,10 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
     # map isn't necessarily the identity in parallel
     facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
+    return facet_mesh, entity_map
+
+
+def create_function_spaces(msh, facet_mesh, scheme, k):
     if scheme == Scheme.RW:
         V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
         Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
@@ -62,6 +64,16 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
     Vbar = fem.VectorFunctionSpace(
         facet_mesh, ("Discontinuous Lagrange", k))
     Qbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
+
+    return V, Q, Vbar, Qbar
+
+
+def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
+           boundaries, f, delta_t, nu):
+
+    facet_mesh, entity_map = create_facet_mesh(msh)
+
+    V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
@@ -79,6 +91,9 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
     facet_integration_entities = compute_integration_domains(
         fem.IntegralType.exterior_facet, mt._cpp_object)
 
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
     all_facets = 0
     facet_integration_entities = []
     for cell in range(msh.topology.index_map(tdim).size_local):
