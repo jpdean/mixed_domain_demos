@@ -33,9 +33,9 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 0.3
-        height = 0.75
-        c = (0.15, 0.05)
+        length = 0.2
+        height = 0.4
+        c = (0.1, 0.05)
 
         o_w = 0.02
         o_h = 0.005
@@ -134,9 +134,9 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 50
-t_end = 5
-h = 0.025
+num_time_steps = 200
+t_end = 10
+h = 0.015
 mu = 0.0010518  # Dynamic viscosity
 rho = 1000  # Fluid density
 nu = mu / rho  # Kinematic viscosity
