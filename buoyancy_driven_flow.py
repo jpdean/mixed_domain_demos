@@ -137,17 +137,22 @@ def par_print(string):
 num_time_steps = 10
 t_end = 0.1
 h = 0.05
-nu = 1e-3
+mu = 1e-3  # Dynamic viscosity
+rho = 1  # Fluid density
+nu = mu / rho  # Kinematic viscosity
 h_fac = 1 / 3  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
 solver_type = SolverType.NAVIER_STOKES
 g = as_vector((0.0, -9.81))
-rho_0 = 1.0  # Reference density (buoyancy term)
+rho_0 = 1.0  # Fluid reference density (buoyancy term) TODO Just use rho
 eps = 10.0  # Thermal expansion coefficient
 f_T = 100.0  # Thermal source
 gamma_int = 10  # Penalty param for temperature on interface
 kappa = 0.001  # Thermal conductivity
 alpha = 6.0 * k**2  # Penalty param for DG temp solver
+rho_s = 1.0  # Solid density
+c_s = 1.0  # Solid specific heat
+c_f = 1.0  # Fluid specific heat
 # TODO Add other params
 
 # Create mesh
@@ -222,6 +227,9 @@ T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
 alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
 kappa = fem.Constant(msh, PETSc.ScalarType(kappa))
+rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
+c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
+c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
 # Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
@@ -324,12 +332,12 @@ lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 u_h = u_n.copy()
 
 # Define forms for the thermal problem
-a_T_00 = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
-    inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
-    inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
-          lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
-          jump_T(w)) * dS_T(fluid_int_facets) + \
-    inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T + \
+a_T_00 = inner(rho * c_f * T / delta_t, w) * dx_T(volume_id["fluid"]) + \
+    rho * c_f * (- inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) +
+                 inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
+                       lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
+                       jump_T(w)) * dS_T(fluid_int_facets) +
+                 inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T) + \
     kappa * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
              inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
              inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
@@ -356,7 +364,7 @@ a_T_10 = kappa * (- gamma_int / avg(h_T) * inner(
     + inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
-a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
+a_T_11 = inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
     + kappa * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
                + gamma_int / avg(h_T) * inner(
         T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"])
@@ -365,7 +373,7 @@ a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
     - inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
+L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 # Apply Dirichlet BCs for the thermal problem
 for bc in dirichlet_bcs_T:
@@ -374,12 +382,13 @@ for bc in dirichlet_bcs_T:
     a_T_00 += kappa * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
                        inner(grad(w), T * n_T) * ds_T(bc[0]) +
                        (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
-    L_T_0 += - inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w) * ds_T(bc[0]) + \
+    L_T_0 += - rho * c_f * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D,
+                                 w) * ds_T(bc[0]) + \
         kappa * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                  (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
-    + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
+    + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 # Compile forms
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
