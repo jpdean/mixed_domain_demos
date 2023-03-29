@@ -78,21 +78,20 @@ def solve(solver_type, k, nu, num_time_steps,
     n = ufl.FacetNormal(msh)
     gamma = 6.0 * k**2 / h
 
-    facet_integration_entities = compute_integration_domains(
-        fem.IntegralType.exterior_facet, mt._cpp_object)
-
-    all_facets = 0
-    facet_integration_entities = []
+    all_facets_tag = 0
+    all_facets = []
     for cell in range(msh.topology.index_map(tdim).size_local):
         for local_facet in range(num_cell_facets):
-            facet_integration_entities.extend([cell, local_facet])
+            all_facets.extend([cell, local_facet])
 
+    facet_integration_entities = [(all_facets_tag, all_facets)]
+    facet_integration_entities += compute_integration_domains(
+        fem.IntegralType.exterior_facet, mt._cpp_object)
     dx_c = ufl.Measure("dx", domain=msh)
     # FIXME Figure out why this is being estimated wrong for DRW
     quad_deg = k**2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=[
-            (all_facets, facet_integration_entities)], domain=msh,
+        "ds", subdomain_data=facet_integration_entities, domain=msh,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
@@ -109,46 +108,50 @@ def solve(solver_type, k, nu, num_time_steps,
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
-        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets) \
-        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets) \
-        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets)
+        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
     a_02 = - nu * gamma * inner(
-        outer(ubar, n), outer(v, n)) * ds_c(all_facets) \
-        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets)
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
     a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
-                          outer(v, n)) * ds_c(all_facets),
+                          outer(v, n)) * ds_c(all_facets_tag),
                     entity_maps=entity_maps)
     a_10 = fem.form(inner(u, grad(q)) * dx_c -
-                    inner(dot(u, n), q) * ds_c(all_facets))
-    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets) \
-        + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(all_facets)
+                    inner(dot(u, n), q) * ds_c(all_facets_tag))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(vbar, n)
+                             ) * ds_c(all_facets_tag)
     a_30 = fem.form(inner(dot(u, n), qbar) *
-                    ds_c(all_facets), entity_maps=entity_maps)
+                    ds_c(all_facets_tag), entity_maps=entity_maps)
     a_23 = fem.form(
-        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(all_facets),
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
+        ds_c(all_facets_tag),
         entity_maps=entity_maps)
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
     a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
                     entity_maps=entity_maps)
     a_22 = - nu * gamma * \
-        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets)
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
 
     if solver_type == SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
-            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets) \
-            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(all_facets)
-        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets) \
-            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * ds_c(all_facets)
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
+            ds_c(all_facets_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
+            ds_c(all_facets_tag)
         a_22 += inner(outer(ubar, lmbda * u_n),
-                      outer(vbar, n)) * ds_c(all_facets)
+                      outer(vbar, n)) * ds_c(all_facets_tag)
 
     L_2 = inner(fem.Constant(msh, (PETSc.ScalarType(0.0),
                                    PETSc.ScalarType(0.0))),
-                vbar) * ds_c(all_facets)
+                vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
@@ -280,7 +283,7 @@ def solve(solver_type, k, nu, num_time_steps,
         par_print(f"e_u = {e_u}")
         par_print(f"e_ubar = {e_ubar}")
 
-    par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
+    # par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
 
     if p_e is not None:
         p_h_avg = domain_average(msh, p_h)
