@@ -133,8 +133,8 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 100
-t_end = 5
+num_time_steps = 10
+t_end = 1
 h = 0.07
 h_fac = 1 / 30  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
