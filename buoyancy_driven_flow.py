@@ -1,7 +1,7 @@
 # TODO This demo needs tidying and simplifying
 
 from ufl import SpatialCoordinate
-from hdg_navier_stokes import SolverType, Scheme, set_up, BCType
+import hdg_navier_stokes
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -134,15 +134,15 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 200
-t_end = 10
+num_time_steps = 2
+t_end = 0.1
 h = 0.015
 mu = 0.0010518  # Dynamic viscosity
 rho = 1000  # Fluid density
 nu = mu / rho  # Kinematic viscosity
 h_fac = 1 / 50  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
-solver_type = SolverType.NAVIER_STOKES
+solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 g = as_vector((0.0, -9.81))
 eps = 0.000214  # Thermal expansion coefficient
 f_T = 1e6  # Thermal source
@@ -170,11 +170,18 @@ submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
 
 # Define boundary conditions for fluid solver
-boundary_conditions = {"bottom": (BCType.Dirichlet, zero),
-                       "right": (BCType.Dirichlet, zero),
-                       "top": (BCType.Dirichlet, zero),
-                       "left": (BCType.Dirichlet, zero),
-                       "obstacle": (BCType.Dirichlet, zero)}
+boundary_conditions = {"bottom": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "right": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "top": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "left": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
+
+scheme = hdg_navier_stokes.Scheme.DRW
+facet_mesh_f, facet_entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
+V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
+    submesh_f, facet_mesh_f, scheme, k)
+u_n = fem.Function(V_f)
+ubar_n = fem.Function(Vbar_f)
 
 # Function spaces for fluid and solid temperature
 Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
@@ -196,11 +203,30 @@ eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 # Buoyancy force
 f = - eps * rho * T_n * g
 
-# Set up fluid solver
-(A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
- bcs, u_n, facet_mesh) = set_up(
-    submesh_f, Scheme.DRW, ft_f, k, solver_type, boundary_conditions,
-    boundary_id, f, delta_t, nu)
+a, L, bcs = hdg_navier_stokes.create_forms(
+        V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
+        facet_entity_map, solver_type, boundary_conditions,
+        boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
+
+if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
+
+if scheme == hdg_navier_stokes.Scheme.RW:
+    u_vis = fem.Function(V_f)
+else:
+    V_vis = fem.VectorFunctionSpace(submesh_f, ("Discontinuous Lagrange", k + 1))
+    u_vis = fem.Function(V_vis)
+u_vis.name = "u"
+p_h = fem.Function(Q_f)
+p_h.name = "p"
+pbar_h = fem.Function(Qbar_f)
+pbar_h.name = "pbar"
+
+u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
+    V_f, Q_f, Vbar_f)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -425,7 +451,7 @@ for n in range(num_time_steps):
     t += delta_t.value
     par_print(f"t = {t}")
 
-    if solver_type == SolverType.NAVIER_STOKES:
+    if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
         fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
         A.assemble()
