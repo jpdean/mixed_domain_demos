@@ -201,10 +201,20 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     return a, L, bcs
 
 
-def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
-           boundaries, f, delta_t, nu):
-    tdim = msh.topology.dim
+def compute_offsets(V, Q, Vbar):
+    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    p_offset = u_offset + \
+        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = \
+        p_offset + Vbar.dofmap.index_map.size_local * \
+        Vbar.dofmap.index_map_bs
+    return u_offset, p_offset, ubar_offset
 
+
+def solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions, f, u_e=None,
+          p_e=None):
     facet_mesh, entity_map = create_facet_mesh(msh)
 
     V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
@@ -234,25 +244,7 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
-    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    p_offset = u_offset + \
-        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-    ubar_offset = \
-        p_offset + Vbar.dofmap.index_map.size_local * \
-        Vbar.dofmap.index_map_bs
-
-    return (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset,
-            ubar_offset, bcs, u_n, facet_mesh)
-
-
-def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_e=None,
-          p_e=None):
-    (A, a, L, u_vis, p_h, ubar_n, pbar_h, u_offset, p_offset, ubar_offset,
-     bcs, u_n, facet_mesh) = set_up(
-        msh, scheme, mt, k, solver_type, boundary_conditions,
-        boundaries, f, delta_t, nu)
+    u_offset, p_offset, ubar_offset = compute_offsets(V, Q, Vbar)
 
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
