@@ -219,9 +219,9 @@ f = - eps * rho * T_n * g
 
 # Create forms for fluid solver
 a, L, bcs = hdg_navier_stokes.create_forms(
-        V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
-        facet_entity_map, solver_type, boundary_conditions,
-        boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
+    V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
+    facet_entity_map, solver_type, boundary_conditions,
+    boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
     A = fem.petsc.create_matrix_block(a)
@@ -232,7 +232,8 @@ else:
 if scheme == hdg_navier_stokes.Scheme.RW:
     u_vis = fem.Function(V_f)
 else:
-    V_vis = fem.VectorFunctionSpace(submesh_f, ("Discontinuous Lagrange", k + 1))
+    V_vis = fem.VectorFunctionSpace(
+        submesh_f, ("Discontinuous Lagrange", k + 1))
     u_vis = fem.Function(V_vis)
 u_vis.name = "u"
 p_h = fem.Function(Q_f)
