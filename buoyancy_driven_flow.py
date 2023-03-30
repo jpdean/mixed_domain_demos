@@ -33,12 +33,12 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 0.2
-        height = 0.4
-        c = (0.1, 0.05)
+        length = 1
+        height = 2
+        c = (0.5, 0.25)
 
-        o_w = 0.02
-        o_h = 0.005
+        o_w = 0.1
+        o_h = 0.025
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -134,24 +134,38 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 2
-t_end = 0.1
-h = 0.015
-mu = 0.0010518  # Dynamic viscosity
-rho = 1000  # Fluid density
-nu = mu / rho  # Kinematic viscosity
-h_fac = 1 / 50  # Factor scaling h near the cylinder
+num_time_steps = 100
+t_end = 5
+h = 0.07
+h_fac = 1 / 30  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
-g = as_vector((0.0, -9.81))
-eps = 0.000214  # Thermal expansion coefficient
-f_T = 1e6  # Thermal source
 gamma_int = 10  # Penalty param for temperature on interface
-kappa = 0.6  # Thermal conductivity
 alpha = 6.0 * k**2  # Penalty param for DG temp solver
+
+# Material parameters
+# Water
+# mu = 0.0010518  # Dynamic viscosity
+# rho = 1000  # Fluid density
+# g = as_vector((0.0, -9.81))
+# eps = 0.000214  # Thermal expansion coefficient
+# f_T = 10e6  # Thermal source
+# kappa = 0.6  # Thermal conductivity
+# rho_s = 7860  # Solid density
+# c_s = 462  # Solid specific heat
+# c_f = 4184  # Fluid specific heat
+# Air
+mu = 1.825e-5  # Dynamic viscosity
+rho = 1.204  # Fluid density
+g = as_vector((0.0, -9.81))
+eps = 3.43e-3  # Thermal expansion coefficient
+f_T = 10e6  # Thermal source
+kappa = 0.02514  # Thermal conductivity
 rho_s = 7860  # Solid density
 c_s = 462  # Solid specific heat
-c_f = 4184  # Fluid specific heat
+c_f = 1007  # Fluid specific heat
+
+nu = mu / rho  # Kinematic viscosity
 
 # Create mesh
 comm = MPI.COMM_WORLD
