@@ -259,17 +259,15 @@ def solve(solver_type, k, nu, num_time_steps,
     b = fem.petsc.create_vector_block(L)
     x = A.createVecRight()
 
-    u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-    p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
-    pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
-
-    u_file.write(0.0)
-    p_file.write(0.0)
-    ubar_file.write(0.0)
-    pbar_file.write(0.0)
+    # Set up files for visualisation
+    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+                 for (file_name, func)
+                 in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+                 ("pbar.bp", pbar_h)]]
 
     t = 0.0
+    for vis_file in vis_files:
+        vis_file.write(t)
     for n in range(num_time_steps):
         t += delta_t
 
@@ -298,12 +296,11 @@ def solve(solver_type, k, nu, num_time_steps,
 
         u_vis.interpolate(u_n)
 
-        u_file.write(t)
-        p_file.write(t)
-        ubar_file.write(t)
-        pbar_file.write(t)
+        for vis_file in vis_files:
+            vis_file.write(t)
 
-    # TODO Close files
+    for vis_file in vis_files:
+        vis_file.close()
 
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
