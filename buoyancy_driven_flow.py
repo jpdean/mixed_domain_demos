@@ -1,11 +1,12 @@
 # TODO This demo needs tidying and simplifying
 
+import hdg_navier_stokes
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
 import numpy as np
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
-                 inner, grad, dx, dS, avg, outer, div, conditional,
+                 inner, grad, dx, avg, div, conditional,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
@@ -33,10 +34,10 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
         length = 1
         height = 2
-        c = (0.49, 0.1)
+        c = (0.5, 0.25)
 
-        o_w = 0.075
-        o_h = 0.02
+        o_w = 0.1
+        o_h = 0.025
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -104,8 +105,6 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
 
     return msh, ct, ft, volume_id, boundary_id
 
-# We also define some helper functions that will be used later
-
 
 def norm_L2(comm, v):
     """Compute the L2(Ω)-norm of v"""
@@ -122,6 +121,11 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
+def zero(x): return np.vstack(
+    (np.zeros_like(x[0]),
+     np.zeros_like(x[0])))
+
+
 def par_print(string):
     if comm.rank == 0:
         print(string)
@@ -129,140 +133,116 @@ def par_print(string):
 
 
 # We define some simulation parameters
-
 num_time_steps = 10
-t_end = 0.1
-R_e = 1e6  # Reynolds Number
-h = 0.05
-h_fac = 1 / 3  # Factor scaling h near the cylinder
-k = 3  # Polynomial degree
+t_end = 1
+h = 0.07
+h_fac = 1 / 30  # Factor scaling h near the cylinder
+k = 2  # Polynomial degree
+solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
+gamma_int = 10  # Penalty param for temperature on interface
+alpha = 6.0 * k**2  # Penalty param for DG temp solver
 
+# Material parameters
+# Water
+# mu = 0.0010518  # Dynamic viscosity
+# rho = 1000  # Fluid density
+# g = as_vector((0.0, -9.81))
+# eps = 0.000214  # Thermal expansion coefficient
+# f_T = 10e6  # Thermal source
+# kappa = 0.6  # Thermal conductivity
+# rho_s = 7860  # Solid density
+# c_s = 462  # Solid specific heat
+# c_f = 4184  # Fluid specific heat
+# Air
+mu = 1.825e-5  # Dynamic viscosity
+rho = 1.204  # Fluid density
+g = as_vector((0.0, -9.81))
+eps = 3.43e-3  # Thermal expansion coefficient
+f_T = 10e6  # Thermal source
+kappa = 0.02514  # Thermal conductivity
+rho_s = 7860  # Solid density
+c_s = 462  # Solid specific heat
+c_f = 1007  # Fluid specific heat
+
+nu = mu / rho  # Kinematic viscosity
+
+# Create mesh
 comm = MPI.COMM_WORLD
-
-# Next, we create a mesh and the required functions spaces over
-# it. Since the velocity uses an $H(\textnormal{div})$-conforming function
-# space, we also create a vector valued discontinuous Lagrange space
-# to interpolate into for artifact free visualisation.
-
 msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
 
-# with io.XDMFFile(msh.comm, "mesh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-#     file.write_meshtags(ct)
-#     file.write_meshtags(ft)
-
+# Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
 submesh_f, entity_map_f = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
-fdim = tdim - 1
-submesh_f.topology.create_connectivity(fdim, tdim)
-ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
-# with io.XDMFFile(msh.comm, "submesh_f.xdmf", "w") as file:
-#     file.write_mesh(submesh_f)
-#     file.write_meshtags(ft_f)
-
 submesh_s, entity_map_s = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
-# Function space for the velocity
-V = fem.FunctionSpace(submesh_f, ("Raviart-Thomas", k + 1))
-# Function space for the pressure
+# Convert meshtags to fluid submesh
+fdim = tdim - 1
+submesh_f.topology.create_connectivity(fdim, tdim)
+ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
+
+# Define boundary conditions for fluid solver
+boundary_conditions = {"bottom": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "right": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "top": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "left": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
+
+# Set up fluid solver
+scheme = hdg_navier_stokes.Scheme.DRW
+facet_mesh_f, facet_entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
+V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
+    submesh_f, facet_mesh_f, scheme, k)
+u_n = fem.Function(V_f)
+ubar_n = fem.Function(Vbar_f)
+
+# Function spaces for fluid and solid temperature
 Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
-# Funcion space for visualising the velocity field
-W = fem.VectorFunctionSpace(submesh_f, ("Discontinuous Lagrange", k + 1))
+Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+# Fluid and solid temperature at previous time step
+T_n = fem.Function(Q)
+T_s_n = fem.Function(Q_s)
 
-# Define trial and test functions
-
-u, v = TrialFunction(V), TestFunction(V)
-p, q = TrialFunction(Q), TestFunction(Q)
-T, w = TrialFunction(Q), TestFunction(Q)
-
-# delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
+# Time step
 delta_t = t_end / num_time_steps  # TODO Make constant
-# alpha = fem.Constant(msh, PETSc.ScalarType(6.0 * k**2))
-alpha = 6.0 * k**2  # TODO Make constant
-R_e_const = fem.Constant(submesh_f, PETSc.ScalarType(R_e))
-# kappa_f = fem.Constant(submesh_f, PETSc.ScalarType(0.001))
-kappa_f = 0.001
+# Buoyancy force (taking rho as reference density)
+# TODO Figure out correct way of "linearising"
+# For buoyancy term, see
+# https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
+# where I've omitted the rho g h part (can think of this is
+# lumping gravity in with pressure, see 2P4 notes) and taken
+# T_0 to be 0
+eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
+# Buoyancy force
+f = - eps * rho * T_n * g
 
-# List of tuples of form (id, expression)
-dirichlet_bcs = [(boundary_id["bottom"],
-                  lambda x: np.vstack((
-                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
-                 (boundary_id["right"], lambda x: np.vstack(
-                     (np.zeros_like(x[0]), np.zeros_like(x[0])))),
-                 (boundary_id["top"],
-                  lambda x: np.vstack((
-                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
-                 (boundary_id["left"],
-                  lambda x: np.vstack((
-                      np.zeros_like(x[0]), np.zeros_like(x[0])))),
-                 (boundary_id["obstacle"],
-                  lambda x: np.vstack((
-                      np.zeros_like(x[0]), np.zeros_like(x[0]))))]
-neumann_bcs = []
+# Create forms for fluid solver
+a, L, bcs = hdg_navier_stokes.create_forms(
+    V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
+    facet_entity_map, solver_type, boundary_conditions,
+    boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
-ds_f = Measure("ds", domain=submesh_f, subdomain_data=ft_f)
+if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
 
-h = CellDiameter(submesh_f)
-n = FacetNormal(submesh_f)
+if scheme == hdg_navier_stokes.Scheme.RW:
+    u_vis = fem.Function(V_f)
+else:
+    V_vis = fem.VectorFunctionSpace(
+        submesh_f, ("Discontinuous Lagrange", k + 1))
+    u_vis = fem.Function(V_vis)
+u_vis.name = "u"
+p_h = fem.Function(Q_f)
+p_h.name = "p"
+pbar_h = fem.Function(Qbar_f)
+pbar_h.name = "pbar"
 
-
-def jump(phi, n):
-    return outer(phi("+"), n("+")) + outer(phi("-"), n("-"))
-
-
-# We solve the Stokes problem for the initial condition, so the convective
-# terms are omitted for now
-
-a_00 = 1 / R_e_const * (inner(grad(u), grad(v)) * dx
-                        - inner(avg(grad(u)), jump(v, n)) * dS
-                        - inner(jump(u, n), avg(grad(v))) * dS
-                        + alpha / avg(h) * inner(jump(u, n), jump(v, n)) * dS)
-a_01 = - inner(p, div(v)) * dx
-a_10 = - inner(div(u), q) * dx
-
-f = fem.Function(W)
-# NOTE: Arrived at Neumann BC term by rewriting inner(grad(u), outer(v, n))
-# it is based on as inner(dot(grad(u), n), v) and then g = dot(grad(u), n)
-# etc. TODO Check this. NOTE Consider changing formulation to one with momentum
-# law in conservative form to be able to specify momentum flux
-L_0 = inner(f, v) * dx
-L_1 = inner(fem.Constant(submesh_f, PETSc.ScalarType(0.0)), q) * dx
-
-bcs = []
-for bc in dirichlet_bcs:
-    a_00 += 1 / R_e_const * (- inner(grad(u), outer(v, n)) * ds_f(bc[0])
-                             - inner(outer(u, n), grad(v)) * ds_f(bc[0])
-                             + alpha / h * inner(
-        outer(u, n), outer(v, n)) * ds_f(bc[0]))
-    u_D = fem.Function(V)
-    u_D.interpolate(bc[1])
-    L_0 += 1 / R_e_const * (- inner(outer(u_D, n), grad(v)) * ds_f(bc[0])
-                            + alpha / h * inner(
-                                outer(u_D, n), outer(v, n)) * ds_f(bc[0]))
-
-    bc_boundary_facets = ft_f.indices[ft_f.values == bc[0]]
-    bc_dofs = fem.locate_dofs_topological(
-        V, submesh_f.topology.dim - 1, bc_boundary_facets)
-    bcs.append(fem.dirichletbc(u_D, bc_dofs))
-
-
-for bc in neumann_bcs:
-    L_0 += 1 / R_e_const * inner(bc[1], v) * ds_f(bc[0])
-
-a = fem.form([[a_00, a_01],
-              [a_10, None]])
-L = fem.form([L_0,
-              L_1])
-
-# Assemble Stokes problem
-
-A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-A.assemble()
-b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
-
-# Create and configure solver
+u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
+    V_f, Q_f, Vbar_f)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -270,61 +250,32 @@ ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("mumps")
 opts = PETSc.Options()
-# See https://graal.ens-lyon.fr/MUMPS/doc/userguide_5.5.1.pdf
-# TODO Check
 opts["mat_mumps_icntl_6"] = 2
 opts["mat_mumps_icntl_14"] = 100
-opts["ksp_error_if_not_converged"] = 1
-
-if len(neumann_bcs) == 0:
-    # Options to support solving a singular matrix (pressure nullspace)
-    opts["mat_mumps_icntl_24"] = 1
-    opts["mat_mumps_icntl_25"] = 0
 ksp.setFromOptions()
 
-# Solve Stokes for initial condition
-
+b = fem.petsc.create_vector_block(L)
 x = A.createVecRight()
-ksp.solve(b, x)
 
-# Split the solution
+# Trial and test function for fluid temperature
+T, w = TrialFunction(Q), TestFunction(Q)
+# Trial and test funcitons for the solid temperature
+T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 
-u_h = fem.Function(V)
-p_h = fem.Function(Q)
-p_h.name = "p"
-offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-u_h.x.array[:offset] = x.array_r[:offset]
-u_h.x.scatter_forward()
-p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
-p_h.x.scatter_forward()
-if len(neumann_bcs) == 0:
-    p_h.x.array[:] -= domain_average(submesh_f, p_h)
+# Convert to Constants
+delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
+alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
+gamma_int = fem.Constant(msh, PETSc.ScalarType(gamma_int))
+kappa = fem.Constant(msh, PETSc.ScalarType(kappa))
+rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
+c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
+c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
-u_vis = fem.Function(W)
-u_vis.name = "u"
-u_vis.interpolate(u_h)
-
-# Write initial condition to file
-
-u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-t = 0.0
-u_file.write(t)
-p_file.write(t)
-
-T_n = fem.Function(Q)
-
+# Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["right"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["top"], lambda x: np.zeros_like(x[0])),
                    (boundary_id["left"], lambda x: np.zeros_like(x[0]))]
-
-# Create function to store solution and previous time step
-
-u_n = fem.Function(V)
-u_n.x.array[:] = u_h.x.array
-
-lmbda = conditional(gt(dot(u_n, n), 0), 1, 0)
 
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
@@ -417,68 +368,69 @@ h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 
-gamma_int = 10  # Penalty param on interface
-a_T_00 = inner(T / delta_t, w) * dx_T(volume_id["fluid"]) - \
-    inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) + \
-    inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
-          lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
-          jump_T(w)) * dS_T(fluid_int_facets) + \
-    inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T + \
-    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
-               inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
-               inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
-               (alpha / avg(h_T)) * inner(jump_T(T, n_T),
-               jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
-    + kappa_f * (gamma_int / avg(h_T) * inner(
+# Fluid velocity at current time step
+u_h = u_n.copy()
+
+# Define forms for the thermal problem
+a_T_00 = inner(rho * c_f * T / delta_t, w) * dx_T(volume_id["fluid"]) + \
+    rho * c_f * (- inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) +
+                 inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T("+") -
+                       lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
+                       jump_T(w)) * dS_T(fluid_int_facets) +
+                 inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T) + \
+    kappa * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
+             inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
+             inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
+             (alpha / avg(h_T)) * inner(
+        jump_T(T, n_T), jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
+    + kappa * (gamma_int / avg(h_T) * inner(
         T("+"), w("+")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(T("+")), n_T("+")),
             w("+")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
-Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
-T_s = TrialFunction(Q_s)
-w_s = TestFunction(Q_s)
-T_s_n = fem.Function(Q_s)
-
-a_T_01 = kappa_f * (- gamma_int / avg(h_T) * inner(
+a_T_01 = kappa * (- gamma_int / avg(h_T) * inner(
     T_s("-"), w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
             w("+")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(w("+")), n_T("+")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-a_T_10 = kappa_f * (- gamma_int / avg(h_T) * inner(
+a_T_10 = kappa * (- gamma_int / avg(h_T) * inner(
     T("+"), w_s("-")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(T("+")), n_T("+")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
     + inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
-a_T_11 = inner(T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
-    + kappa_f * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
-                 + gamma_int / avg(h_T) * inner(
+a_T_11 = inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
+    + kappa * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
+               + gamma_int / avg(h_T) * inner(
         T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
     - inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-L_T_0 = inner(T_n / delta_t, w) * dx_T(volume_id["fluid"])
+L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
+# Apply Dirichlet BCs for the thermal problem
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
-                         inner(grad(w), T * n_T) * ds_T(bc[0]) +
-                         (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
-    L_T_0 += - inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w) * ds_T(bc[0]) + \
-        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
-                   (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
+    a_T_00 += kappa * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
+                       inner(grad(w), T * n_T) * ds_T(bc[0]) +
+                       (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
+    L_T_0 += - rho * c_f * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D,
+                                 w) * ds_T(bc[0]) + \
+        kappa * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
+                 (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-L_T_1 = inner(100.0, w_s) * dx_T(volume_id["solid"]) \
-    + inner(T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
+L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
+    + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
+# Compile forms
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
 a_T_01 = fem.form(a_T_01, entity_maps=entity_maps)
 a_T_10 = fem.form(a_T_10, entity_maps=entity_maps)
@@ -491,6 +443,7 @@ a_T = [[a_T_00, a_T_01],
        [a_T_10, a_T_11]]
 L_T = [L_T_0, L_T_1]
 
+# Assemble matrix and vector for thermal problem
 A_T = fem.petsc.create_matrix_block(a_T)
 b_T = fem.petsc.create_vector_block(L_T)
 
@@ -501,52 +454,23 @@ ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
 
-T_file = io.VTXWriter(msh.comm, "T.bp", [T_n._cpp_object])
-T_s_file = io.VTXWriter(msh.comm, "T_s.bp", [T_s_n._cpp_object])
-T_file.write(t)
-T_s_file.write(t)
+# Set up files for visualisation
+vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+             for (file_name, func)
+             in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+                 ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
 
-# Now we add the time stepping, convective, and buoyancy terms
-# TODO Figure out correct way of "linearising"
-# For buoyancy term, see
-# https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
-# where I've omitted the rho g h part (can think of this is
-# lumping gravity in with pressure, see 2P4 notes) and taken
-# T_0 to be 0
-g = as_vector((0.0, -9.81))
-rho_0 = fem.Constant(submesh_f, PETSc.ScalarType(1.0))
-# Thermal expansion coeff
-eps = fem.Constant(submesh_f, PETSc.ScalarType(10.0))
-
-u_uw = lmbda("+") * u("+") + lmbda("-") * u("-")
-a_00 += inner(u / delta_t, v) * dx - \
-    inner(u, div(outer(v, u_n))) * dx + \
-    inner((dot(u_n, n))("+") * u_uw, v("+")) * dS + \
-    inner((dot(u_n, n))("-") * u_uw, v("-")) * dS + \
-    inner(dot(u_n, n) * lmbda * u, v) * ds_f
-a = fem.form([[a_00, a_01],
-              [a_10, None]])
-
-L_0 += inner(u_n / delta_t - eps * rho_0 * T_n * g, v) * dx
-
-for bc in dirichlet_bcs:
-    u_D = fem.Function(V)
-    u_D.interpolate(bc[1])
-    L_0 += - inner(dot(u_n, n) * (1 - lmbda) * u_D, v) * ds_f(bc[0])
-L = fem.form([L_0,
-              L_1])
-
-# Time stepping loop
-
+t = 0.0
+for vis_file in vis_files:
+    vis_file.write(t)
 for n in range(num_time_steps):
-    # t += delta_t.value
-    t += delta_t
-
+    t += delta_t.value
     par_print(f"t = {t}")
 
-    A.zeroEntries()
-    fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
-    A.assemble()
+    if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+        A.zeroEntries()
+        fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+        A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
@@ -554,12 +478,20 @@ for n in range(num_time_steps):
 
     # Compute solution
     ksp.solve(b, x)
-    u_h.x.array[:offset] = x.array_r[:offset]
+
+    u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
-    p_h.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+    p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
     p_h.x.scatter_forward()
-    if len(neumann_bcs) == 0:
-        p_h.x.array[:] -= domain_average(submesh_f, p_h)
+    ubar_n.x.array[:ubar_offset -
+                   p_offset] = x.array_r[p_offset:ubar_offset]
+    ubar_n.x.scatter_forward()
+    pbar_h.x.array[:(len(x.array_r) - ubar_offset)
+                   ] = x.array_r[ubar_offset:]
+    pbar_h.x.scatter_forward()
+    # TODO
+    # if len(neumann_bcs) == 0:
+    #     p_h.x.array[:] -= domain_average(submesh_f, p_h)
 
     A_T.zeroEntries()
     fem.petsc.assemble_matrix_block(A_T, a_T)
@@ -576,21 +508,16 @@ for n in range(num_time_steps):
     T_s_n.x.array[:(len(x_T.array_r) - offset_T)] = x_T.array_r[offset_T:]
     T_s_n.x.scatter_forward()
 
-    u_vis.interpolate(u_h)
+    u_vis.interpolate(u_n)
 
-    # Write to file
-    u_file.write(t)
-    p_file.write(t)
-    T_file.write(t)
-    T_s_file.write(t)
+    for vis_file in vis_files:
+        vis_file.write(t)
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
 
-u_file.close()
-p_file.close()
-T_file.close()
-T_s_file.close()
+for vis_file in vis_files:
+    vis_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))

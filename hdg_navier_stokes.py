@@ -38,14 +38,10 @@ def par_print(string):
         sys.stdout.flush()
 
 
-def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_e=None,
-          p_e=None):
+def create_facet_mesh(msh):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
-    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
     msh.topology.create_entities(fdim)
     facet_imap = msh.topology.index_map(fdim)
     num_facets = facet_imap.size_local + facet_imap.num_ghosts
@@ -55,6 +51,10 @@ def solve(solver_type, k, nu, num_time_steps,
     # map isn't necessarily the identity in parallel
     facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
+    return facet_mesh, entity_map
+
+
+def create_function_spaces(msh, facet_mesh, scheme, k):
     if scheme == Scheme.RW:
         V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
         Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
@@ -65,21 +65,18 @@ def solve(solver_type, k, nu, num_time_steps,
         facet_mesh, ("Discontinuous Lagrange", k))
     Qbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    p = ufl.TrialFunction(Q)
-    q = ufl.TestFunction(Q)
-    ubar = ufl.TrialFunction(Vbar)
-    vbar = ufl.TestFunction(Vbar)
-    pbar = ufl.TrialFunction(Qbar)
-    qbar = ufl.TestFunction(Qbar)
+    return V, Q, Vbar, Qbar
 
-    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
-    n = ufl.FacetNormal(msh)
-    gamma = 6.0 * k**2 / h
+
+def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
+                 entity_map, solver_type, boundary_conditions,
+                 boundaries, mt, f, facet_mesh, u_n, ubar_n):
+    tdim = msh.topology.dim
+    fdim = tdim - 1
 
     all_facets_tag = 0
     all_facets = []
+    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
     for cell in range(msh.topology.index_map(tdim).size_local):
         for local_facet in range(num_cell_facets):
             all_facets.extend([cell, local_facet])
@@ -98,11 +95,23 @@ def solve(solver_type, k, nu, num_time_steps,
     inv_entity_map = np.full_like(entity_map, -1)
     for i, facet in enumerate(entity_map):
         inv_entity_map[facet] = i
+
     entity_maps = {facet_mesh: inv_entity_map}
 
-    u_n = fem.Function(V)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    p = ufl.TrialFunction(Q)
+    q = ufl.TestFunction(Q)
+    ubar = ufl.TrialFunction(Vbar)
+    vbar = ufl.TestFunction(Vbar)
+    pbar = ufl.TrialFunction(Qbar)
+    qbar = ufl.TestFunction(Qbar)
+
+    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(msh)
+    gamma = 6.0 * k**2 / h
+
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
-    ubar_n = fem.Function(Vbar)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
@@ -189,11 +198,53 @@ def solve(solver_type, k, nu, num_time_steps,
          [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
+    return a, L, bcs
+
+
+def compute_offsets(V, Q, Vbar):
+    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    p_offset = u_offset + \
+        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = \
+        p_offset + Vbar.dofmap.index_map.size_local * \
+        Vbar.dofmap.index_map_bs
+    return u_offset, p_offset, ubar_offset
+
+
+def solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions, f, u_e=None,
+          p_e=None):
+    facet_mesh, entity_map = create_facet_mesh(msh)
+
+    V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
+
+    u_n = fem.Function(V)
+    ubar_n = fem.Function(Vbar)
+
+    a, L, bcs = create_forms(
+        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
+        entity_map, solver_type, boundary_conditions,
+        boundaries, mt, f, facet_mesh, u_n, ubar_n)
+
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
     else:
         A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
         A.assemble()
+
+    if scheme == Scheme.RW:
+        u_vis = fem.Function(V)
+    else:
+        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+        u_vis = fem.Function(V_vis)
+    u_vis.name = "u"
+    p_h = fem.Function(Q)
+    p_h.name = "p"
+    pbar_h = fem.Function(Qbar)
+    pbar_h.name = "pbar"
+
+    u_offset, p_offset, ubar_offset = compute_offsets(V, Q, Vbar)
 
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
@@ -208,37 +259,17 @@ def solve(solver_type, k, nu, num_time_steps,
     b = fem.petsc.create_vector_block(L)
     x = A.createVecRight()
 
-    if scheme == Scheme.RW:
-        u_vis = fem.Function(V)
-    else:
-        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
-        u_vis = fem.Function(V_vis)
-    u_vis.name = "u"
-    p_h = fem.Function(Q)
-    p_h.name = "p"
-    pbar_h = fem.Function(Qbar)
-    pbar_h.name = "pbar"
-
-    u_file = io.VTXWriter(msh.comm, "u.bp", [u_vis._cpp_object])
-    p_file = io.VTXWriter(msh.comm, "p.bp", [p_h._cpp_object])
-    ubar_file = io.VTXWriter(msh.comm, "ubar.bp", [ubar_n._cpp_object])
-    pbar_file = io.VTXWriter(msh.comm, "pbar.bp", [pbar_h._cpp_object])
-
-    u_file.write(0.0)
-    p_file.write(0.0)
-    ubar_file.write(0.0)
-    pbar_file.write(0.0)
-
-    u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    p_offset = u_offset + \
-        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-    ubar_offset = \
-        p_offset + Vbar.dofmap.index_map.size_local * \
-        Vbar.dofmap.index_map_bs
+    # Set up files for visualisation
+    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+                 for (file_name, func)
+                 in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+                 ("pbar.bp", pbar_h)]]
 
     t = 0.0
+    for vis_file in vis_files:
+        vis_file.write(t)
     for n in range(num_time_steps):
-        t += delta_t.value
+        t += delta_t
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
@@ -265,10 +296,11 @@ def solve(solver_type, k, nu, num_time_steps,
 
         u_vis.interpolate(u_n)
 
-        u_file.write(t)
-        p_file.write(t)
-        ubar_file.write(t)
-        pbar_file.write(t)
+        for vis_file in vis_files:
+            vis_file.write(t)
+
+    for vis_file in vis_files:
+        vis_file.close()
 
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
