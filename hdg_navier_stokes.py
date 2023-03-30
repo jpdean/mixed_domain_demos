@@ -68,28 +68,11 @@ def create_function_spaces(msh, facet_mesh, scheme, k):
     return V, Q, Vbar, Qbar
 
 
-def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
-           boundaries, f, delta_t, nu):
+def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
+                 entity_map, solver_type, boundary_conditions,
+                 boundaries, mt, f, facet_mesh, u_n, ubar_n):
     tdim = msh.topology.dim
     fdim = tdim - 1
-
-
-    facet_mesh, entity_map = create_facet_mesh(msh)
-
-    V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
-
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    p = ufl.TrialFunction(Q)
-    q = ufl.TestFunction(Q)
-    ubar = ufl.TrialFunction(Vbar)
-    vbar = ufl.TestFunction(Vbar)
-    pbar = ufl.TrialFunction(Qbar)
-    qbar = ufl.TestFunction(Qbar)
-
-    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
-    n = ufl.FacetNormal(msh)
-    gamma = 6.0 * k**2 / h
 
     all_facets_tag = 0
     all_facets = []
@@ -112,11 +95,23 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
     inv_entity_map = np.full_like(entity_map, -1)
     for i, facet in enumerate(entity_map):
         inv_entity_map[facet] = i
+
     entity_maps = {facet_mesh: inv_entity_map}
 
-    u_n = fem.Function(V)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    p = ufl.TrialFunction(Q)
+    q = ufl.TestFunction(Q)
+    ubar = ufl.TrialFunction(Vbar)
+    vbar = ufl.TestFunction(Vbar)
+    pbar = ufl.TrialFunction(Qbar)
+    qbar = ufl.TestFunction(Qbar)
+
+    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(msh)
+    gamma = 6.0 * k**2 / h
+
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
-    ubar_n = fem.Function(Vbar)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
@@ -202,6 +197,25 @@ def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
          [a_20, None, a_22, a_23],
          [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
+
+    return a, L, bcs
+
+
+def set_up(msh, scheme, mt, k, solver_type, boundary_conditions,
+           boundaries, f, delta_t, nu):
+    tdim = msh.topology.dim
+
+    facet_mesh, entity_map = create_facet_mesh(msh)
+
+    V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
+
+    u_n = fem.Function(V)
+    ubar_n = fem.Function(Vbar)
+
+    a, L, bcs = create_forms(
+        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
+        entity_map, solver_type, boundary_conditions,
+        boundaries, mt, f, facet_mesh, u_n, ubar_n)
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
