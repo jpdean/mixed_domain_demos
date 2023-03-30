@@ -1,13 +1,12 @@
 # TODO This demo needs tidying and simplifying
 
-from ufl import SpatialCoordinate
 import hdg_navier_stokes
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
 import numpy as np
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
-                 inner, grad, dx, dS, avg, outer, div, conditional,
+                 inner, grad, dx, avg, div, conditional,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
@@ -190,6 +189,7 @@ boundary_conditions = {"bottom": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "left": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
 
+# Set up fluid solver
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, facet_entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
 V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
@@ -217,6 +217,7 @@ eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 # Buoyancy force
 f = - eps * rho * T_n * g
 
+# Create forms for fluid solver
 a, L, bcs = hdg_navier_stokes.create_forms(
         V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
         facet_entity_map, solver_type, boundary_conditions,
