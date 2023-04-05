@@ -373,8 +373,11 @@ lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 # Fluid velocity at current time step
 u_h = u_n.copy()
 
+# Jump in kappa at interface dealt with using approach in DiPietro
+# p. 150 sec 4.5
 # Kappa harmonic mean
 kappa_hm = 2 * kappa_f * kappa_s / (kappa_f + kappa_s)
+# Weights for average operator
 kappa_w_f = kappa_s / (kappa_f + kappa_s)
 kappa_w_s = kappa_f / (kappa_f + kappa_s)
 
