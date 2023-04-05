@@ -159,7 +159,8 @@ rho = 1.204  # Fluid density
 g = as_vector((0.0, -9.81))
 eps = 3.43e-3  # Thermal expansion coefficient
 f_T = 10e6  # Thermal source
-kappa = 0.02514  # Thermal conductivity
+kappa_f = 0.02514  # Thermal conductivity of fluid
+kappa_s = 83.5  # Thermal conductivity of solid
 rho_s = 7860  # Solid density
 c_s = 462  # Solid specific heat
 c_f = 1007  # Fluid specific heat
@@ -266,7 +267,8 @@ T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
 alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
 gamma_int = fem.Constant(msh, PETSc.ScalarType(gamma_int))
-kappa = fem.Constant(msh, PETSc.ScalarType(kappa))
+kappa_f = fem.Constant(msh, PETSc.ScalarType(kappa_f))
+kappa_s = fem.Constant(msh, PETSc.ScalarType(kappa_s))
 rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
 c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
 c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
@@ -371,6 +373,14 @@ lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 # Fluid velocity at current time step
 u_h = u_n.copy()
 
+# Jump in kappa at interface dealt with using approach in DiPietro
+# p. 150 sec 4.5
+# Kappa harmonic mean
+kappa_hm = 2 * kappa_f * kappa_s / (kappa_f + kappa_s)
+# Weights for average operator
+kappa_w_f = kappa_s / (kappa_f + kappa_s)
+kappa_w_s = kappa_f / (kappa_f + kappa_s)
+
 # Define forms for the thermal problem
 a_T_00 = inner(rho * c_f * T / delta_t, w) * dx_T(volume_id["fluid"]) + \
     rho * c_f * (- inner(u_h * T, grad(w)) * dx_T(volume_id["fluid"]) +
@@ -378,39 +388,41 @@ a_T_00 = inner(rho * c_f * T / delta_t, w) * dx_T(volume_id["fluid"]) + \
                        lmbda_T("-") * dot(u_h("-"), n_T("-")) * T("-"),
                        jump_T(w)) * dS_T(fluid_int_facets) +
                  inner(lmbda_T * dot(u_h, n_T) * T, w) * ds_T) + \
-    kappa * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
-             inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
-             inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
-             (alpha / avg(h_T)) * inner(
+    kappa_f * (inner(grad(T), grad(w)) * dx_T(volume_id["fluid"]) -
+               inner(avg(grad(T)), jump_T(w, n_T)) * dS_T(fluid_int_facets) -
+               inner(jump_T(T, n_T), avg(grad(w))) * dS_T(fluid_int_facets) +
+               (alpha / avg(h_T)) * inner(
         jump_T(T, n_T), jump_T(w, n_T)) * dS_T(fluid_int_facets)) \
-    + kappa * (gamma_int / avg(h_T) * inner(
-        T("+"), w("+")) * dS_T(boundary_id["obstacle"])
-    - inner(1 / 2 * dot(grad(T("+")), n_T("+")),
+    + kappa_hm * gamma_int / avg(h_T) * inner(
+        T("+"), w("+")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_f * kappa_w_f * (
+    - inner(dot(grad(T("+")), n_T("+")),
             w("+")) * dS_T(boundary_id["obstacle"])
-    - inner(1 / 2 * dot(grad(w("+")), n_T("+")),
+    - inner(dot(grad(w("+")), n_T("+")),
             T("+")) * dS_T(boundary_id["obstacle"]))
 
-a_T_01 = kappa * (- gamma_int / avg(h_T) * inner(
-    T_s("-"), w("+")) * dS_T(boundary_id["obstacle"])
-    + inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
-            w("+")) * dS_T(boundary_id["obstacle"])
-    + inner(1 / 2 * dot(grad(w("+")), n_T("+")),
-            T_s("-")) * dS_T(boundary_id["obstacle"]))
+a_T_01 = - kappa_hm * gamma_int / avg(h_T) * inner(
+    T_s("-"), w("+")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_s * kappa_w_s * inner(dot(grad(T_s("-")), n_T("-")),
+                                  w("+")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_f * kappa_w_f * inner(dot(grad(w("+")), n_T("+")),
+                                  T_s("-")) * dS_T(boundary_id["obstacle"])
 
-a_T_10 = kappa * (- gamma_int / avg(h_T) * inner(
-    T("+"), w_s("-")) * dS_T(boundary_id["obstacle"])
-    + inner(1 / 2 * dot(grad(T("+")), n_T("+")),
-            w_s("-")) * dS_T(boundary_id["obstacle"])
-    + inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
-            T("+")) * dS_T(boundary_id["obstacle"]))
+a_T_10 = - kappa_hm * gamma_int / avg(h_T) * inner(
+    T("+"), w_s("-")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_f * kappa_w_f * inner(dot(grad(T("+")), n_T("+")),
+                                  w_s("-")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_s * kappa_w_s * inner(dot(grad(w_s("-")), n_T("-")),
+                                  T("+")) * dS_T(boundary_id["obstacle"])
 
 a_T_11 = inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
-    + kappa * (inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
-               + gamma_int / avg(h_T) * inner(
-        T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"])
-    - inner(1 / 2 * dot(grad(T_s("-")), n_T("-")),
+    + kappa_s * inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"]) \
+    + kappa_hm * gamma_int / avg(h_T) * inner(
+    T_s("-"), w_s("-")) * dS_T(boundary_id["obstacle"]) \
+    + kappa_s * kappa_w_s * (
+    - inner(dot(grad(T_s("-")), n_T("-")),
             w_s("-")) * dS_T(boundary_id["obstacle"])
-    - inner(1 / 2 * dot(grad(w_s("-")), n_T("-")),
+    - inner(dot(grad(w_s("-")), n_T("-")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
 L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
@@ -419,13 +431,13 @@ L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
 for bc in dirichlet_bcs_T:
     T_D = fem.Function(Q)
     T_D.interpolate(bc[1])
-    a_T_00 += kappa * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
-                       inner(grad(w), T * n_T) * ds_T(bc[0]) +
-                       (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
+    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
+                         inner(grad(w), T * n_T) * ds_T(bc[0]) +
+                         (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
     L_T_0 += - rho * c_f * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D,
                                  w) * ds_T(bc[0]) + \
-        kappa * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
-                 (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
+        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
+                   (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
