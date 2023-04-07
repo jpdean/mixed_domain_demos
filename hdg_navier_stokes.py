@@ -167,11 +167,13 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
     bcs = []
+    bc_funcs = []
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
         bc_type, bc_expr = bc
         bc_func = fem.Function(Vbar)
         bc_func.interpolate(bc_expr)
+        bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
             facets = inv_entity_map[mt.indices[mt.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
@@ -200,7 +202,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
          [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
-    return a, L, bcs
+    return a, L, bcs, bc_funcs
 
 
 def compute_offsets(V, Q, Vbar):
@@ -224,7 +226,7 @@ def solve(solver_type, k, nu, num_time_steps,
     u_n = fem.Function(V)
     ubar_n = fem.Function(Vbar)
 
-    a, L, bcs = create_forms(
+    a, L, bcs, bc_funcs = create_forms(
         V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         entity_map, solver_type, boundary_conditions,
         boundaries, mt, f, facet_mesh, u_n, ubar_n)
@@ -273,6 +275,10 @@ def solve(solver_type, k, nu, num_time_steps,
     for n in range(num_time_steps):
         t += delta_t
         par_print(f"t = {t}")
+
+        for bc_func, bc_expr in bc_funcs:
+            bc_expr.t = t
+            bc_func.interpolate(bc_expr)
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
@@ -629,30 +635,29 @@ class TaylorGreen(Problem):
         boundaries = {"boundary": 1}
         return msh, mt, boundaries
 
-    def u_e(self, x, module=ufl):
-        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+    # def u_e(self, x, module=ufl):
+    #     u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+    #     u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
 
-        if module == ufl:
-            return ufl.as_vector((u_x, u_y))
-        else:
-            assert module == np
-            return np.vstack((u_x, u_y))
+    #     if module == ufl:
+    #         return ufl.as_vector((u_x, u_y))
+    #     else:
+    #         assert module == np
+    #         return np.vstack((u_x, u_y))
 
-    def p_e(self, x, module=ufl):
-        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-        # return x[0] * (1 - x[0])
+    # def p_e(self, x, module=ufl):
+    #     return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+    #     # return x[0] * (1 - x[0])
 
     def boundary_conditions(self):
-        def u_bc(x): return self.u_e(x, module=np)
+        u_bc = TimeDependentExpression(
+            lambda x, t: np.vstack((np.sin(t) * np.ones_like(x[0]),
+                                    np.zeros_like(x[0]))))
         return {"boundary": (BCType.Dirichlet, u_bc)}
 
-    def f(self, msh):
-        x = ufl.SpatialCoordinate(msh)
-        f = - nu * div(grad(self.u_e(x))) + grad(self.p_e(x))
-        if solver_type == SolverType.NAVIER_STOKES:
-            f += div(outer(self.u_e(x), self.u_e(x)))
-        return f
+    def f(self):
+        # FIXME Do properly
+        return ufl.as_vector((0.0, 1e-16))
 
 
 # TODO Remove duplicate code
@@ -852,10 +857,10 @@ if __name__ == "__main__":
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Square()
+    problem = TaylorGreen()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
-    f = problem.f(msh)
+    f = problem.f()
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
