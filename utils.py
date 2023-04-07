@@ -151,3 +151,14 @@ def create_trap_mesh(comm, n, corners, offset_scale=0.25,
     msh = mesh.create_mesh(comm, cells, x, ufl_mesh, partitioner=partitioner)
 
     return msh
+
+
+class TimeDependentExpression():
+    """Simple class to represent time dependent functions"""
+
+    def __init__(self, expression):
+        self.t = 0
+        self.expression = expression
+
+    def __call__(self, x):
+        return self.expression(x, self.t)

@@ -6,7 +6,8 @@ import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
-from utils import norm_L2, domain_average, normal_jump_error
+from utils import (norm_L2, domain_average, normal_jump_error,
+                   TimeDependentExpression)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
@@ -610,6 +611,50 @@ class Square(Problem):
         return f
 
 
+class TaylorGreen(Problem):
+    def create_mesh(self, h, cell_type):
+        comm = MPI.COMM_WORLD
+        n = round(1 / h)
+        msh = mesh.create_unit_square(
+            comm, n, n, cell_type, mesh.GhostMode.none)
+
+        fdim = msh.topology.dim - 1
+        boundary_facets = mesh.locate_entities_boundary(
+            msh, fdim,
+            lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
+            np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+        values = np.ones_like(boundary_facets, dtype=np.intc)
+        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+
+        boundaries = {"boundary": 1}
+        return msh, mt, boundaries
+
+    def u_e(self, x, module=ufl):
+        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
+
+    def p_e(self, x, module=ufl):
+        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        # return x[0] * (1 - x[0])
+
+    def boundary_conditions(self):
+        def u_bc(x): return self.u_e(x, module=np)
+        return {"boundary": (BCType.Dirichlet, u_bc)}
+
+    def f(self, msh):
+        x = ufl.SpatialCoordinate(msh)
+        f = - nu * div(grad(self.u_e(x))) + grad(self.p_e(x))
+        if solver_type == SolverType.NAVIER_STOKES:
+            f += div(outer(self.u_e(x), self.u_e(x)))
+        return f
+
+
 # TODO Remove duplicate code
 class Kovasznay(Problem):
     def create_mesh(self, h, cell_type):
@@ -799,11 +844,11 @@ if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 16
-    k = 2
+    k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
     num_time_steps = 25
-    delta_t = 200
+    delta_t = 10 / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
