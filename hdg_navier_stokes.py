@@ -86,7 +86,8 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         fem.IntegralType.exterior_facet, mt._cpp_object)
     dx_c = ufl.Measure("dx", domain=msh)
     # FIXME Figure out why this is being estimated wrong for DRW
-    quad_deg = k**2
+    # NOTE k**2 works on affine meshes
+    quad_deg = (k + 1)**2
     ds_c = ufl.Measure(
         "ds", subdomain_data=facet_integration_entities, domain=msh,
         metadata={"quadrature_degree": quad_deg})
