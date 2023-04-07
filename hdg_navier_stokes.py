@@ -613,14 +613,20 @@ class Kovasznay(Problem):
     def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
-        msh = mesh.create_unit_square(
-            comm, n, n, cell_type, mesh.GhostMode.none)
+
+        point_0 = (0.0, -0.5)
+        point_1 = (1, 1.5)
+        msh = mesh.create_rectangle(
+            comm, (point_0, point_1), (n, 2 * n),
+            cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
             msh, fdim,
-            lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
-            np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+            lambda x: np.isclose(x[0], point_0[0]) |
+            np.isclose(x[0], point_1[0]) |
+            np.isclose(x[1], point_0[1]) |
+            np.isclose(x[1], point_1[1]))
         values = np.ones_like(boundary_facets, dtype=np.intc)
         mt = mesh.meshtags(msh, fdim, boundary_facets, values)
 
