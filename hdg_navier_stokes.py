@@ -271,6 +271,7 @@ def solve(solver_type, k, nu, num_time_steps,
         vis_file.write(t)
     for n in range(num_time_steps):
         t += delta_t
+        par_print(f"t = {t}")
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
