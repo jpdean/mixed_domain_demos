@@ -281,8 +281,9 @@ def solve(solver_type, k, nu, num_time_steps,
         par_print(f"t = {t}")
 
         for bc_func, bc_expr in bc_funcs:
-            bc_expr.t = t
-            bc_func.interpolate(bc_expr)
+            if isinstance(bc_expr, TimeDependentExpression):
+                bc_expr.t = t
+                bc_func.interpolate(bc_expr)
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
@@ -619,6 +620,9 @@ class Square(Problem):
         if solver_type == SolverType.NAVIER_STOKES:
             f += div(outer(self.u_e(x), self.u_e(x)))
         return f
+
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
 
 
 class TaylorGreen(Problem):
