@@ -1,3 +1,5 @@
+# FIXME This demo needs tidying
+
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
@@ -6,7 +8,8 @@ import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
-from utils import norm_L2, domain_average, normal_jump_error
+from utils import (norm_L2, domain_average, normal_jump_error,
+                   TimeDependentExpression)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
@@ -166,11 +169,13 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
     bcs = []
+    bc_funcs = []
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
         bc_type, bc_expr = bc
         bc_func = fem.Function(Vbar)
         bc_func.interpolate(bc_expr)
+        bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
             facets = inv_entity_map[mt.indices[mt.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
@@ -199,7 +204,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
          [a_30, None, a_32, None]]
     L = [L_0, L_1, L_2, L_3]
 
-    return a, L, bcs
+    return a, L, bcs, bc_funcs
 
 
 def compute_offsets(V, Q, Vbar):
@@ -214,16 +219,18 @@ def compute_offsets(V, Q, Vbar):
 
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_e=None,
+          boundary_conditions, f, u_i_expr, u_e=None,
           p_e=None):
     facet_mesh, entity_map = create_facet_mesh(msh)
 
     V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
 
     u_n = fem.Function(V)
+    u_n.interpolate(u_i_expr)
     ubar_n = fem.Function(Vbar)
+    ubar_n.interpolate(u_i_expr)
 
-    a, L, bcs = create_forms(
+    a, L, bcs, bc_funcs = create_forms(
         V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         entity_map, solver_type, boundary_conditions,
         boundaries, mt, f, facet_mesh, u_n, ubar_n)
@@ -240,6 +247,7 @@ def solve(solver_type, k, nu, num_time_steps,
         V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
+    u_vis.interpolate(u_n)
     p_h = fem.Function(Q)
     p_h.name = "p"
     pbar_h = fem.Function(Qbar)
@@ -272,6 +280,11 @@ def solve(solver_type, k, nu, num_time_steps,
     for n in range(num_time_steps):
         t += delta_t
         par_print(f"t = {t}")
+
+        for bc_func, bc_expr in bc_funcs:
+            if isinstance(bc_expr, TimeDependentExpression):
+                bc_expr.t = t
+                bc_func.interpolate(bc_expr)
 
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
@@ -445,6 +458,9 @@ class GaussianBump(Problem):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 class Cylinder(Problem):
     def create_mesh(self, h, cell_type):
@@ -562,6 +578,9 @@ class Cylinder(Problem):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 class Square(Problem):
     def create_mesh(self, h, cell_type):
@@ -608,6 +627,61 @@ class Square(Problem):
         if solver_type == SolverType.NAVIER_STOKES:
             f += div(outer(self.u_e(x), self.u_e(x)))
         return f
+
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
+
+class TaylorGreen(Problem):
+    def __init__(self, Re, t_end):
+        super().__init__()
+        self.Re = Re
+        self.t_end = t_end
+
+    def create_mesh(self, h, cell_type):
+        comm = MPI.COMM_WORLD
+        n = round(1 / h)
+        point_0 = (- np.pi / 2, - np.pi / 2)
+        point_1 = (np.pi / 2, np.pi / 2)
+        msh = mesh.create_rectangle(
+            comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none)
+
+        fdim = msh.topology.dim - 1
+        boundary_facets = mesh.locate_entities_boundary(
+            msh, fdim,
+            lambda x: np.isclose(x[0], point_0[0]) |
+            np.isclose(x[0], point_1[0]) |
+            np.isclose(x[1], point_0[1]) |
+            np.isclose(x[1], point_1[1]))
+        values = np.ones_like(boundary_facets, dtype=np.intc)
+        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+
+        boundaries = {"boundary": 1}
+        return msh, mt, boundaries
+
+    def u_expr(self, x, t, module):
+        return (- module.cos(x[0]) * module.sin(x[1]) *
+                module.exp(- 2 * t / self.Re),
+                module.sin(x[0]) * module.cos(x[1]) *
+                module.exp(- 2 * t / self.Re))
+
+    def u_e(self, x, module=ufl):
+        return ufl.as_vector(self.u_expr(x, self.t_end, ufl))
+
+    def p_e(self, x):
+        return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
+            - 4 * self.t_end / self.Re)
+
+    def boundary_conditions(self):
+        u_bc = TimeDependentExpression(
+            lambda x, t: np.vstack(self.u_expr(x, t, np)))
+        return {"boundary": (BCType.Dirichlet, u_bc)}
+
+    def u_i(self):
+        return lambda x: self.u_expr(x, t=0, module=np)
+
+    def f(self, msh):
+        return ufl.as_vector((0.0, 0.0))
 
 
 # TODO Remove duplicate code
@@ -662,6 +736,9 @@ class Kovasznay(Problem):
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
+
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
 
 
 class Wannier(Problem):
@@ -794,25 +871,30 @@ class Wannier(Problem):
             assert module == np
             return np.vstack((u_x, u_y))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 16
-    k = 2
+    k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 25
-    delta_t = 200
+    num_time_steps = 32
+    t_end = 1e4
+    delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
     problem = Square()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
+    u_i_expr = problem.u_i()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, problem.u_e,
+          boundary_conditions, f, u_i_expr, problem.u_e,
           problem.p_e)
