@@ -670,7 +670,6 @@ class TaylorGreen(Problem):
         return lambda x: self.u_expr(x, t=0, module=np)
 
     def f(self):
-        # FIXME Do properly
         return ufl.as_vector((0.0, 0.0))
 
 
