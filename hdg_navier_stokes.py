@@ -217,14 +217,16 @@ def compute_offsets(V, Q, Vbar):
 
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_e=None,
+          boundary_conditions, f, u_i_expr, u_e=None,
           p_e=None):
     facet_mesh, entity_map = create_facet_mesh(msh)
 
     V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
 
     u_n = fem.Function(V)
+    u_n.interpolate(u_i_expr)
     ubar_n = fem.Function(Vbar)
+    ubar_n.interpolate(u_i_expr)
 
     a, L, bcs, bc_funcs = create_forms(
         V, Q, Vbar, Qbar, msh, k, delta_t, nu,
@@ -621,14 +623,18 @@ class TaylorGreen(Problem):
     def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
-        msh = mesh.create_unit_square(
-            comm, n, n, cell_type, mesh.GhostMode.none)
+        point_0 = (- np.pi / 2, - np.pi / 2)
+        point_1 = (np.pi / 2, np.pi / 2)
+        msh = mesh.create_rectangle(
+            comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
             msh, fdim,
-            lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
-            np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+            lambda x: np.isclose(x[0], point_0[0]) |
+            np.isclose(x[0], point_1[0]) |
+            np.isclose(x[1], point_0[1]) |
+            np.isclose(x[1], point_1[1]))
         values = np.ones_like(boundary_facets, dtype=np.intc)
         mt = mesh.meshtags(msh, fdim, boundary_facets, values)
 
@@ -649,11 +655,18 @@ class TaylorGreen(Problem):
     #     return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
     #     # return x[0] * (1 - x[0])
 
-    def boundary_conditions(self):
+    def boundary_conditions(self, Re):
         u_bc = TimeDependentExpression(
-            lambda x, t: np.vstack((np.sin(t) * np.ones_like(x[0]),
-                                    np.zeros_like(x[0]))))
+            lambda x, t: np.vstack(
+                (- np.cos(x[0]) * np.sin(x[1]) * np.exp(- 2 * t / Re),
+                 np.sin(x[0]) * np.cos(x[1]) * np.exp(- 2 * t / Re))))
+        # u_bc = TimeDependentExpression(
+        #     lambda x, t: np.vstack((np.zeros_like(x[0]),
+        #                             np.sin(t) * np.ones_like(x[0]))))
         return {"boundary": (BCType.Dirichlet, u_bc)}
+
+    def u_i(self, Re):
+        return self.boundary_conditions(Re)["boundary"][1]
 
     def f(self):
         # FIXME Do properly
@@ -859,10 +872,11 @@ if __name__ == "__main__":
     comm = MPI.COMM_WORLD
     problem = TaylorGreen()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
-    boundary_conditions = problem.boundary_conditions()
+    boundary_conditions = problem.boundary_conditions(1 / nu)
+    u_i_expr = problem.u_i(1 / nu)
     f = problem.f()
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, problem.u_e,
+          boundary_conditions, f, u_i_expr, problem.u_e,
           problem.p_e)
