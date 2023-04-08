@@ -641,28 +641,27 @@ class TaylorGreen(Problem):
         boundaries = {"boundary": 1}
         return msh, mt, boundaries
 
-    # def u_e(self, x, module=ufl):
-    #     u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-    #     u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
+    def u_e(self, x):
+        # TODO Make class member vars
+        u_0 = self.u_0_expr(1000, x, 10)
+        u_1 = self.u_1_expr(1000, x, 10)
+        return ufl.as_vector((u_0, u_1))
 
-    #     if module == ufl:
-    #         return ufl.as_vector((u_x, u_y))
-    #     else:
-    #         assert module == np
-    #         return np.vstack((u_x, u_y))
+    def p_e(self, x):
+        return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
+            - 4 * 10 / 1000)
 
-    # def p_e(self, x, module=ufl):
-    #     return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-    #     # return x[0] * (1 - x[0])
+    def u_0_expr(self, Re, x, t, module=ufl):
+        return - module.cos(x[0]) * module.sin(x[1]) * module.exp(- 2 * t / Re)
+
+    def u_1_expr(self, Re, x, t, module=ufl):
+        return module.sin(x[0]) * module.cos(x[1]) * module.exp(- 2 * t / Re)
 
     def boundary_conditions(self, Re):
         u_bc = TimeDependentExpression(
             lambda x, t: np.vstack(
-                (- np.cos(x[0]) * np.sin(x[1]) * np.exp(- 2 * t / Re),
-                 np.sin(x[0]) * np.cos(x[1]) * np.exp(- 2 * t / Re))))
-        # u_bc = TimeDependentExpression(
-        #     lambda x, t: np.vstack((np.zeros_like(x[0]),
-        #                             np.sin(t) * np.ones_like(x[0]))))
+                (self.u_0_expr(Re, x, t, module=np),
+                 self.u_1_expr(Re, x, t, module=np))))
         return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def u_i(self, Re):
@@ -865,7 +864,7 @@ if __name__ == "__main__":
     k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 25
+    num_time_steps = 32
     delta_t = 10 / num_time_steps
     scheme = Scheme.DRW
 
