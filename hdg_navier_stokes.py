@@ -883,7 +883,7 @@ if __name__ == "__main__":
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
     num_time_steps = 32
-    t_end = 1
+    t_end = 1e4
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
