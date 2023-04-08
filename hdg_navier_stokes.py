@@ -457,6 +457,9 @@ class GaussianBump(Problem):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 class Cylinder(Problem):
     def create_mesh(self, h, cell_type):
@@ -574,6 +577,9 @@ class Cylinder(Problem):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 class Square(Problem):
     def create_mesh(self, h, cell_type):
@@ -673,7 +679,7 @@ class TaylorGreen(Problem):
     def u_i(self):
         return lambda x: self.u_expr(x, t=0, module=np)
 
-    def f(self):
+    def f(self, msh):
         return ufl.as_vector((0.0, 0.0))
 
 
@@ -729,6 +735,9 @@ class Kovasznay(Problem):
     def f(self, msh):
         return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                   PETSc.ScalarType(0.0)))
+
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
 
 
 class Wannier(Problem):
@@ -861,25 +870,28 @@ class Wannier(Problem):
             assert module == np
             return np.vstack((u_x, u_y))
 
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:2])
+
 
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 16
+    h = 1 / 8
     k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
     num_time_steps = 32
-    t_end = 10
-    delta_t = 10 / num_time_steps
+    t_end = 1
+    delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = TaylorGreen(1 / nu, t_end)
+    problem = Wannier()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
-    f = problem.f()
+    f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
