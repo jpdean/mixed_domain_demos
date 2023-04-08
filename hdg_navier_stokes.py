@@ -648,36 +648,30 @@ class TaylorGreen(Problem):
         boundaries = {"boundary": 1}
         return msh, mt, boundaries
 
-    def u_e(self, x):
-        u_0 = self.u_0_expr(x, self.t_end)
-        u_1 = self.u_1_expr(x, self.t_end)
-        return ufl.as_vector((u_0, u_1))
+    def u_expr(self, x, t, module):
+        return (- module.cos(x[0]) * module.sin(x[1]) *
+                module.exp(- 2 * t / self.Re),
+                module.sin(x[0]) * module.cos(x[1]) *
+                module.exp(- 2 * t / self.Re))
+
+    def u_e(self, x, module=ufl):
+        return ufl.as_vector(self.u_expr(x, self.t_end, ufl))
 
     def p_e(self, x):
         return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
             - 4 * self.t_end / self.Re)
 
-    def u_0_expr(self, x, t, module=ufl):
-        return - module.cos(x[0]) * module.sin(x[1]) * \
-            module.exp(- 2 * t / self.Re)
-
-    def u_1_expr(self, x, t, module=ufl):
-        return module.sin(x[0]) * module.cos(x[1]) * \
-            module.exp(- 2 * t / self.Re)
-
     def boundary_conditions(self):
         u_bc = TimeDependentExpression(
-            lambda x, t: np.vstack(
-                (self.u_0_expr(x, t, module=np),
-                 self.u_1_expr(x, t, module=np))))
+            lambda x, t: np.vstack(self.u_expr(x, t, np)))
         return {"boundary": (BCType.Dirichlet, u_bc)}
 
     def u_i(self):
-        return self.boundary_conditions()["boundary"][1]
+        return lambda x: self.u_expr(x, t=0, module=np)
 
     def f(self):
         # FIXME Do properly
-        return ufl.as_vector((0.0, 1e-16))
+        return ufl.as_vector((0.0, 0.0))
 
 
 # TODO Remove duplicate code
