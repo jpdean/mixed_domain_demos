@@ -1,3 +1,5 @@
+# FIXME This demo needs tidying
+
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
@@ -620,6 +622,11 @@ class Square(Problem):
 
 
 class TaylorGreen(Problem):
+    def __init__(self, Re, t_end):
+        super().__init__()
+        self.Re = Re
+        self.t_end = t_end
+
     def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
@@ -642,30 +649,31 @@ class TaylorGreen(Problem):
         return msh, mt, boundaries
 
     def u_e(self, x):
-        # TODO Make class member vars
-        u_0 = self.u_0_expr(1000, x, 10)
-        u_1 = self.u_1_expr(1000, x, 10)
+        u_0 = self.u_0_expr(x, self.t_end)
+        u_1 = self.u_1_expr(x, self.t_end)
         return ufl.as_vector((u_0, u_1))
 
     def p_e(self, x):
         return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
-            - 4 * 10 / 1000)
+            - 4 * self.t_end / self.Re)
 
-    def u_0_expr(self, Re, x, t, module=ufl):
-        return - module.cos(x[0]) * module.sin(x[1]) * module.exp(- 2 * t / Re)
+    def u_0_expr(self, x, t, module=ufl):
+        return - module.cos(x[0]) * module.sin(x[1]) * \
+            module.exp(- 2 * t / self.Re)
 
-    def u_1_expr(self, Re, x, t, module=ufl):
-        return module.sin(x[0]) * module.cos(x[1]) * module.exp(- 2 * t / Re)
+    def u_1_expr(self, x, t, module=ufl):
+        return module.sin(x[0]) * module.cos(x[1]) * \
+            module.exp(- 2 * t / self.Re)
 
-    def boundary_conditions(self, Re):
+    def boundary_conditions(self):
         u_bc = TimeDependentExpression(
             lambda x, t: np.vstack(
-                (self.u_0_expr(Re, x, t, module=np),
-                 self.u_1_expr(Re, x, t, module=np))))
+                (self.u_0_expr(x, t, module=np),
+                 self.u_1_expr(x, t, module=np))))
         return {"boundary": (BCType.Dirichlet, u_bc)}
 
-    def u_i(self, Re):
-        return self.boundary_conditions(Re)["boundary"][1]
+    def u_i(self):
+        return self.boundary_conditions()["boundary"][1]
 
     def f(self):
         # FIXME Do properly
@@ -865,14 +873,15 @@ if __name__ == "__main__":
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
     num_time_steps = 32
+    t_end = 10
     delta_t = 10 / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = TaylorGreen()
+    problem = TaylorGreen(1 / nu, t_end)
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
-    boundary_conditions = problem.boundary_conditions(1 / nu)
-    u_i_expr = problem.u_i(1 / nu)
+    boundary_conditions = problem.boundary_conditions()
+    u_i_expr = problem.u_i()
     f = problem.f()
 
     solve(solver_type, k, nu, num_time_steps,
