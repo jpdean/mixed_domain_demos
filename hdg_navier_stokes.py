@@ -247,6 +247,7 @@ def solve(solver_type, k, nu, num_time_steps,
         V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
+    u_vis.interpolate(u_n)
     p_h = fem.Function(Q)
     p_h.name = "p"
     pbar_h = fem.Function(Qbar)
@@ -877,7 +878,7 @@ class Wannier(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 8
+    h = 1 / 16
     k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
@@ -887,7 +888,7 @@ if __name__ == "__main__":
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Wannier()
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
