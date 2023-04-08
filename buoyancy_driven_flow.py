@@ -219,7 +219,7 @@ eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 f = - eps * rho * T_n * g
 
 # Create forms for fluid solver
-a, L, bcs = hdg_navier_stokes.create_forms(
+a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
     facet_entity_map, solver_type, boundary_conditions,
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
