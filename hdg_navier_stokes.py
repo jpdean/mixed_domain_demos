@@ -467,8 +467,6 @@ class Cylinder(Problem):
     def create_mesh(self, h, cell_type):
         # TODO Add cell type
 
-        h_fac = 1 / 3
-
         comm = MPI.COMM_WORLD
         gdim = 2
 
@@ -490,8 +488,6 @@ class Cylinder(Problem):
             r = 0.05
             r_s = 0.15
             order = 1
-
-            h = 0.05
 
             rectangle_points = [
                 factory.addPoint(0.0, 0.0, 0.0, h),
