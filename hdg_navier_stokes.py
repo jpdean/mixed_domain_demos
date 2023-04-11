@@ -591,10 +591,10 @@ class Cylinder(Problem):
                 1, circle_lines, boundary_id["obstacle"])
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
-            # if cell_type == mesh.CellType.quadrilateral:
-            gmsh.option.setNumber("Mesh.RecombineAll", 1)
-            gmsh.option.setNumber("Mesh.Algorithm", 8)
-            # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            if cell_type == mesh.CellType.quadrilateral:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
             gmsh.model.mesh.generate(2)
             gmsh.model.mesh.setOrder(order)
 
@@ -923,17 +923,17 @@ class Wannier(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 20
+    h = 1 / 16
     k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
     num_time_steps = 32
-    t_end = 1
+    t_end = 1e4
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Cylinder()
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
