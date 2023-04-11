@@ -500,11 +500,13 @@ class Cylinder(Problem):
                       7 * np.pi / 4, 9 * np.pi / 4]
             circle_points = [factory.addPoint(c[0], c[1], 0.0)] + \
                 [factory.addPoint(c[0] + r * np.cos(theta),
-                                  c[1] + r * np.sin(theta), 0.0) for theta in thetas]
+                                  c[1] + r * np.sin(theta), 0.0)
+                 for theta in thetas]
 
             square_points = [
                 factory.addPoint(c[0] + r_s * np.cos(theta),
-                                 c[1] + r_s * np.sin(theta), 0.0) for theta in thetas]
+                                 c[1] + r_s * np.sin(theta), 0.0)
+                for theta in thetas]
 
             rectangle_lines = [
                 factory.addLine(rectangle_points[0], rectangle_points[1]),
@@ -535,26 +537,18 @@ class Cylinder(Problem):
                 for i in range(4)]
 
             boundary_layer_lines = [
-                [square_lines[0],
-                 - bl_diag_lines[1],
-                 - circle_lines[0],
-                 bl_diag_lines[0]],
-                [square_lines[1],
-                 - bl_diag_lines[2],
-                 - circle_lines[1],
-                 bl_diag_lines[1]],
-                [square_lines[2],
-                 - bl_diag_lines[3],
-                 - circle_lines[2],
-                 bl_diag_lines[2]],
-                [square_lines[3],
-                 - bl_diag_lines[0],
-                 - circle_lines[3],
-                 bl_diag_lines[3]]
+                [square_lines[0], - bl_diag_lines[1],
+                 - circle_lines[0], bl_diag_lines[0]],
+                [square_lines[1], - bl_diag_lines[2],
+                 - circle_lines[1], bl_diag_lines[1]],
+                [square_lines[2], - bl_diag_lines[3],
+                 - circle_lines[2], bl_diag_lines[2]],
+                [square_lines[3], - bl_diag_lines[0],
+                 - circle_lines[3], bl_diag_lines[3]]
             ]
 
             rectangle_curve = factory.addCurveLoop(rectangle_lines)
-            circle_curve = factory.addCurveLoop(circle_lines)
+            factory.addCurveLoop(circle_lines)
             square_curve = factory.addCurveLoop(square_lines)
             boundary_layer_curves = [
                 factory.addCurveLoop(bll) for bll in boundary_layer_lines]
@@ -562,7 +556,8 @@ class Cylinder(Problem):
             outer_surface = factory.addPlaneSurface(
                 [rectangle_curve, square_curve])
             boundary_layer_surfaces = [
-                factory.addPlaneSurface([blc]) for blc in boundary_layer_curves]
+                factory.addPlaneSurface([blc])
+                for blc in boundary_layer_curves]
 
             num_bl_eles = round(0.5 * 1 / h)
             progression_coeff = 1.2
@@ -570,11 +565,13 @@ class Cylinder(Problem):
                 gmsh.model.geo.mesh.setTransfiniteCurve(
                     boundary_layer_lines[i][0], num_bl_eles)
                 gmsh.model.geo.mesh.setTransfiniteCurve(
-                    boundary_layer_lines[i][1], num_bl_eles, coef=progression_coeff)
+                    boundary_layer_lines[i][1], num_bl_eles,
+                    coef=progression_coeff)
                 gmsh.model.geo.mesh.setTransfiniteCurve(
                     boundary_layer_lines[i][2], num_bl_eles)
                 gmsh.model.geo.mesh.setTransfiniteCurve(
-                    boundary_layer_lines[i][3], num_bl_eles, coef=progression_coeff)
+                    boundary_layer_lines[i][3], num_bl_eles,
+                    coef=progression_coeff)
                 gmsh.model.geo.mesh.setTransfiniteSurface(
                     boundary_layer_surfaces[i])
 
