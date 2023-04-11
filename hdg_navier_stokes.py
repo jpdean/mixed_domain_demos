@@ -578,7 +578,8 @@ class Cylinder(Problem):
             gmsh.model.geo.synchronize()
 
             gmsh.model.addPhysicalGroup(
-                2, [outer_surface] + boundary_layer_surfaces, volume_id["fluid"])
+                2, [outer_surface] + boundary_layer_surfaces,
+                volume_id["fluid"])
 
             gmsh.model.addPhysicalGroup(
                 1, [rectangle_lines[0], rectangle_lines[2]],
