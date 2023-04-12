@@ -113,7 +113,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 10.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 100.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -616,8 +616,8 @@ class Cylinder(Problem):
                     boundary_id["obstacle"])
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
-            if cell_type == mesh.CellType.quadrilateral \
-                or cell_type == mesh.CellType.hexahedron:
+            if cell_type == mesh.CellType.quadrilateral  \
+                or cell_type ==  mesh.CellType.hexahedron:
                 gmsh.option.setNumber("Mesh.RecombineAll", 1)
                 gmsh.option.setNumber("Mesh.Algorithm", 8)
                 # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
@@ -965,9 +965,6 @@ class Wannier(Problem):
         return lambda x: np.zeros_like(x[:2])
 
 
-
-
-
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
@@ -975,8 +972,8 @@ if __name__ == "__main__":
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
-    num_time_steps = 1
-    t_end = 0.1
+    num_time_steps = 20
+    t_end = 10
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
