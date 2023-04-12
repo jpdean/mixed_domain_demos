@@ -162,8 +162,8 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    L_2 = inner(fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                   PETSc.ScalarType(0.0))),
+    L_2 = inner(
+        fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
@@ -629,38 +629,60 @@ class Cylinder(Problem):
 
 
 class Square(Problem):
+    def __init__(self, d=2):
+        super().__init__()
+        self.d = d
+
     def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
         n = round(1 / h)
-        msh = mesh.create_unit_square(
-            comm, n, n, cell_type, mesh.GhostMode.none)
+        if self.d == 2:
+            msh = mesh.create_unit_square(
+                comm, n, n, cell_type, mesh.GhostMode.none)
+
+            def boundary_marker(x):
+                return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
+                    np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+        else:
+            msh = mesh.create_unit_cube(
+                comm, n, n, n, cell_type, mesh.GhostMode.none)
+
+            def boundary_marker(x):
+                return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
+                    np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0) | \
+                    np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
 
         fdim = msh.topology.dim - 1
         boundary_facets = mesh.locate_entities_boundary(
-            msh, fdim,
-            lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) |
-            np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
+            msh, fdim, boundary_marker)
+        perm = np.argsort(boundary_facets)
         values = np.ones_like(boundary_facets, dtype=np.intc)
-        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+        mt = mesh.meshtags(
+            msh, fdim, boundary_facets[perm], values[perm])
 
         boundaries = {"boundary": 1}
         return msh, mt, boundaries
 
     def u_e(self, x, module=ufl):
-        u_x = module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-        u_y = module.cos(module.pi * x[0]) * module.cos(module.pi * x[1])
-        # u_x = x[0]**2 * (1 - x[0])**2 * \
-        # (2 * x[1] - 6 * x[1]**2 + 4 * x[1]**3)
-        # u_y = - x[1]**2 * (1 - x[1])**2 * \
-        # (2 * x[0] - 6 * x[0]**2 + 4 * x[0]**3)
+        if self.d == 2:
+            u = (module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
+                 module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]))
+        else:
+            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1]) - module.sin(module.pi * x[0]) * module.cos(module.pi * x[0]),
+                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]) -
+                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
+                 module.sin(module.pi * x[0]) * module.cos(module.pi * x[0]) - module.sin(module.pi * x[0]) * module.cos(module.pi * x[1]))
         if module == ufl:
-            return ufl.as_vector((u_x, u_y))
+            return ufl.as_vector(u)
         else:
             assert module == np
-            return np.vstack((u_x, u_y))
+            return np.vstack(u)
 
     def p_e(self, x, module=ufl):
-        return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        if self.d == 2:
+            return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        else:
+            return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
         # return x[0] * (1 - x[0])
 
     def boundary_conditions(self):
@@ -675,7 +697,7 @@ class Square(Problem):
         return f
 
     def u_i(self):
-        return lambda x: np.zeros_like(x[:2])
+        return lambda x: np.zeros_like(x[:self.d])
 
 
 class TaylorGreen(Problem):
@@ -924,17 +946,17 @@ class Wannier(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 16
-    k = 3
+    h = 1 / 8
+    k = 1
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 32
-    t_end = 1e4
+    num_time_steps = 10
+    t_end = 1e2
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Square()
+    problem = Square(d=2)
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
