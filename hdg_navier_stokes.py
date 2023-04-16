@@ -113,7 +113,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 100.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 6.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -162,9 +162,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    L_2 = inner(fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                   PETSc.ScalarType(0.0),
-                                   PETSc.ScalarType(0.0))),
+    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
@@ -465,7 +463,11 @@ class GaussianBump(Problem):
 
 
 class Cylinder(Problem):
-    def create_mesh(self, h, cell_type, gdim=2):
+    def __init__(self, d):
+        super().__init__()
+        self.d = d
+
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
 
         volume_id = {"fluid": 1}
@@ -480,7 +482,7 @@ class Cylinder(Problem):
             gmsh.model.add("model")
             factory = gmsh.model.geo
 
-            if gdim == 2:
+            if self.d == 2:
                 length = 2.2
                 c = (0.2, 0.2)
             else:
@@ -578,7 +580,7 @@ class Cylinder(Problem):
                     boundary_layer_surfaces[i])
 
             # FIXME Don't recombine for tets
-            if gdim == 3:
+            if self.d == 3:
                 extrue_surfs = [(2, surf) for surf in [
                     outer_surface] + boundary_layer_surfaces]
                 gmsh.model.geo.extrude(
@@ -586,7 +588,7 @@ class Cylinder(Problem):
 
             gmsh.model.geo.synchronize()
 
-            if gdim == 2:
+            if self.d == 2:
                 gmsh.model.addPhysicalGroup(
                     2, [outer_surface] + boundary_layer_surfaces,
                     volume_id["fluid"])
@@ -620,23 +622,23 @@ class Cylinder(Problem):
                     boundary_id["obstacle"])
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
-            if cell_type == mesh.CellType.quadrilateral  \
-                or cell_type ==  mesh.CellType.hexahedron:
+            if cell_type == mesh.CellType.quadrilateral \
+                    or cell_type == mesh.CellType.hexahedron:
                 gmsh.option.setNumber("Mesh.RecombineAll", 1)
                 gmsh.option.setNumber("Mesh.Algorithm", 8)
                 # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-            gmsh.model.mesh.generate(gdim)
+            gmsh.model.mesh.generate(self.d)
             gmsh.model.mesh.setOrder(order)
 
         partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
         msh, _, mt = gmshio.model_to_mesh(
-            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+            gmsh.model, comm, 0, gdim=self.d, partitioner=partitioner)
         gmsh.finalize()
 
         return msh, mt, boundary_id
 
-    def boundary_conditions(self, gdim=2):
-        if gdim == 2:
+    def boundary_conditions(self):
+        if self.d == 2:
             def inlet(x): return np.vstack(
                 ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
                  np.zeros_like(x[0])))
@@ -662,8 +664,8 @@ class Cylinder(Problem):
                 "wall": (BCType.Dirichlet, zero),
                 "obstacle": (BCType.Dirichlet, zero)}
 
-    def f(self, msh, gdim):
-        if gdim == 2:
+    def f(self, msh):
+        if self.d == 2:
             return fem.Constant(msh, (PETSc.ScalarType(0.0),
                                       PETSc.ScalarType(0.0)))
         else:
@@ -671,9 +673,9 @@ class Cylinder(Problem):
                                       PETSc.ScalarType(0.0),
                                       PETSc.ScalarType(0.0)))
 
-    def u_i(self, gdim):
+    def u_i(self):
         # FIXME Should be tdim
-        return lambda x: np.zeros_like(x[:gdim])
+        return lambda x: np.zeros_like(x[:self.d])
 
 
 class Square(Problem):
@@ -974,20 +976,19 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 20
     k = 1
-    cell_type = mesh.CellType.hexahedron
+    cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 20
-    t_end = 10
+    num_time_steps = 10
+    t_end = 1
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Cylinder()
-    gdim = 3
-    msh, mt, boundaries = problem.create_mesh(h, cell_type, gdim=gdim)
-    boundary_conditions = problem.boundary_conditions(gdim)
-    u_i_expr = problem.u_i(gdim)
-    f = problem.f(msh, gdim)
+    problem = Cylinder(d=2)
+    msh, mt, boundaries = problem.create_mesh(h, cell_type)
+    boundary_conditions = problem.boundary_conditions()
+    u_i_expr = problem.u_i()
+    f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
