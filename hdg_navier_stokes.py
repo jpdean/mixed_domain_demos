@@ -480,9 +480,13 @@ class Cylinder(Problem):
             gmsh.model.add("model")
             factory = gmsh.model.geo
 
-            length = 2.2
+            if gdim == 2:
+                length = 2.2
+                c = (0.2, 0.2)
+            else:
+                length = 2.5
+                c = (0.5, 0.2)
             height = 0.41
-            c = (0.2, 0.2)
             r = 0.05
             r_s = 0.15
             order = 1
