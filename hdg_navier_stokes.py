@@ -162,7 +162,8 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]),
+    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
+                                   for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
@@ -581,10 +582,14 @@ class Cylinder(Problem):
 
             # FIXME Don't recombine for tets
             if self.d == 3:
-                extrue_surfs = [(2, surf) for surf in [
+                if cell_type == mesh.CellType.tetrahedron:
+                    recombine = False
+                else:
+                    recombine = True
+                extrude_surfs = [(2, surf) for surf in [
                     outer_surface] + boundary_layer_surfaces]
                 gmsh.model.geo.extrude(
-                    extrue_surfs, 0, 0, 0.41, [8], recombine=True)
+                    extrude_surfs, 0, 0, 0.41, [8], recombine=recombine)
 
             gmsh.model.geo.synchronize()
 
@@ -665,13 +670,8 @@ class Cylinder(Problem):
                 "obstacle": (BCType.Dirichlet, zero)}
 
     def f(self, msh):
-        if self.d == 2:
-            return fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                      PETSc.ScalarType(0.0)))
-        else:
-            return fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                      PETSc.ScalarType(0.0),
-                                      PETSc.ScalarType(0.0)))
+        return fem.Constant(
+            msh, [PETSc.ScalarType(0.0) for i in range(self.d)])
 
     def u_i(self):
         # FIXME Should be tdim
