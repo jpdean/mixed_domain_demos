@@ -14,7 +14,7 @@ from utils import convert_facet_tags
 import sys
 
 
-def generate_mesh(comm, h=0.1, h_fac=1/3):
+def generate_mesh(comm, h=0.1):
     gmsh.initialize()
 
     volume_id = {"fluid": 1,
@@ -35,9 +35,8 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
         length = 1
         height = 2
         c = (0.5, 0.25)
-
-        o_w = 0.1
-        o_h = 0.025
+        r = 0.05
+        r_s = 0.15
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -46,14 +45,17 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             factory.addPoint(0.0, height, 0.0, h)
         ]
 
-        centre_point = factory.addPoint(c[0], c[1], 0.0, h * h_fac)
-        obstacle_points = [
-            factory.addPoint(c[0] + o_w / 2, c[1], 0.0, h * h_fac),
-            factory.addPoint(c[0], c[1] - o_w / 2, 0.0, h * h_fac),
-            factory.addPoint(c[0] - o_w / 2, c[1], 0.0, h * h_fac),
-            factory.addPoint(c[0] - o_w / 2, c[1] + o_h, 0.0, h * h_fac),
-            factory.addPoint(c[0] + o_w / 2, c[1] + o_h, 0.0, h * h_fac)
-        ]
+        thetas = [np.pi / 4, 3 * np.pi / 4, 5 * np.pi / 4,
+                  7 * np.pi / 4, 9 * np.pi / 4]
+        circle_points = [factory.addPoint(c[0], c[1], 0.0)] + \
+            [factory.addPoint(c[0] + r * np.cos(theta),
+                              c[1] + r * np.sin(theta), 0.0)
+                for theta in thetas]
+
+        square_points = [
+            factory.addPoint(c[0] + r_s * np.cos(theta),
+                             c[1] + r_s * np.sin(theta), 0.0)
+            for theta in thetas]
 
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
@@ -62,26 +64,71 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             factory.addLine(rectangle_points[3], rectangle_points[0])
         ]
 
-        obstacle_lines = [
+        circle_lines = [
             factory.addCircleArc(
-                obstacle_points[0], centre_point, obstacle_points[1]),
+                circle_points[1], circle_points[0], circle_points[2]),
             factory.addCircleArc(
-                obstacle_points[1], centre_point, obstacle_points[2]),
-            factory.addLine(obstacle_points[2], obstacle_points[3]),
-            factory.addLine(obstacle_points[3], obstacle_points[4]),
-            factory.addLine(obstacle_points[4], obstacle_points[0]),
+                circle_points[2], circle_points[0], circle_points[3]),
+            factory.addCircleArc(
+                circle_points[3], circle_points[0], circle_points[4]),
+            factory.addCircleArc(
+                circle_points[4], circle_points[0], circle_points[1])
+        ]
+
+        square_lines = [
+            factory.addLine(square_points[0], square_points[1]),
+            factory.addLine(square_points[1], square_points[2]),
+            factory.addLine(square_points[2], square_points[3]),
+            factory.addLine(square_points[3], square_points[0])]
+
+        bl_diag_lines = [
+            factory.addLine(circle_points[i + 1], square_points[i])
+            for i in range(4)]
+
+        boundary_layer_lines = [
+            [square_lines[0], - bl_diag_lines[1],
+                - circle_lines[0], bl_diag_lines[0]],
+            [square_lines[1], - bl_diag_lines[2],
+                - circle_lines[1], bl_diag_lines[1]],
+            [square_lines[2], - bl_diag_lines[3],
+                - circle_lines[2], bl_diag_lines[2]],
+            [square_lines[3], - bl_diag_lines[0],
+                - circle_lines[3], bl_diag_lines[3]]
         ]
 
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
-        circle_curve = factory.addCurveLoop(obstacle_lines)
+        circle_curve = factory.addCurveLoop(circle_lines)
+        square_curve = factory.addCurveLoop(square_lines)
+        boundary_layer_curves = [
+            factory.addCurveLoop(bll) for bll in boundary_layer_lines]
 
-        square_surface = factory.addPlaneSurface(
-            [rectangle_curve, circle_curve])
+        outer_surface = factory.addPlaneSurface(
+                [rectangle_curve, square_curve])
+        boundary_layer_surfaces = [
+                factory.addPlaneSurface([blc])
+                for blc in boundary_layer_curves]
         circle_surface = factory.addPlaneSurface([circle_curve])
+
+        num_bl_eles = round(0.5 * 1 / h)
+        progression_coeff = 1.2
+        for i in range(len(boundary_layer_surfaces)):
+            gmsh.model.geo.mesh.setTransfiniteCurve(
+                boundary_layer_lines[i][0], num_bl_eles)
+            gmsh.model.geo.mesh.setTransfiniteCurve(
+                boundary_layer_lines[i][1], num_bl_eles,
+                coef=progression_coeff)
+            gmsh.model.geo.mesh.setTransfiniteCurve(
+                boundary_layer_lines[i][2], num_bl_eles)
+            gmsh.model.geo.mesh.setTransfiniteCurve(
+                boundary_layer_lines[i][3], num_bl_eles,
+                coef=progression_coeff)
+            gmsh.model.geo.mesh.setTransfiniteSurface(
+                boundary_layer_surfaces[i])
 
         factory.synchronize()
 
-        gmsh.model.addPhysicalGroup(2, [square_surface], volume_id["fluid"])
+        gmsh.model.addPhysicalGroup(
+            2, [outer_surface] + boundary_layer_surfaces, volume_id["fluid"])
         gmsh.model.addPhysicalGroup(2, [circle_surface], volume_id["solid"])
 
         gmsh.model.addPhysicalGroup(
@@ -92,10 +139,11 @@ def generate_mesh(comm, h=0.1, h_fac=1/3):
             1, [rectangle_lines[2]], boundary_id["top"])
         gmsh.model.addPhysicalGroup(
             1, [rectangle_lines[3]], boundary_id["left"])
-        gmsh.model.addPhysicalGroup(1, obstacle_lines, boundary_id["obstacle"])
+        gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
+
+        gmsh.write("cyl_msh.msh")
 
         gmsh.model.mesh.generate(2)
-
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
@@ -133,10 +181,9 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 10
-t_end = 1
+num_time_steps = 100
+t_end = 5
 h = 0.07
-h_fac = 1 / 30  # Factor scaling h near the cylinder
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 gamma_int = 10  # Penalty param for temperature on interface
@@ -169,7 +216,7 @@ nu = mu / rho  # Kinematic viscosity
 
 # Create mesh
 comm = MPI.COMM_WORLD
-msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h, h_fac=h_fac)
+msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h)
 
 # Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
