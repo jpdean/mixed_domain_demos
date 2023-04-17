@@ -113,7 +113,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 6.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 100.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))

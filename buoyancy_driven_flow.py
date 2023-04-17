@@ -14,18 +14,20 @@ from utils import convert_facet_tags
 import sys
 
 
-def generate_mesh(comm, h=0.1):
+def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
     gmsh.initialize()
 
     volume_id = {"fluid": 1,
                  "solid": 2}
 
-    boundary_id = {"left": 2,
-                   "right": 3,
-                   "bottom": 4,
-                   "top": 5,
-                   "obstacle": 6}
-    gdim = 2
+    boundary_id = {"walls": 2,
+                   "obstacle": 3}
+
+    if cell_type == mesh.CellType.tetrahedron or \
+            cell_type == mesh.CellType.hexahedron:
+        d = 3
+    else:
+        d = 2
 
     if comm.rank == 0:
 
@@ -103,10 +105,10 @@ def generate_mesh(comm, h=0.1):
             factory.addCurveLoop(bll) for bll in boundary_layer_lines]
 
         outer_surface = factory.addPlaneSurface(
-                [rectangle_curve, square_curve])
+            [rectangle_curve, square_curve])
         boundary_layer_surfaces = [
-                factory.addPlaneSurface([blc])
-                for blc in boundary_layer_curves]
+            factory.addPlaneSurface([blc])
+            for blc in boundary_layer_curves]
         circle_surface = factory.addPlaneSurface([circle_curve])
 
         num_bl_eles = round(0.5 * 1 / h)
@@ -125,30 +127,56 @@ def generate_mesh(comm, h=0.1):
             gmsh.model.geo.mesh.setTransfiniteSurface(
                 boundary_layer_surfaces[i])
 
+        if d == 3:
+            if cell_type == mesh.CellType.tetrahedron:
+                recombine = False
+            else:
+                recombine = True
+            extrude_surfs = [(2, surf) for surf in [
+                outer_surface] + boundary_layer_surfaces
+                + [circle_surface]]
+            gmsh.model.geo.extrude(
+                extrude_surfs, 0, 0, 0.5, [4], recombine=recombine)
+
         factory.synchronize()
 
-        gmsh.model.addPhysicalGroup(
-            2, [outer_surface] + boundary_layer_surfaces, volume_id["fluid"])
-        gmsh.model.addPhysicalGroup(2, [circle_surface], volume_id["solid"])
+        if d == 3:
+            # FIXME Don't hardcode
+            gmsh.model.addPhysicalGroup(
+                3, [1, 2, 3, 4, 5],
+                volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(
+                3, [6],
+                volume_id["solid"])
 
-        gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[0]], boundary_id["bottom"])
-        gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[1]], boundary_id["right"])
-        gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[2]], boundary_id["top"])
-        gmsh.model.addPhysicalGroup(
-            1, [rectangle_lines[3]], boundary_id["left"])
-        gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
+            gmsh.model.addPhysicalGroup(
+                2, [1, 2, 3, 4, 5, 29, 33, 37, 41, 58,
+                    80, 102, 124, 146],
+                boundary_id["walls"])
+            # NOTE Does not include ends
+            gmsh.model.addPhysicalGroup(
+                2, [75, 97, 119, 141],
+                boundary_id["obstacle"])
+        else:
+            # TODO FIXME
+            gmsh.model.addPhysicalGroup(
+                2, [outer_surface] + boundary_layer_surfaces,
+                volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(
+                2, [circle_surface], volume_id["solid"])
 
-        gmsh.write("cyl_msh.msh")
+            gmsh.model.addPhysicalGroup(
+                1, [rectangle_lines],
+                boundary_id["walls"])
 
-        gmsh.model.mesh.generate(2)
+        # gmsh.write("cyl_msh.msh")
+
+        gmsh.model.mesh.generate(d)
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
     msh, ct, ft = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+        gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     ft.name = "Facet markers"
 
     return msh, ct, ft, volume_id, boundary_id
@@ -171,6 +199,7 @@ def domain_average(msh, v):
 
 def zero(x): return np.vstack(
     (np.zeros_like(x[0]),
+     np.zeros_like(x[0]),
      np.zeros_like(x[0])))
 
 
@@ -182,12 +211,12 @@ def par_print(string):
 
 # We define some simulation parameters
 num_time_steps = 100
-t_end = 5
-h = 0.07
-k = 2  # Polynomial degree
+t_end = 10
+h = 0.125
+k = 1 # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
-gamma_int = 10  # Penalty param for temperature on interface
-alpha = 6.0 * k**2  # Penalty param for DG temp solver
+gamma_int = 100  # Penalty param for temperature on interface
+alpha = 100.0 * k**2  # Penalty param for DG temp solver
 
 # Material parameters
 # Water
@@ -203,7 +232,7 @@ alpha = 6.0 * k**2  # Penalty param for DG temp solver
 # Air
 mu = 1.825e-5  # Dynamic viscosity
 rho = 1.204  # Fluid density
-g = as_vector((0.0, -9.81))
+g = as_vector((0.0, -9.81, 0.0))
 eps = 3.43e-3  # Thermal expansion coefficient
 f_T = 10e6  # Thermal source
 kappa_f = 0.02514  # Thermal conductivity of fluid
@@ -216,7 +245,15 @@ nu = mu / rho  # Kinematic viscosity
 
 # Create mesh
 comm = MPI.COMM_WORLD
-msh, ct, ft, volume_id, boundary_id = generate_mesh(comm, h=h)
+msh, ct, ft, volume_id, boundary_id = generate_mesh(
+    comm, h=h, cell_type=mesh.CellType.tetrahedron)
+
+# with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
+#     file.write_mesh(msh)
+#     file.write_meshtags(ct)
+#     file.write_meshtags(ft)
+
+# exit()
 
 # Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
@@ -231,10 +268,7 @@ submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
 
 # Define boundary conditions for fluid solver
-boundary_conditions = {"bottom": (hdg_navier_stokes.BCType.Dirichlet, zero),
-                       "right": (hdg_navier_stokes.BCType.Dirichlet, zero),
-                       "top": (hdg_navier_stokes.BCType.Dirichlet, zero),
-                       "left": (hdg_navier_stokes.BCType.Dirichlet, zero),
+boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
 
 # Set up fluid solver
@@ -321,10 +355,7 @@ c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
 c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
 # Boundary conditions for the thermal solver
-dirichlet_bcs_T = [(boundary_id["bottom"], lambda x: np.zeros_like(x[0])),
-                   (boundary_id["right"], lambda x: np.zeros_like(x[0])),
-                   (boundary_id["top"], lambda x: np.zeros_like(x[0])),
-                   (boundary_id["left"], lambda x: np.zeros_like(x[0]))]
+dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
 
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
