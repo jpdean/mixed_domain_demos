@@ -38,7 +38,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         height = 2
         c = (0.5, 0.25)
         r = 0.05
-        r_s = 0.2
+        r_s = 0.15
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -121,7 +121,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         circle_surface = factory.addPlaneSurface([circle_curve])
         plume_surface = factory.addPlaneSurface([plume_curve])
 
-        num_bl_eles = round(0.6 * 1 / h)
+        num_bl_eles = round(0.7 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
             gmsh.model.geo.mesh.setTransfiniteCurve(
@@ -138,12 +138,13 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                 boundary_layer_surfaces[i])
 
         # The first plume line is already set, so only set others
+        num_plume_eles = round(1.5 * 1 / h)
         gmsh.model.geo.mesh.setTransfiniteCurve(
-            plume_lines[1], num_bl_eles)
+            plume_lines[1], num_plume_eles)
         gmsh.model.geo.mesh.setTransfiniteCurve(
             plume_lines[2], num_bl_eles)
         gmsh.model.geo.mesh.setTransfiniteCurve(
-            plume_lines[3], num_bl_eles)
+            plume_lines[3], num_plume_eles)
         gmsh.model.geo.mesh.setTransfiniteSurface(
             plume_surface)
 
@@ -238,7 +239,7 @@ def par_print(string):
 # We define some simulation parameters
 num_time_steps = 10
 t_end = 1
-h = 0.07
+h = 0.08
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 gamma_int = 100  # Penalty param for temperature on interface
