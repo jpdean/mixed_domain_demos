@@ -38,7 +38,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         height = 2
         c = (0.5, 0.25)
         r = 0.05
-        r_s = 0.15
+        r_s = 0.2
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -166,10 +166,17 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                 2, [circle_surface], volume_id["solid"])
 
             gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines],
+                1, rectangle_lines,
                 boundary_id["walls"])
+            gmsh.model.addPhysicalGroup(
+                1, circle_lines, boundary_id["obstacle"])
 
-        # gmsh.write("cyl_msh.msh")
+        if cell_type == mesh.CellType.quadrilateral \
+                or cell_type == mesh.CellType.hexahedron:
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)
+            gmsh.option.setNumber("Mesh.Algorithm", 8)
+
+        # gmsh.write("cyl_msh.vtk")
 
         gmsh.model.mesh.generate(d)
         # gmsh.fltk.run()
@@ -197,10 +204,7 @@ def domain_average(msh, v):
         fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
 
 
-def zero(x): return np.vstack(
-    (np.zeros_like(x[0]),
-     np.zeros_like(x[0]),
-     np.zeros_like(x[0])))
+def zero(x): return np.zeros_like(x[:msh.topology.dim])
 
 
 def par_print(string):
@@ -212,8 +216,8 @@ def par_print(string):
 # We define some simulation parameters
 num_time_steps = 100
 t_end = 10
-h = 0.125
-k = 1 # Polynomial degree
+h = 0.04
+k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 gamma_int = 100  # Penalty param for temperature on interface
 alpha = 100.0 * k**2  # Penalty param for DG temp solver
@@ -232,7 +236,7 @@ alpha = 100.0 * k**2  # Penalty param for DG temp solver
 # Air
 mu = 1.825e-5  # Dynamic viscosity
 rho = 1.204  # Fluid density
-g = as_vector((0.0, -9.81, 0.0))
+g_y = -9.81
 eps = 3.43e-3  # Thermal expansion coefficient
 f_T = 10e6  # Thermal source
 kappa_f = 0.02514  # Thermal conductivity of fluid
@@ -246,7 +250,12 @@ nu = mu / rho  # Kinematic viscosity
 # Create mesh
 comm = MPI.COMM_WORLD
 msh, ct, ft, volume_id, boundary_id = generate_mesh(
-    comm, h=h, cell_type=mesh.CellType.tetrahedron)
+    comm, h=h, cell_type=mesh.CellType.quadrilateral)
+
+if msh.topology.dim == 3:
+    g = as_vector((0.0, g_y, 0.0))
+else:
+    g = as_vector((0.0, g_y))
 
 # with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
 #     file.write_mesh(msh)
