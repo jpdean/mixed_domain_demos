@@ -59,6 +59,9 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                              c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas]
 
+        plume_points = [factory.addPoint(0.25, 1.0, 0.0, h),
+                        factory.addPoint(0.75, 1.0, 0.0, h)]
+
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
             factory.addLine(rectangle_points[1], rectangle_points[2]),
@@ -83,6 +86,11 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             factory.addLine(square_points[2], square_points[3]),
             factory.addLine(square_points[3], square_points[0])]
 
+        plume_lines = [square_lines[0],
+                       factory.addLine(square_points[1], plume_points[0]),
+                       factory.addLine(plume_points[0], plume_points[1]),
+                       factory.addLine(plume_points[1], square_points[0])]
+
         bl_diag_lines = [
             factory.addLine(circle_points[i + 1], square_points[i])
             for i in range(4)]
@@ -103,15 +111,17 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         square_curve = factory.addCurveLoop(square_lines)
         boundary_layer_curves = [
             factory.addCurveLoop(bll) for bll in boundary_layer_lines]
+        plume_curve = factory.add_curve_loop(plume_lines)
 
         outer_surface = factory.addPlaneSurface(
-            [rectangle_curve, square_curve])
+            [rectangle_curve, square_curve, plume_curve])
         boundary_layer_surfaces = [
             factory.addPlaneSurface([blc])
             for blc in boundary_layer_curves]
         circle_surface = factory.addPlaneSurface([circle_curve])
+        plume_surface = factory.addPlaneSurface([plume_curve])
 
-        num_bl_eles = round(0.5 * 1 / h)
+        num_bl_eles = round(0.6 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
             gmsh.model.geo.mesh.setTransfiniteCurve(
@@ -127,6 +137,17 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.model.geo.mesh.setTransfiniteSurface(
                 boundary_layer_surfaces[i])
 
+        # The first plume line is already set, so only set others
+        gmsh.model.geo.mesh.setTransfiniteCurve(
+            plume_lines[1], num_bl_eles)
+        gmsh.model.geo.mesh.setTransfiniteCurve(
+            plume_lines[2], num_bl_eles)
+        gmsh.model.geo.mesh.setTransfiniteCurve(
+            plume_lines[3], num_bl_eles)
+        gmsh.model.geo.mesh.setTransfiniteSurface(
+            plume_surface)
+
+        # FIXME
         if d == 3:
             if cell_type == mesh.CellType.tetrahedron:
                 recombine = False
@@ -142,6 +163,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
 
         if d == 3:
             # FIXME Don't hardcode
+            # FIXME Need to work these out again
             gmsh.model.addPhysicalGroup(
                 3, [1, 2, 3, 4, 5],
                 volume_id["fluid"])
@@ -160,7 +182,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         else:
             # TODO FIXME
             gmsh.model.addPhysicalGroup(
-                2, [outer_surface] + boundary_layer_surfaces,
+                2, [outer_surface, plume_surface] + boundary_layer_surfaces,
                 volume_id["fluid"])
             gmsh.model.addPhysicalGroup(
                 2, [circle_surface], volume_id["solid"])
@@ -176,7 +198,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
 
-        # gmsh.write("cyl_msh.vtk")
+        # gmsh.write("cyl_msh.msh")
 
         gmsh.model.mesh.generate(d)
         # gmsh.fltk.run()
@@ -214,9 +236,9 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 100
-t_end = 10
-h = 0.04
+num_time_steps = 10
+t_end = 1
+h = 0.07
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 gamma_int = 100  # Penalty param for temperature on interface
