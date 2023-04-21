@@ -36,7 +36,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
 
         length = 1
         height = 2
-        c = (0.5, 0.25)
+        c = (0.5, 0.24)
         r = 0.05
         r_s = 0.15
 
@@ -59,8 +59,8 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                              c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas]
 
-        plume_points = [factory.addPoint(0.25, 1.0, 0.0, h),
-                        factory.addPoint(0.75, 1.0, 0.0, h)]
+        plume_points = [factory.addPoint(0.35, 1.0, 0.0, h),
+                        factory.addPoint(0.65, 1.0, 0.0, h)]
 
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
@@ -121,7 +121,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         circle_surface = factory.addPlaneSurface([circle_curve])
         plume_surface = factory.addPlaneSurface([plume_curve])
 
-        num_bl_eles = round(0.7 * 1 / h)
+        num_bl_eles = round(0.8 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
             gmsh.model.geo.mesh.setTransfiniteCurve(
@@ -138,7 +138,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                 boundary_layer_surfaces[i])
 
         # The first plume line is already set, so only set others
-        num_plume_eles = round(1.5 * 1 / h)
+        num_plume_eles = round(2.0 * 1 / h)
         gmsh.model.geo.mesh.setTransfiniteCurve(
             plume_lines[1], num_plume_eles)
         gmsh.model.geo.mesh.setTransfiniteCurve(
@@ -237,13 +237,13 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 10
-t_end = 1
-h = 0.08
+num_time_steps = 300
+t_end = 7.5
+h = 0.06
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
-gamma_int = 100  # Penalty param for temperature on interface
-alpha = 100.0 * k**2  # Penalty param for DG temp solver
+gamma_int = 32  # Penalty param for temperature on interface
+alpha = 32.0 * k**2  # Penalty param for DG temp solver
 
 # Material parameters
 # Water
@@ -261,7 +261,7 @@ mu = 1.825e-5  # Dynamic viscosity
 rho = 1.204  # Fluid density
 g_y = -9.81
 eps = 3.43e-3  # Thermal expansion coefficient
-f_T = 10e6  # Thermal source
+f_T = 1e8  # Thermal source
 kappa_f = 0.02514  # Thermal conductivity of fluid
 kappa_s = 83.5  # Thermal conductivity of solid
 rho_s = 7860  # Solid density
