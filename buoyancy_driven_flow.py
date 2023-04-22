@@ -239,7 +239,7 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 40
+num_time_steps = 1280
 t_end = 5
 h = 0.04
 k = 2  # Polynomial degree
