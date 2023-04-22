@@ -34,11 +34,11 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 1
-        height = 2
-        c = (0.5, 0.24)
+        length = 0.8
+        height = 1.25
+        c = (0.41, 0.25)
         r = 0.05
-        r_s = 0.15
+        r_s = 0.09
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -59,8 +59,8 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                              c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas]
 
-        plume_points = [factory.addPoint(0.35, 1.0, 0.0, h),
-                        factory.addPoint(0.65, 1.0, 0.0, h)]
+        plume_points = [factory.addPoint(0.31, 1.0, 0.0, h),
+                        factory.addPoint(0.51, 1.0, 0.0, h)]
 
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
@@ -121,28 +121,29 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         circle_surface = factory.addPlaneSurface([circle_curve])
         plume_surface = factory.addPlaneSurface([plume_curve])
 
-        num_bl_eles = round(0.8 * 1 / h)
+        num_bl_eles_norm = round(0.3 * 1 / h)
+        num_bl_eles_tan = round(0.8 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][0], num_bl_eles)
+                boundary_layer_lines[i][0], num_bl_eles_tan)
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][1], num_bl_eles,
+                boundary_layer_lines[i][1], num_bl_eles_norm,
                 coef=progression_coeff)
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][2], num_bl_eles)
+                boundary_layer_lines[i][2], num_bl_eles_tan)
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][3], num_bl_eles,
+                boundary_layer_lines[i][3], num_bl_eles_norm,
                 coef=progression_coeff)
             gmsh.model.geo.mesh.setTransfiniteSurface(
                 boundary_layer_surfaces[i])
 
         # The first plume line is already set, so only set others
-        num_plume_eles = round(2.0 * 1 / h)
+        num_plume_eles = round(3.0 * 1 / h)
         gmsh.model.geo.mesh.setTransfiniteCurve(
             plume_lines[1], num_plume_eles)
         gmsh.model.geo.mesh.setTransfiniteCurve(
-            plume_lines[2], num_bl_eles)
+            plume_lines[2], num_bl_eles_tan)
         gmsh.model.geo.mesh.setTransfiniteCurve(
             plume_lines[3], num_plume_eles)
         gmsh.model.geo.mesh.setTransfiniteSurface(
@@ -194,6 +195,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.model.addPhysicalGroup(
                 1, circle_lines, boundary_id["obstacle"])
 
+        gmsh.option.setNumber("Mesh.Smoothing", 5)
         if cell_type == mesh.CellType.quadrilateral \
                 or cell_type == mesh.CellType.hexahedron:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
@@ -237,13 +239,15 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 300
-t_end = 7.5
-h = 0.06
+num_time_steps = 40
+t_end = 5
+h = 0.04
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
 gamma_int = 32  # Penalty param for temperature on interface
 alpha = 32.0 * k**2  # Penalty param for DG temp solver
+
+delta_t_write = t_end / 100
 
 # Material parameters
 # Water
@@ -583,6 +587,7 @@ vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
 
 t = 0.0
+t_last_write = 0.0
 for vis_file in vis_files:
     vis_file.write(t)
 for n in range(num_time_steps):
@@ -632,8 +637,11 @@ for n in range(num_time_steps):
 
     u_vis.interpolate(u_n)
 
-    for vis_file in vis_files:
-        vis_file.write(t)
+    if t - t_last_write > delta_t_write or \
+        n == num_time_steps - 1:
+        for vis_file in vis_files:
+            vis_file.write(t)
+        t_last_write = t
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
