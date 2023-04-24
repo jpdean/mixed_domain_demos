@@ -6,10 +6,10 @@ import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2, create_random_mesh
+from utils import par_print
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
-out_str = f"rank {rank}:\n"
 
 n = 8
 # msh = mesh.create_unit_square(
@@ -108,9 +108,6 @@ A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
-out_str += f"A.norm() = {A.norm()}\n"
-out_str += f"b.norm() = {b.norm()}\n"
-
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -120,8 +117,6 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 # Compute solution
 x = A.createVecRight()
 ksp.solve(b, x)
-
-out_str += f"x.norm() = {x.norm()}\n"
 
 u = fem.Function(V)
 ubar = fem.Function(Vbar)
@@ -137,8 +132,5 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
-e_L2 = norm_L2(msh.comm, u - u_e)
-out_str += f"e_L2 = {e_L2}\n"
-
-if rank == 0:
-    print(out_str)
+e_u = norm_L2(msh.comm, u - u_e)
+par_print(comm, f"e_u = {e_u}")
