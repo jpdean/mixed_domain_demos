@@ -70,8 +70,9 @@ for cell in range(msh.topology.index_map(tdim).size_local):
         facet_integration_entities.extend([cell, local_facet])
 
 dx_c = ufl.Measure("dx", domain=msh)
+all_facets = 1
 ds_c = ufl.Measure("ds", subdomain_data=[
-                   (1, facet_integration_entities)], domain=msh)
+                   (all_facets, facet_integration_entities)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = np.full(num_facets, -1)
@@ -81,14 +82,14 @@ entity_maps = {facet_mesh: inv_entity_map}
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
-                (inner(c * u, dot(grad(v), n)) * ds_c(1) +
-                 inner(c * v, dot(grad(u), n)) * ds_c(1)) +
-                gamma * inner(c * u, v) * ds_c(1))
-a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(1),
+                (inner(c * u, dot(grad(v), n)) * ds_c(all_facets) +
+                 inner(c * v, dot(grad(u), n)) * ds_c(all_facets)) +
+                gamma * inner(c * u, v) * ds_c(all_facets))
+a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(all_facets),
                 entity_maps=entity_maps)
-a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(1),
+a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(all_facets),
                 entity_maps=entity_maps)
-a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(1),
+a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(all_facets),
                 entity_maps=entity_maps)
 
 f = - div(c * grad(u_e(x)))
