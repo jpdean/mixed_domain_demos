@@ -36,10 +36,8 @@ k = 1
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-ubar = ufl.TrialFunction(Vbar)
-vbar = ufl.TestFunction(Vbar)
+u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
@@ -56,9 +54,8 @@ ds_c = ufl.Measure("ds", subdomain_data=[
                    (1, facet_integration_entities)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-inv_entity_map = np.full_like(entity_map, -1)
-for i, f in enumerate(entity_map):
-    inv_entity_map[f] = i
+inv_entity_map = np.full(num_facets, -1)
+inv_entity_map[entity_map] = np.arange(len(entity_map))
 entity_maps = {facet_mesh: inv_entity_map}
 
 x = ufl.SpatialCoordinate(msh)
@@ -118,8 +115,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecRight()
 ksp.solve(b, x)
 
-u = fem.Function(V)
-ubar = fem.Function(Vbar)
+u, ubar = fem.Function(V), fem.Function(Vbar)
 
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
