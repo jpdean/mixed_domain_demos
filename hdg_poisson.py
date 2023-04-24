@@ -8,10 +8,18 @@ from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2, create_random_mesh
 from utils import par_print
 
+
+def u_e(x):
+    u_e = 1
+    for i in range(tdim):
+        u_e *= ufl.sin(ufl.pi * x[i])
+    return u_e
+
+
 comm = MPI.COMM_WORLD
 rank = comm.rank
 
-n = 8
+n = 16
 # msh = mesh.create_unit_square(
 #     comm, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.quadrilateral)
@@ -32,7 +40,7 @@ facets = np.arange(num_facets, dtype=np.int32)
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-k = 1
+k = 3
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
@@ -71,10 +79,7 @@ a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(1),
 a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(1),
                 entity_maps=entity_maps)
 
-u_e = 1
-for i in range(tdim):
-    u_e *= ufl.sin(ufl.pi * x[i])
-f = - div(c * grad(u_e))
+f = - div(c * grad(u_e(x)))
 
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
@@ -128,5 +133,9 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
-e_u = norm_L2(msh.comm, u - u_e)
+x = ufl.SpatialCoordinate(msh)
+e_u = norm_L2(msh.comm, u - u_e(x))
+x_bar = ufl.SpatialCoordinate(facet_mesh)
+e_ubar = norm_L2(msh.comm, ubar - u_e(x_bar))
 par_print(comm, f"e_u = {e_u}")
+par_print(comm, f"e_ubar = {e_ubar}")
