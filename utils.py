@@ -4,7 +4,12 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx import mesh
+import sys
 
+def par_print(comm, string):
+    if comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
 
 def norm_L2(comm, v, measure=ufl.dx):
     return np.sqrt(comm.allreduce(fem.assemble_scalar(

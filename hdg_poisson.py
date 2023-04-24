@@ -16,6 +16,18 @@ def u_e(x):
     return u_e
 
 
+def boundary(x):
+    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+    lrtb = lr | tb
+    if tdim == 2:
+        return lrtb
+    else:
+        assert tdim == 3
+        fb = np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
+        return lrtb | fb
+
+
 comm = MPI.COMM_WORLD
 rank = comm.rank
 
@@ -87,19 +99,6 @@ L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
-
-
-def boundary(x):
-    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
-    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-    lrtb = lr | tb
-    if tdim == 2:
-        return lrtb
-    else:
-        assert tdim == 3
-        fb = np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
-        return lrtb | fb
-
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
