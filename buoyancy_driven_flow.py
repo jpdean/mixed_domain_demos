@@ -157,7 +157,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                 recombine = True
             extrude_surfs = [(2, surf) for surf in [
                 outer_surface] + boundary_layer_surfaces
-                + [circle_surface]]
+                + [circle_surface] + [plume_surface]]
             gmsh.model.geo.extrude(
                 extrude_surfs, 0, 0, 0.5, [4], recombine=recombine)
 
@@ -167,19 +167,19 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             # FIXME Don't hardcode
             # FIXME Need to work these out again
             gmsh.model.addPhysicalGroup(
-                3, [1, 2, 3, 4, 5],
+                3, [1, 2, 3, 4, 5, 7],
                 volume_id["fluid"])
             gmsh.model.addPhysicalGroup(
                 3, [6],
                 volume_id["solid"])
 
             gmsh.model.addPhysicalGroup(
-                2, [1, 2, 3, 4, 5, 29, 33, 37, 41, 58,
-                    80, 102, 124, 146],
+                2, [1, 2, 3, 4, 5, 7, 36, 40, 44, 48, 81,
+                    213, 103, 125, 147, 169],
                 boundary_id["walls"])
             # NOTE Does not include ends
             gmsh.model.addPhysicalGroup(
-                2, [75, 97, 119, 141],
+                2, [98, 120, 142, 164],
                 boundary_id["obstacle"])
         else:
             # TODO FIXME
