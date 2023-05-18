@@ -38,7 +38,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         height = 1.25
         c = (0.41, 0.25)
         r = 0.05
-        r_s = 0.09
+        r_s = 0.1
 
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
@@ -195,7 +195,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.model.addPhysicalGroup(
                 1, circle_lines, boundary_id["obstacle"])
 
-        gmsh.option.setNumber("Mesh.Smoothing", 5)
+        gmsh.option.setNumber("Mesh.Smoothing", 25)
         if cell_type == mesh.CellType.quadrilateral \
                 or cell_type == mesh.CellType.hexahedron:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
