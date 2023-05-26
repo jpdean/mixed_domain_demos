@@ -7,11 +7,14 @@ from petsc4py import PETSc
 import numpy as np
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  inner, grad, dx, avg, div, conditional,
-                 gt, dot, Measure, as_vector)
+                 gt, dot, Measure, as_vector, outer, curl)
 from ufl import jump as jump_T
+import ufl
 import gmsh
 from utils import convert_facet_tags
 import sys
+from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 
 
 def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
@@ -242,6 +245,148 @@ def par_print(string):
         sys.stdout.flush()
 
 
+def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
+                 entity_map, solver_type, boundary_conditions,
+                 boundaries, mt, f, facet_mesh, u_n, ubar_n):
+    tdim = fluid_msh.topology.dim
+    fdim = tdim - 1
+
+    all_facets_tag = 0
+    all_facets = []
+    num_cell_facets = cell_num_entities(fluid_msh.topology.cell_type, fdim)
+    for cell in range(fluid_msh.topology.index_map(tdim).size_local):
+        for local_facet in range(num_cell_facets):
+            all_facets.extend([cell, local_facet])
+
+    facet_integration_entities = [(all_facets_tag, all_facets)]
+    facet_integration_entities += compute_integration_domains(
+        fem.IntegralType.exterior_facet, mt._cpp_object)
+    dx_c = ufl.Measure("dx", domain=fluid_msh)
+    # FIXME Figure out why this is being estimated wrong for DRW
+    # NOTE k**2 works on affine meshes
+    quad_deg = (k + 1)**2
+    ds_c = ufl.Measure(
+        "ds", subdomain_data=facet_integration_entities, domain=fluid_msh,
+        metadata={"quadrature_degree": quad_deg})
+    dx_f = ufl.Measure("dx", domain=facet_mesh)
+
+    inv_entity_map = np.full_like(entity_map, -1)
+    for i, facet in enumerate(entity_map):
+        inv_entity_map[facet] = i
+
+    entity_maps = {facet_mesh: inv_entity_map}
+
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    p = ufl.TrialFunction(Q)
+    q = ufl.TestFunction(Q)
+    ubar = ufl.TrialFunction(Vbar)
+    vbar = ufl.TestFunction(Vbar)
+    pbar = ufl.TrialFunction(Qbar)
+    qbar = ufl.TestFunction(Qbar)
+
+    h = ufl.CellDiameter(fluid_msh)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(fluid_msh)
+    gamma = 50.0 * k**2 / h  # TODO Should be larger in 3D
+
+    lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+    delta_t_fm = fem.Constant(fluid_msh, PETSc.ScalarType(delta_t))
+    nu = fem.Constant(fluid_msh, PETSc.ScalarType(nu))
+
+    a_00 = inner(u / delta_t_fm, v) * dx_c \
+        + nu * inner(grad(u), grad(v)) * dx_c \
+        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
+    a_01 = fem.form(- inner(p * ufl.Identity(fluid_msh.topology.dim),
+                    grad(v)) * dx_c)
+    a_02 = - nu * gamma * inner(
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
+    a_03 = fem.form(inner(pbar * ufl.Identity(fluid_msh.topology.dim),
+                          outer(v, n)) * ds_c(all_facets_tag),
+                    entity_maps=entity_maps)
+    a_10 = fem.form(inner(u, grad(q)) * dx_c -
+                    inner(dot(u, n), q) * ds_c(all_facets_tag))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(vbar, n)
+                             ) * ds_c(all_facets_tag)
+    a_30 = fem.form(inner(dot(u, n), qbar) *
+                    ds_c(all_facets_tag), entity_maps=entity_maps)
+    a_23 = fem.form(
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
+        ds_c(all_facets_tag),
+        entity_maps=entity_maps)
+    # On the Dirichlet boundary, the contribution from this term will be
+    # added to the RHS in apply_lifting
+    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
+                    entity_maps=entity_maps)
+    a_22 = - nu * gamma * \
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
+
+    a_44 = fem.form(inner(A / delta_t, phi) * dx
+                    + inner(curl(A), curl(phi)) * dx)
+
+    if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+        a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
+            ds_c(all_facets_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
+            ds_c(all_facets_tag)
+        a_22 += inner(outer(ubar, lmbda * u_n),
+                      outer(vbar, n)) * ds_c(all_facets_tag)
+
+    L_2 = inner(fem.Constant(fluid_msh, [PETSc.ScalarType(0.0)
+                                   for i in range(tdim)]),
+                vbar) * ds_c(all_facets_tag)
+
+    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
+    # MUMPS seems to cope with the small nullspace
+    bcs = []
+    bc_funcs = []
+    for name, bc in boundary_conditions.items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        bc_func = fem.Function(Vbar)
+        bc_func.interpolate(bc_expr)
+        bc_funcs.append((bc_func, bc_expr))
+        if bc_type == hdg_navier_stokes.BCType.Dirichlet:
+            facets = inv_entity_map[mt.indices[mt.values == id]]
+            dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+            bcs.append(fem.dirichletbc(bc_func, dofs))
+        else:
+            assert bc_type == hdg_navier_stokes.BCType.Neumann
+            L_2 += inner(bc_func, vbar) * ds_c(id)
+            if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
+                                ubar, vbar) * ds_c(id)
+
+    a_00 = fem.form(a_00)
+    a_02 = fem.form(a_02, entity_maps=entity_maps)
+    a_20 = fem.form(a_20, entity_maps=entity_maps)
+    a_22 = fem.form(a_22, entity_maps=entity_maps)
+
+    L_0 = fem.form(inner(f + u_n / delta_t_fm, v) * dx_c)
+    L_1 = fem.form(inner(fem.Constant(fluid_msh, 0.0), q) * dx_c)
+    L_2 = fem.form(L_2, entity_maps=entity_maps)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
+    L_4 = fem.form(inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
+
+
+    a = [[a_00, a_01, a_02, a_03, None],
+         [a_10, None, None, None, None],
+         [a_20, None, a_22, a_23, None],
+         [a_30, None, a_32, None, None],
+         [None, None, None, None, a_44]]
+    L = [L_0, L_1, L_2, L_3, L_4]
+
+    return a, L, bcs, bc_funcs
+
+
 # We define some simulation parameters
 num_time_steps = 10
 t_end = 0.1
@@ -288,12 +433,12 @@ if msh.topology.dim == 3:
 else:
     g = as_vector((0.0, g_y))
 
-with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
-    file.write_mesh(msh)
-    file.write_meshtags(ct)
-    file.write_meshtags(ft)
+# with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
+#     file.write_mesh(msh)
+#     file.write_meshtags(ct)
+#     file.write_meshtags(ft)
 
-exit()
+# exit()
 
 # Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
@@ -316,8 +461,20 @@ scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, facet_entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
 V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
+X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k))
 u_n = fem.Function(V_f)
 ubar_n = fem.Function(Vbar_f)
+
+# Trial and test functions for the magnetic vector potential
+A = TrialFunction(X)
+phi = TestFunction(X)
+# Magnetic vector potential at previous time step
+A_n = fem.Function(X)
+
+# Prescribed current density
+Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
+J_p = fem.Function(Z)
+
 
 # Function spaces for fluid and solid temperature
 Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
@@ -340,7 +497,7 @@ eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 f = - eps * rho * T_n * g
 
 # Create forms for fluid solver
-a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
+a, L, bcs, bc_funcs = create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
     facet_entity_map, solver_type, boundary_conditions,
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
@@ -606,6 +763,10 @@ for n in range(num_time_steps):
     with b.localForm() as b_loc:
         b_loc.set(0)
     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+
+    par_print("Assembled")
+
+    exit()
 
     # Compute solution
     ksp.solve(b, x)
