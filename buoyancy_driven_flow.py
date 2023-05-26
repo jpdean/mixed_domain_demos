@@ -21,7 +21,8 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                  "solid": 2}
 
     boundary_id = {"walls": 2,
-                   "obstacle": 3}
+                   "obstacle": 3,
+                   "cyl_ends": 4}
 
     if cell_type == mesh.CellType.tetrahedron or \
             cell_type == mesh.CellType.hexahedron:
@@ -159,7 +160,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
                 outer_surface] + boundary_layer_surfaces
                 + [circle_surface] + [plume_surface]]
             gmsh.model.geo.extrude(
-                extrude_surfs, 0, 0, 0.5, [4], recombine=recombine)
+                extrude_surfs, 0, 0, 0.15, [4], recombine=recombine)
 
         factory.synchronize()
 
@@ -181,6 +182,9 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.model.addPhysicalGroup(
                 2, [98, 120, 142, 164],
                 boundary_id["obstacle"])
+            gmsh.model.addPhysicalGroup(
+                2, [6, 191],
+                boundary_id["cyl_ends"])
         else:
             # TODO FIXME
             gmsh.model.addPhysicalGroup(
@@ -201,7 +205,7 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
 
-        # gmsh.write("cyl_msh.msh")
+        gmsh.write("cyl_msh.msh")
 
         gmsh.model.mesh.generate(d)
         # gmsh.fltk.run()
@@ -239,15 +243,15 @@ def par_print(string):
 
 
 # We define some simulation parameters
-num_time_steps = 1280
-t_end = 5
+num_time_steps = 10
+t_end = 0.1
 h = 0.04
-k = 2  # Polynomial degree
+k = 1  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
-gamma_int = 32  # Penalty param for temperature on interface
-alpha = 32.0 * k**2  # Penalty param for DG temp solver
+gamma_int = 50  # Penalty param for temperature on interface
+alpha = 50.0 * k**2  # Penalty param for DG temp solver
 
-delta_t_write = t_end / 100
+delta_t_write = t_end / num_time_steps
 
 # Material parameters
 # Water
@@ -277,19 +281,19 @@ nu = mu / rho  # Kinematic viscosity
 # Create mesh
 comm = MPI.COMM_WORLD
 msh, ct, ft, volume_id, boundary_id = generate_mesh(
-    comm, h=h, cell_type=mesh.CellType.quadrilateral)
+    comm, h=h, cell_type=mesh.CellType.hexahedron)
 
 if msh.topology.dim == 3:
     g = as_vector((0.0, g_y, 0.0))
 else:
     g = as_vector((0.0, g_y))
 
-# with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-#     file.write_meshtags(ct)
-#     file.write_meshtags(ft)
+with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
+    file.write_mesh(msh)
+    file.write_meshtags(ct)
+    file.write_meshtags(ft)
 
-# exit()
+exit()
 
 # Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
