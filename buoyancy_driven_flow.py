@@ -762,14 +762,17 @@ x_T = A_T.createVecRight()
 #                  ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
 vis_files = []
 
-out_file = io.XDMFFile(MPI.COMM_WORLD, "T_out.xdmf", "w")
-out_file.write_mesh(submesh_f)
+T_file = io.XDMFFile(MPI.COMM_WORLD, "T.xdmf", "w")
+T_file.write_mesh(submesh_f)
+T_s_file = io.XDMFFile(MPI.COMM_WORLD, "T_s.xdmf", "w")
+T_s_file.write_mesh(submesh_s)
 
 t = 0.0
 t_last_write = 0.0
 for vis_file in vis_files:
     vis_file.write(t)
-out_file.write_function(T_n, t)
+T_file.write_function(T_n, t)
+T_s_file.write_function(T_s_n, t)
 for n in range(num_time_steps):
     t += delta_t.value
     par_print(f"t = {t}")
@@ -831,7 +834,8 @@ for n in range(num_time_steps):
         n == num_time_steps - 1:
         for vis_file in vis_files:
             vis_file.write(t)
-        out_file.write_function(T_n, t)
+        T_file.write_function(T_n, t)
+        T_s_file.write_function(T_s_n, t)
         t_last_write = t
 
     # Update u_n
@@ -839,7 +843,8 @@ for n in range(num_time_steps):
 
 for vis_file in vis_files:
     vis_file.close()
-out_file.close()
+T_file.close()
+T_s_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
