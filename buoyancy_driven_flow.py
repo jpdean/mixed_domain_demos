@@ -247,7 +247,7 @@ def par_print(string):
 
 def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
                  entity_map, solver_type, boundary_conditions,
-                 boundaries, mt, f, facet_mesh, u_n, ubar_n):
+                 boundaries, ft_f, f, facet_mesh, u_n, ubar_n):
     tdim = fluid_msh.topology.dim
     fdim = tdim - 1
 
@@ -260,7 +260,7 @@ def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
 
     facet_integration_entities = [(all_facets_tag, all_facets)]
     facet_integration_entities += compute_integration_domains(
-        fem.IntegralType.exterior_facet, mt._cpp_object)
+        fem.IntegralType.exterior_facet, ft_f._cpp_object)
     dx_c = ufl.Measure("dx", domain=fluid_msh)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
@@ -354,7 +354,7 @@ def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
         bc_func.interpolate(bc_expr)
         bc_funcs.append((bc_func, bc_expr))
         if bc_type == hdg_navier_stokes.BCType.Dirichlet:
-            facets = inv_entity_map[mt.indices[mt.values == id]]
+            facets = inv_entity_map[ft_f.indices[ft_f.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
@@ -363,6 +363,13 @@ def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
             if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
+
+    A_bc = fem.Function(X)
+    A_bc_facets = ft.indices[(ft.values == boundary_id["walls"]) |
+                             (ft.values == boundary_id["cyl_ends"])]
+    A_bc_dofs = fem.locate_dofs_topological(X, fdim, A_bc_facets)
+    bcs.append(fem.dirichletbc(A_bc, A_bc_dofs))
+
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
