@@ -325,8 +325,8 @@ def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
 
-    a_44 = fem.form(inner(A / delta_t, phi) * dx
-                    + inner(curl(A), curl(phi)) * dx)
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
+                    + inner(1 / mu * curl(A), curl(phi)) * dx)
 
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
@@ -382,7 +382,7 @@ def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
     L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
         facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
-    L_4 = fem.form(inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
 
 
     a = [[a_00, a_01, a_02, a_03, None],
@@ -408,7 +408,7 @@ delta_t_write = t_end / num_time_steps
 
 # Material parameters
 # Water
-# mu = 0.0010518  # Dynamic viscosity
+# dyn_vis = 0.0010518  # Dynamic viscosity
 # rho = 1000  # Fluid density
 # g = as_vector((0.0, -9.81))
 # eps = 0.000214  # Thermal expansion coefficient
@@ -418,18 +418,28 @@ delta_t_write = t_end / num_time_steps
 # c_s = 462  # Solid specific heat
 # c_f = 4184  # Fluid specific heat
 # Air
-mu = 1.825e-5  # Dynamic viscosity
+dyn_vis = 1.825e-5  # Dynamic viscosity
 rho = 1.204  # Fluid density
 g_y = -9.81
 eps = 3.43e-3  # Thermal expansion coefficient
-f_T = 1e8  # Thermal source
+# f_T = 1e8  # Thermal source
 kappa_f = 0.02514  # Thermal conductivity of fluid
 kappa_s = 83.5  # Thermal conductivity of solid
 rho_s = 7860  # Solid density
 c_s = 462  # Solid specific heat
 c_f = 1007  # Fluid specific heat
 
-nu = mu / rho  # Kinematic viscosity
+sigma_s = 1e7
+sigma_f = 1e6
+mu_f = 1.25e-6
+mu_s = 6.3e-3
+
+# sigma_s = 1
+# sigma_f = 1
+# mu_f = 1
+# mu_s = 1
+
+nu = dyn_vis / rho  # Kinematic viscosity
 
 # Create mesh
 comm = MPI.COMM_WORLD
@@ -447,6 +457,19 @@ else:
 #     file.write_meshtags(ft)
 
 # exit()
+
+V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
+sigma = fem.Function(V_coeff)
+sigma.interpolate(lambda x: np.full_like(x[0], sigma_s),
+                  ct.find(volume_id["solid"]))
+sigma.interpolate(lambda x: np.full_like(x[0], sigma_f),
+                  ct.find(volume_id["fluid"]))
+
+mu = fem.Function(V_coeff)
+mu.interpolate(lambda x: np.full_like(x[0], mu_s),
+                  ct.find(volume_id["solid"]))
+mu.interpolate(lambda x: np.full_like(x[0], mu_f),
+               ct.find(volume_id["fluid"]))
 
 # Create submeshes of fluid and solid domains
 tdim = msh.topology.dim
@@ -483,7 +506,7 @@ A_n = fem.Function(X)
 # Prescribed current density
 Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
 J_p = fem.Function(Z)
-J_p.interpolate(lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), np.ones_like(x[0]))))
+J_p.interpolate(lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), 1e3 * np.ones_like(x[0]))))
 
 
 # Function spaces for fluid and solid temperature
@@ -730,7 +753,15 @@ for bc in dirichlet_bcs_T:
         kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
                    (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
 
-L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
+# Electric field (negative time derivative of magetic vector potential)
+E = - (A_h - A_n) / delta_t
+E_expr = fem.Expression(E, X.element.interpolation_points())
+E_h = fem.Function(X)
+E_h.interpolate(E_expr)
+
+# L_T_1 = inner(dot(J_p + sigma * E_h, E_h), w_s) * dx_T(volume_id["solid"]) \
+#     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
+L_T_1 = inner(dot(J_p, J_p), w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 # Compile forms
@@ -769,11 +800,11 @@ T_file.write_mesh(submesh_f)
 T_s_file = io.XDMFFile(MPI.COMM_WORLD, "T_s.xdmf", "w")
 T_s_file.write_mesh(submesh_s)
 
-# Electric field (negative time derivative of magetic vector potential)
-E = - (A_h - A_n) / delta_t
-E_expr = fem.Expression(E, X.element.interpolation_points())
-E_h = fem.Function(X)
-E_h.interpolate(E_expr)
+V_vis = fem.VectorFunctionSpace(msh, ("Lagrange", 1))
+E_vis = fem.Function(V_vis)
+E_h_file = io.XDMFFile(MPI.COMM_WORLD, "E_h.xdmf", "w")
+E_h_file.write_mesh(msh)
+
 
 t = 0.0
 t_last_write = 0.0
@@ -781,6 +812,7 @@ for vis_file in vis_files:
     vis_file.write(t)
 T_file.write_function(T_n, t)
 T_s_file.write_function(T_s_n, t)
+E_h_file.write_function(E_vis, t)
 for n in range(num_time_steps):
     t += delta_t.value
     par_print(f"t = {t}")
@@ -794,13 +826,12 @@ for n in range(num_time_steps):
         b_loc.set(0)
     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-    par_print("Assembled")
-
+    # par_print("Assembled")
 
     # Compute solution
     ksp.solve(b, x)
 
-    # par_print(x.norm())
+    par_print(x.norm())
 
     u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
@@ -819,11 +850,12 @@ for n in range(num_time_steps):
     A_h.x.scatter_forward()
 
     E_h.interpolate(E_expr)
+    E_vis.interpolate(E_h)
 
     # par_print(E_h.vector.norm())
 
-    # par_print(f"A_n norm = {A_n.vector.norm()}")
-    # par_print(f"A_h norm = {A_h.vector.norm()}")
+    # par_print(f"A_h = {A_h.x.array}")
+    # par_print(f"A_n = {A_n.x.array}")
     # TODO
     # if len(neumann_bcs) == 0:
     #     p_h.x.array[:] -= domain_average(submesh_f, p_h)
@@ -851,6 +883,7 @@ for n in range(num_time_steps):
             vis_file.write(t)
         T_file.write_function(T_n, t)
         T_s_file.write_function(T_s_n, t)
+        E_h_file.write_function(E_vis, t)
         t_last_write = t
 
     # Update u_n
@@ -863,6 +896,7 @@ for vis_file in vis_files:
     vis_file.close()
 T_file.close()
 T_s_file.close()
+E_h_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
