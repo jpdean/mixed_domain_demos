@@ -476,6 +476,7 @@ ubar_n = fem.Function(Vbar_f)
 A = TrialFunction(X)
 phi = TestFunction(X)
 # Magnetic vector potential at previous time step
+A_h = fem.Function(X)
 A_n = fem.Function(X)
 
 # Prescribed current density
@@ -527,8 +528,14 @@ p_h.name = "p"
 pbar_h = fem.Function(Qbar_f)
 pbar_h.name = "pbar"
 
-u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
-    V_f, Q_f, Vbar_f)
+u_offset = V_f.dofmap.index_map.size_local * V_f.dofmap.index_map_bs
+p_offset = u_offset + \
+    Q_f.dofmap.index_map.size_local * Q_f.dofmap.index_map_bs
+ubar_offset = \
+    p_offset + Vbar_f.dofmap.index_map.size_local * \
+    Vbar_f.dofmap.index_map_bs
+pbar_offset = ubar_offset + Qbar_f.dofmap.index_map.size_local * \
+    Qbar_f.dofmap.index_map_bs
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -749,10 +756,11 @@ ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
 
 # Set up files for visualisation
-vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
-             for (file_name, func)
-             in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
+# vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+#              for (file_name, func)
+#              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+#                  ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
+vis_files = []
 
 t = 0.0
 t_last_write = 0.0
@@ -773,10 +781,11 @@ for n in range(num_time_steps):
 
     par_print("Assembled")
 
-    exit()
 
     # Compute solution
     ksp.solve(b, x)
+
+    par_print(x.norm())
 
     u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
@@ -785,9 +794,14 @@ for n in range(num_time_steps):
     ubar_n.x.array[:ubar_offset -
                    p_offset] = x.array_r[p_offset:ubar_offset]
     ubar_n.x.scatter_forward()
-    pbar_h.x.array[:(len(x.array_r) - ubar_offset)
-                   ] = x.array_r[ubar_offset:]
+
+    pbar_h.x.array[:pbar_offset -
+                   ubar_offset] = x.array_r[ubar_offset:pbar_offset]
     pbar_h.x.scatter_forward()
+
+    A_h.x.array[:(len(x.array_r) - pbar_offset)
+                   ] = x.array_r[pbar_offset:]
+    A_h.x.scatter_forward()
     # TODO
     # if len(neumann_bcs) == 0:
     #     p_h.x.array[:] -= domain_average(submesh_f, p_h)
