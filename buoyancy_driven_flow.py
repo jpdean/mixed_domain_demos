@@ -247,7 +247,8 @@ def par_print(string):
 
 def create_forms(V, Q, Vbar, Qbar, fluid_msh, k, delta_t, nu,
                  entity_map, solver_type, boundary_conditions,
-                 boundaries, ft_f, f, facet_mesh, u_n, ubar_n):
+                 boundaries, ft_f, f, facet_mesh, u_n, ubar_n,
+                 A_n):
     tdim = fluid_msh.topology.dim
     fdim = tdim - 1
 
@@ -482,6 +483,7 @@ A_n = fem.Function(X)
 # Prescribed current density
 Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
 J_p = fem.Function(Z)
+J_p.interpolate(lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), np.ones_like(x[0]))))
 
 
 # Function spaces for fluid and solid temperature
@@ -508,7 +510,7 @@ f = - eps * rho * T_n * g
 a, L, bcs, bc_funcs = create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
     facet_entity_map, solver_type, boundary_conditions,
-    boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
+    boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n, A_n)
 
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
     A = fem.petsc.create_matrix_block(a)
@@ -767,6 +769,12 @@ T_file.write_mesh(submesh_f)
 T_s_file = io.XDMFFile(MPI.COMM_WORLD, "T_s.xdmf", "w")
 T_s_file.write_mesh(submesh_s)
 
+# Electric field (negative time derivative of magetic vector potential)
+E = - (A_h - A_n) / delta_t
+E_expr = fem.Expression(E, X.element.interpolation_points())
+E_h = fem.Function(X)
+E_h.interpolate(E_expr)
+
 t = 0.0
 t_last_write = 0.0
 for vis_file in vis_files:
@@ -792,7 +800,7 @@ for n in range(num_time_steps):
     # Compute solution
     ksp.solve(b, x)
 
-    par_print(x.norm())
+    # par_print(x.norm())
 
     u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
@@ -809,6 +817,13 @@ for n in range(num_time_steps):
     A_h.x.array[:(len(x.array_r) - pbar_offset)
                    ] = x.array_r[pbar_offset:]
     A_h.x.scatter_forward()
+
+    E_h.interpolate(E_expr)
+
+    # par_print(E_h.vector.norm())
+
+    # par_print(f"A_n norm = {A_n.vector.norm()}")
+    # par_print(f"A_h norm = {A_h.vector.norm()}")
     # TODO
     # if len(neumann_bcs) == 0:
     #     p_h.x.array[:] -= domain_average(submesh_f, p_h)
@@ -840,6 +855,9 @@ for n in range(num_time_steps):
 
     # Update u_n
     u_n.x.array[:] = u_h.x.array
+    A_n.x.array[:] = A_h.x.array
+    # par_print(f"A_n norm = {A_n.vector.norm()}")
+
 
 for vis_file in vis_files:
     vis_file.close()
