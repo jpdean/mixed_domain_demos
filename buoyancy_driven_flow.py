@@ -429,10 +429,16 @@ rho_s = 7860  # Solid density
 c_s = 462  # Solid specific heat
 c_f = 1007  # Fluid specific heat
 
-sigma_s = 1e7
+# sigma_s = 1e7
+# sigma_f = 1e6
+# mu_f = 1.25e-6
+# mu_s = 6.3e-3
+
+sigma_s = 1e6
 sigma_f = 1e6
-mu_f = 1.25e-6
-mu_s = 6.3e-3
+mu_f = 1e-6
+mu_s = 1e-3
+
 
 # sigma_s = 1
 # sigma_f = 1
@@ -759,9 +765,7 @@ E_expr = fem.Expression(E, X.element.interpolation_points())
 E_h = fem.Function(X)
 E_h.interpolate(E_expr)
 
-# L_T_1 = inner(dot(J_p + sigma * E_h, E_h), w_s) * dx_T(volume_id["solid"]) \
-#     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
-L_T_1 = inner(dot(J_p, J_p), w_s) * dx_T(volume_id["solid"]) \
+L_T_1 = inner(dot(J_p + sigma * E_h, E_h), w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 # Compile forms
