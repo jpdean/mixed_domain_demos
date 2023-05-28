@@ -16,6 +16,8 @@ import sys
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 
+length = 0.8
+height = 1.25
 
 def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
     gmsh.initialize()
@@ -38,8 +40,6 @@ def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 0.8
-        height = 1.25
         c = (0.41, 0.25)
         r = 0.05
         r_s = 0.1
@@ -508,11 +508,15 @@ phi = TestFunction(X)
 # Magnetic vector potential at previous time step
 A_h = fem.Function(X)
 A_n = fem.Function(X)
+A_n.interpolate(lambda x: (np.zeros_like(x[0]), np.zeros_like(x[0]), np.sin(np.pi * x[0] / length) * np.sin(np.pi * x[1] / height)))
 
 # Prescribed current density
-Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
-J_p = fem.Function(Z)
-J_p.interpolate(lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), 1e3 * np.ones_like(x[0]))))
+# Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
+# J_p = fem.Function(Z)
+# J_p.interpolate(lambda x: np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), 1e3 * np.ones_like(x[0]))))
+x = ufl.SpatialCoordinate(msh)
+J_p = as_vector(
+    (0.0, 0.0, ufl.pi**2*(height**2 + length**2)*ufl.sin(x[0]*ufl.pi/length)*ufl.sin(x[1]*ufl.pi/height)/(height**2*mu*length**2)))
 
 
 # Function spaces for fluid and solid temperature
@@ -765,7 +769,13 @@ E_expr = fem.Expression(E, X.element.interpolation_points())
 E_h = fem.Function(X)
 E_h.interpolate(E_expr)
 
-L_T_1 = inner(dot(J_p + sigma * E_h, E_h), w_s) * dx_T(volume_id["solid"]) \
+# This is the wrong func space, but I think that's the best you can do with FEM
+J = J_p - sigma * E_h
+J_expr = fem.Expression(J, X.element.interpolation_points())
+J_h = fem.Function(X)
+J_h.interpolate(J_expr)
+
+L_T_1 = inner(dot(J, E_h), w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
 # Compile forms
@@ -806,8 +816,11 @@ T_s_file.write_mesh(submesh_s)
 
 V_vis = fem.VectorFunctionSpace(msh, ("Lagrange", 1))
 E_vis = fem.Function(V_vis)
+J_vis = fem.Function(V_vis)
 E_h_file = io.XDMFFile(MPI.COMM_WORLD, "E_h.xdmf", "w")
 E_h_file.write_mesh(msh)
+J_h_file = io.XDMFFile(MPI.COMM_WORLD, "J_h.xdmf", "w")
+J_h_file.write_mesh(msh)
 
 
 t = 0.0
@@ -817,6 +830,7 @@ for vis_file in vis_files:
 T_file.write_function(T_n, t)
 T_s_file.write_function(T_s_n, t)
 E_h_file.write_function(E_vis, t)
+J_h_file.write_function(J_vis, t)
 for n in range(num_time_steps):
     t += delta_t.value
     par_print(f"t = {t}")
@@ -855,6 +869,8 @@ for n in range(num_time_steps):
 
     E_h.interpolate(E_expr)
     E_vis.interpolate(E_h)
+    J_h.interpolate(J_expr)
+    J_vis.interpolate(J_h)
 
     # par_print(E_h.vector.norm())
 
@@ -888,6 +904,7 @@ for n in range(num_time_steps):
         T_file.write_function(T_n, t)
         T_s_file.write_function(T_s_n, t)
         E_h_file.write_function(E_vis, t)
+        J_h_file.write_function(J_vis, t)
         t_last_write = t
 
     # Update u_n
@@ -901,6 +918,7 @@ for vis_file in vis_files:
 T_file.close()
 T_s_file.close()
 E_h_file.close()
+J_h_file.close()
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
