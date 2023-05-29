@@ -167,6 +167,8 @@ def solve(solver_type, k, nu, num_time_steps,
         entity_map, solver_type, boundary_conditions,
         boundaries, mt, f, facet_mesh, u_n, ubar_n)
 
+    u, v = TrialFunction(V), TestFunction(V)
+
     # Trial and test functions for the magnetic vector potential
     A, phi = TrialFunction(X), TestFunction(X)
     A_h = fem.Function(X)
@@ -178,15 +180,17 @@ def solve(solver_type, k, nu, num_time_steps,
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
                     + inner(1 / mu * curl(A), curl(phi)) * dx
                     + inner(sigma * cross(curl(A), u_n), phi) * dx)
+    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx)
 
-    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx
-                   + inner(sigma * cross(u_n, B_0), phi) * dx)
+    # NOTE Could fully couple vel term
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
+    # FIXME Do this neatly
     a[0].append(None)
     a[1].append(None)
     a[2].append(None)
     a[3].append(None)
-    a.append([None, None, None, None, a_44])
+    a.append([a_40, None, None, None, a_44])
     L.append(L_4)
 
     if solver_type == SolverType.NAVIER_STOKES:
