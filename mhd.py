@@ -74,7 +74,7 @@ class GaussianBump(hdg_navier_stokes.Problem):
                     recombine = True
                 extrude_surfs = [(2, 1)]
                 gmsh.model.geo.extrude(
-                    extrude_surfs, 0, 0, 1.0, [8], recombine=recombine)
+                    extrude_surfs, 0, 0, 1.0, [round(height / h)], recombine=recombine)
 
             gmsh.model.geo.synchronize()
 
@@ -211,7 +211,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 6.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 32.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -449,7 +449,7 @@ if __name__ == "__main__":
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
-    num_time_steps = 32
+    num_time_steps = 10
     t_end = 10
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
@@ -464,10 +464,10 @@ if __name__ == "__main__":
     problem = GaussianBump(d)
     msh, ft, boundaries = problem.create_mesh(h, cell_type)
 
-    with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-        file.write_mesh(msh)
-        # file.write_meshtags(ct)
-        file.write_meshtags(ft)
+    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+    #     file.write_mesh(msh)
+    #     # file.write_meshtags(ct)
+    #     file.write_meshtags(ft)
 
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
