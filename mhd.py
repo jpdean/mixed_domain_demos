@@ -9,7 +9,7 @@ from hdg_navier_stokes import BCType
 from petsc4py import PETSc
 from utils import norm_L2, normal_jump_error, domain_average
 import ufl
-from ufl import div
+from ufl import div, TrialFunction, TestFunction, inner, dx, curl, cross, as_vector
 import sys
 
 
@@ -150,6 +150,10 @@ def solve(solver_type, k, nu, num_time_steps,
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
         msh, facet_mesh, scheme, k)
 
+    # H(curl; Ω)-conforming space for magnetic vector potential and electric
+    # field
+    X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
+
     u_n = fem.Function(V)
     u_n.interpolate(u_i_expr)
     ubar_n = fem.Function(Vbar)
@@ -159,6 +163,28 @@ def solve(solver_type, k, nu, num_time_steps,
         V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         entity_map, solver_type, boundary_conditions,
         boundaries, mt, f, facet_mesh, u_n, ubar_n)
+
+    # Trial and test functions for the magnetic vector potential
+    A, phi = TrialFunction(X), TestFunction(X)
+    A_h = fem.Function(X)
+    A_n = fem.Function(X)
+
+    B_0 = as_vector((0, 1, 0))
+
+    # FIXME Add mu and sigma
+    a_44 = fem.form(inner(A / delta_t, phi) * dx
+                    + inner(curl(A), curl(phi)) * dx
+                    + inner(cross(curl(A), u_n), phi) * dx)
+
+    L_4 = fem.form(inner(A_n / delta_t, phi) * dx
+                   + inner(cross(u_n, B_0), phi) * dx)
+
+    a[0].append(None)
+    a[1].append(None)
+    a[2].append(None)
+    a[3].append(None)
+    a.append([None, None, None, None, a_44])
+    L.append(L_4)
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
@@ -180,6 +206,8 @@ def solve(solver_type, k, nu, num_time_steps,
 
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
         V, Q, Vbar)
+    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
+        Qbar.dofmap.index_map_bs
 
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
@@ -231,9 +259,12 @@ def solve(solver_type, k, nu, num_time_steps,
         ubar_n.x.array[:ubar_offset -
                        p_offset] = x.array_r[p_offset:ubar_offset]
         ubar_n.x.scatter_forward()
-        pbar_h.x.array[:(len(x.array_r) - ubar_offset)
-                       ] = x.array_r[ubar_offset:]
+        pbar_h.x.array[:pbar_offset -
+                       ubar_offset] = x.array_r[ubar_offset:pbar_offset]
         pbar_h.x.scatter_forward()
+        A_h.x.array[:(len(x.array_r) - pbar_offset)
+                    ] = x.array_r[pbar_offset:]
+        A_h.x.scatter_forward()
 
         u_vis.interpolate(u_n)
 
