@@ -32,7 +32,8 @@ class GaussianBump(hdg_navier_stokes.Problem):
 
         boundaries = {"inlet": 1,
                       "outlet": 2,
-                      "walls": 3}
+                      "y_walls": 3,
+                      "z_walls": 4}
 
         gmsh.initialize()
         if comm.rank == 0:
@@ -85,7 +86,9 @@ class GaussianBump(hdg_navier_stokes.Problem):
             else:
                 gmsh.model.addPhysicalGroup(3, [1], 1)
                 gmsh.model.addPhysicalGroup(
-                    2, [1, 13, 21, 26], boundaries["walls"])
+                    2, [1, 26], boundaries["z_walls"])
+                gmsh.model.addPhysicalGroup(
+                    2, [13, 21], boundaries["y_walls"])
                 gmsh.model.addPhysicalGroup(2, [25], boundaries["inlet"])
                 gmsh.model.addPhysicalGroup(2, [17], boundaries["outlet"])
 
@@ -129,9 +132,15 @@ class GaussianBump(hdg_navier_stokes.Problem):
                  np.zeros_like(x[0]),
                  np.zeros_like(x[0])))
 
-        return {"inlet": (BCType.Dirichlet, inlet),
-                "outlet": (BCType.Neumann, zero),
-                "walls": (BCType.Dirichlet, zero)}
+        u_bcs = {"inlet": (BCType.Dirichlet, inlet),
+                 "outlet": (BCType.Neumann, zero),
+                 "y_walls": (BCType.Dirichlet, zero),
+                 "z_walls": (BCType.Dirichlet, zero)}
+        # Homogeneous Dirichlet (conducting) on y walls,
+        # homogeneous Neumann (insulating) on z walls
+        A_bcs = {"y_walls": (BCType.Dirichlet, zero)}
+
+        return {"u": u_bcs, "A": A_bcs}
 
     def f(self, msh):
         return fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(self.d)])
@@ -276,7 +285,7 @@ def solve(solver_type, k, nu, num_time_steps,
     # MUMPS seems to cope with the small nullspace
     bcs = []
     bc_funcs = []
-    for name, bc in boundary_conditions.items():
+    for name, bc in boundary_conditions["u"].items():
         id = boundaries[name]
         bc_type, bc_expr = bc
         bc_func = fem.Function(Vbar)
@@ -292,6 +301,16 @@ def solve(solver_type, k, nu, num_time_steps,
             if solver_type == SolverType.NAVIER_STOKES:
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
+
+    for name, bc in boundary_conditions["A"].items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        assert bc_type == BCType.Dirichlet
+        bc_func = fem.Function(X)
+        bc_func.interpolate(bc_expr)
+        facets = mt.find(id)
+        dofs = fem.locate_dofs_topological(X, fdim, facets)
+        bcs.append(fem.dirichletbc(bc_func, dofs))
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
@@ -461,10 +480,12 @@ if __name__ == "__main__":
     problem = GaussianBump(d)
     msh, ft, boundaries = problem.create_mesh(n_x, n_y, cell_type)
 
-    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-    #     file.write_mesh(msh)
-    #     # file.write_meshtags(ct)
-    #     file.write_meshtags(ft)
+    with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+        file.write_mesh(msh)
+        # file.write_meshtags(ct)
+        file.write_meshtags(ft)
+
+    exit()
 
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
