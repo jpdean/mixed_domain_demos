@@ -357,6 +357,11 @@ def solve(solver_type, k, nu, num_time_steps,
     B_vis = fem.Function(V_vis)
     B_vis.interpolate(B_expr)
 
+    J_h = - sigma * ((A_h - A_n) / delta_t + cross(curl(A_h), u_n))
+    J_expr = fem.Expression(J_h, V_vis.element.interpolation_points())
+    J_vis = fem.Function(V_vis)
+    J_vis.interpolate(J_expr)
+
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
         V, Q, Vbar)
     pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
@@ -379,7 +384,7 @@ def solve(solver_type, k, nu, num_time_steps,
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h), ("B.bp", B_vis)]]
+                 ("pbar.bp", pbar_h), ("B.bp", B_vis), ("J.bp", J_vis)]]
 
     t = 0.0
     for vis_file in vis_files:
@@ -420,6 +425,7 @@ def solve(solver_type, k, nu, num_time_steps,
         A_h.x.scatter_forward()
 
         B_vis.interpolate(B_expr)
+        J_vis.interpolate(J_expr)
 
         u_vis.interpolate(u_n)
 
@@ -480,12 +486,11 @@ if __name__ == "__main__":
     problem = GaussianBump(d)
     msh, ft, boundaries = problem.create_mesh(n_x, n_y, cell_type)
 
-    with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-        file.write_mesh(msh)
-        # file.write_meshtags(ct)
-        file.write_meshtags(ft)
-
-    exit()
+    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+    #     file.write_mesh(msh)
+    #     # file.write_meshtags(ct)
+    #     file.write_meshtags(ft)
+    # exit()
 
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
