@@ -162,13 +162,6 @@ def solve(solver_type, k, nu, num_time_steps,
     ubar_n = fem.Function(Vbar)
     ubar_n.interpolate(u_i_expr)
 
-    a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
-        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
-        entity_map, solver_type, boundary_conditions,
-        boundaries, mt, f, facet_mesh, u_n, ubar_n)
-
-    u, v = TrialFunction(V), TestFunction(V)
-
     # Trial and test functions for the magnetic vector potential
     A, phi = TrialFunction(X), TestFunction(X)
     A_h = fem.Function(X)
@@ -176,14 +169,26 @@ def solve(solver_type, k, nu, num_time_steps,
 
     B_0 = as_vector((0, 1, 0))
 
-    # Using linearised version (3.71) - (3.74) https://academic.oup.com/book/5953/chapter/149296535?login=true
+    # f += - sigma * 
+
+    a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
+        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
+        entity_map, solver_type, boundary_conditions,
+        boundaries, mt, f, facet_mesh, u_n, ubar_n)
+
+    u, v = TrialFunction(V), TestFunction(V)
+
+
+    # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
                     + inner(1 / mu * curl(A), curl(phi)) * dx)
     a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx
                     + inner(sigma * cross(curl(A_n), u), phi) * dx)
 
     a_04 = fem.form(
-        - inner(sigma * cross(u, curl(A_n)), cross(curl(A_n), v)) * dx)
+        inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx
+        - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx
+        + inner(sigma * A / delta_t, cross(B_0, v)) * dx)
 
     # NOTE Could fully couple vel term
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
