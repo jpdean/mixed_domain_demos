@@ -176,11 +176,14 @@ def solve(solver_type, k, nu, num_time_steps,
 
     B_0 = as_vector((0, 1, 0))
 
-    # FIXME Add mu and sigma
+    # Using linearised version (3.71) - (3.74) https://academic.oup.com/book/5953/chapter/149296535?login=true
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
-                    + inner(1 / mu * curl(A), curl(phi)) * dx
-                    + inner(sigma * cross(curl(A), u_n), phi) * dx)
-    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx)
+                    + inner(1 / mu * curl(A), curl(phi)) * dx)
+    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx
+                    + inner(sigma * cross(curl(A_n), u), phi) * dx)
+
+    a_04 = fem.form(
+        - inner(sigma * cross(u, curl(A_n)), cross(curl(A_n), v)) * dx)
 
     # NOTE Could fully couple vel term
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
