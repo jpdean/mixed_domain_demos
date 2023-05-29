@@ -204,6 +204,11 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
+    B_h = B_0 + curl(A_h)
+    B_expr = fem.Expression(B_h, V_vis.element.interpolation_points())
+    B_vis = fem.Function(V_vis)
+    B_vis.interpolate(B_expr)
+
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
         V, Q, Vbar)
     pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
@@ -226,7 +231,7 @@ def solve(solver_type, k, nu, num_time_steps,
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h)]]
+                 ("pbar.bp", pbar_h), ("B.bp", B_vis)]]
 
     t = 0.0
     for vis_file in vis_files:
@@ -265,6 +270,8 @@ def solve(solver_type, k, nu, num_time_steps,
         A_h.x.array[:(len(x.array_r) - pbar_offset)
                     ] = x.array_r[pbar_offset:]
         A_h.x.scatter_forward()
+
+        B_vis.interpolate(B_expr)
 
         u_vis.interpolate(u_n)
 
