@@ -9,8 +9,11 @@ from hdg_navier_stokes import BCType
 from petsc4py import PETSc
 from utils import norm_L2, normal_jump_error, domain_average
 import ufl
-from ufl import div, TrialFunction, TestFunction, inner, dx, curl, cross, as_vector
+from ufl import (div, TrialFunction, TestFunction, inner, dx, curl, cross,
+                 as_vector, grad, outer, dot)
 import sys
+from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 
 
 def par_print(string):
@@ -169,14 +172,129 @@ def solve(solver_type, k, nu, num_time_steps,
 
     B_0 = as_vector((0, 1, 0))
 
-    # f += - sigma * 
+    tdim = msh.topology.dim
+    fdim = tdim - 1
 
-    a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
-        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
-        entity_map, solver_type, boundary_conditions,
-        boundaries, mt, f, facet_mesh, u_n, ubar_n)
+    all_facets_tag = 0
+    all_facets = []
+    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
+    for cell in range(msh.topology.index_map(tdim).size_local):
+        for local_facet in range(num_cell_facets):
+            all_facets.extend([cell, local_facet])
 
-    u, v = TrialFunction(V), TestFunction(V)
+    facet_integration_entities = [(all_facets_tag, all_facets)]
+    facet_integration_entities += compute_integration_domains(
+        fem.IntegralType.exterior_facet, mt._cpp_object)
+    dx_c = ufl.Measure("dx", domain=msh)
+    # FIXME Figure out why this is being estimated wrong for DRW
+    # NOTE k**2 works on affine meshes
+    quad_deg = (k + 1)**2
+    ds_c = ufl.Measure(
+        "ds", subdomain_data=facet_integration_entities, domain=msh,
+        metadata={"quadrature_degree": quad_deg})
+    dx_f = ufl.Measure("dx", domain=facet_mesh)
+
+    inv_entity_map = np.full_like(entity_map, -1)
+    for i, facet in enumerate(entity_map):
+        inv_entity_map[facet] = i
+
+    entity_maps = {facet_mesh: inv_entity_map}
+
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    p = ufl.TrialFunction(Q)
+    q = ufl.TestFunction(Q)
+    ubar = ufl.TrialFunction(Vbar)
+    vbar = ufl.TestFunction(Vbar)
+    pbar = ufl.TrialFunction(Qbar)
+    qbar = ufl.TestFunction(Qbar)
+
+    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(msh)
+    gamma = 6.0 * k**2 / h  # TODO Should be larger in 3D
+
+    lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+    delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
+    nu = fem.Constant(msh, PETSc.ScalarType(nu))
+
+    a_00 = inner(u / delta_t, v) * dx_c \
+        + nu * inner(grad(u), grad(v)) * dx_c \
+        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
+    a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
+                    grad(v)) * dx_c)
+    a_02 = - nu * gamma * inner(
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
+    a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
+                          outer(v, n)) * ds_c(all_facets_tag),
+                    entity_maps=entity_maps)
+    a_10 = fem.form(inner(u, grad(q)) * dx_c -
+                    inner(dot(u, n), q) * ds_c(all_facets_tag))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(vbar, n)
+                             ) * ds_c(all_facets_tag)
+    a_30 = fem.form(inner(dot(u, n), qbar) *
+                    ds_c(all_facets_tag), entity_maps=entity_maps)
+    a_23 = fem.form(
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
+        ds_c(all_facets_tag),
+        entity_maps=entity_maps)
+    # On the Dirichlet boundary, the contribution from this term will be
+    # added to the RHS in apply_lifting
+    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
+                    entity_maps=entity_maps)
+    a_22 = - nu * gamma * \
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
+
+    if solver_type == SolverType.NAVIER_STOKES:
+        a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
+            ds_c(all_facets_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
+            ds_c(all_facets_tag)
+        a_22 += inner(outer(ubar, lmbda * u_n),
+                      outer(vbar, n)) * ds_c(all_facets_tag)
+
+    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
+                                   for i in range(tdim)]),
+                vbar) * ds_c(all_facets_tag)
+
+    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
+    # MUMPS seems to cope with the small nullspace
+    bcs = []
+    bc_funcs = []
+    for name, bc in boundary_conditions.items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        bc_func = fem.Function(Vbar)
+        bc_func.interpolate(bc_expr)
+        bc_funcs.append((bc_func, bc_expr))
+        if bc_type == BCType.Dirichlet:
+            facets = inv_entity_map[mt.indices[mt.values == id]]
+            dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+            bcs.append(fem.dirichletbc(bc_func, dofs))
+        else:
+            assert bc_type == BCType.Neumann
+            L_2 += inner(bc_func, vbar) * ds_c(id)
+            if solver_type == SolverType.NAVIER_STOKES:
+                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
+                                ubar, vbar) * ds_c(id)
+
+    a_00 = fem.form(a_00)
+    a_02 = fem.form(a_02, entity_maps=entity_maps)
+    a_20 = fem.form(a_20, entity_maps=entity_maps)
+    a_22 = fem.form(a_22, entity_maps=entity_maps)
+
+    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
+    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
+    L_2 = fem.form(L_2, entity_maps=entity_maps)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
 
     # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
@@ -193,13 +311,11 @@ def solve(solver_type, k, nu, num_time_steps,
     # NOTE Could fully couple vel term
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
-    # FIXME Do this neatly
-    a[0].append(None)
-    a[1].append(None)
-    a[2].append(None)
-    a[3].append(None)
-    a.append([a_40, None, None, None, a_44])
-    L.append(L_4)
+    a = [[a_00, a_01, a_02, a_03],
+         [a_10, None, None, None],
+         [a_20, None, a_22, a_23],
+         [a_30, None, a_32, None]]
+    L = [L_0, L_1, L_2, L_3]
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
@@ -252,7 +368,7 @@ def solve(solver_type, k, nu, num_time_steps,
     for vis_file in vis_files:
         vis_file.write(t)
     for n in range(num_time_steps):
-        t += delta_t
+        t += delta_t.value
         par_print(f"t = {t}")
 
         for bc_func, bc_expr in bc_funcs:
