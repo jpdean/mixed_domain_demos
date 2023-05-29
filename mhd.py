@@ -9,7 +9,7 @@ from hdg_navier_stokes import BCType
 from petsc4py import PETSc
 from utils import norm_L2, normal_jump_error, domain_average
 import ufl
-from ufl import (div, TrialFunction, TestFunction, inner, dx, curl, cross,
+from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
 import sys
 from dolfinx.cpp.mesh import cell_num_entities
@@ -260,6 +260,18 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
+    # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx_c
+                    + inner(1 / mu * curl(A), curl(phi)) * dx_c)
+    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
+                    + inner(sigma * cross(curl(A_n), u), phi) * dx_c)
+    a_04 = fem.form(
+        inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx_c
+        - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
+        + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c)
+
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx_c)
+
     L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
                                    for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
@@ -290,32 +302,22 @@ def solve(solver_type, k, nu, num_time_steps,
     a_20 = fem.form(a_20, entity_maps=entity_maps)
     a_22 = fem.form(a_22, entity_maps=entity_maps)
 
-    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
+    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c
+                   + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
+                   + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
+                   + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c)
+
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
         facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
-
-    # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
-    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
-                    + inner(1 / mu * curl(A), curl(phi)) * dx)
-    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx
-                    + inner(sigma * cross(curl(A_n), u), phi) * dx)
-
-    a_04 = fem.form(
-        inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx
-        - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx
-        + inner(sigma * A / delta_t, cross(B_0, v)) * dx)
-
-    # NOTE Could fully couple vel term
-    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
-
-    a = [[a_00, a_01, a_02, a_03],
-         [a_10, None, None, None],
-         [a_20, None, a_22, a_23],
-         [a_30, None, a_32, None]]
-    L = [L_0, L_1, L_2, L_3]
+    a = [[a_00, a_01, a_02, a_03, a_04],
+         [a_10, None, None, None, None],
+         [a_20, None, a_22, a_23, None],
+         [a_30, None, a_32, None, None],
+         [a_40, None, None, None, a_44]]
+    L = [L_0, L_1, L_2, L_3, L_4]
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
