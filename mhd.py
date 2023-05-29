@@ -150,6 +150,9 @@ def solve(solver_type, k, nu, num_time_steps,
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
         msh, facet_mesh, scheme, k)
 
+    sigma = fem.Constant(msh, 2.0)
+    mu = fem.Constant(msh, 0.5)
+
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
     X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
@@ -172,12 +175,12 @@ def solve(solver_type, k, nu, num_time_steps,
     B_0 = as_vector((0, 1, 0))
 
     # FIXME Add mu and sigma
-    a_44 = fem.form(inner(A / delta_t, phi) * dx
-                    + inner(curl(A), curl(phi)) * dx
-                    + inner(cross(curl(A), u_n), phi) * dx)
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
+                    + inner(1 / mu * curl(A), curl(phi)) * dx
+                    + inner(sigma * cross(curl(A), u_n), phi) * dx)
 
-    L_4 = fem.form(inner(A_n / delta_t, phi) * dx
-                   + inner(cross(u_n, B_0), phi) * dx)
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx
+                   + inner(sigma * cross(u_n, B_0), phi) * dx)
 
     a[0].append(None)
     a[1].append(None)
