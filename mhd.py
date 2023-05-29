@@ -27,7 +27,7 @@ class GaussianBump(hdg_navier_stokes.Problem):
         super().__init__()
         self.d = d
 
-    def create_mesh(self, h, cell_type):
+    def create_mesh(self, n_x, n_y, cell_type):
         comm = MPI.COMM_WORLD
 
         boundaries = {"inlet": 1,
@@ -40,12 +40,12 @@ class GaussianBump(hdg_navier_stokes.Problem):
             gmsh.model.add("channel")
             order = 1
 
-            length = 2
+            length = 4
             height = 1
-            points = [gmsh.model.geo.addPoint(0, 0, 0, h),
-                      gmsh.model.geo.addPoint(length, 0, 0, h),
-                      gmsh.model.geo.addPoint(length, height, 0, h),
-                      gmsh.model.geo.addPoint(0, height, 0, h)]
+            points = [gmsh.model.geo.addPoint(0, 0, 0),
+                      gmsh.model.geo.addPoint(length, 0, 0),
+                      gmsh.model.geo.addPoint(length, height, 0),
+                      gmsh.model.geo.addPoint(0, height, 0)]
 
             # Line tags
             lines = [gmsh.model.geo.addLine(points[0], points[1]),
@@ -57,15 +57,11 @@ class GaussianBump(hdg_navier_stokes.Problem):
 
             gmsh.model.geo.addPlaneSurface([1], 1)
 
-            # gmsh.model.geo.mesh.setTransfiniteCurve(1, 40)
-            # gmsh.model.geo.mesh.setTransfiniteCurve(
-            #   2, 15, "Progression", 1.1)
-            # gmsh.model.geo.mesh.setTransfiniteCurve(3, 40)
-            # gmsh.model.geo.mesh.setTransfiniteCurve(
-            #   4, 15, "Progression", -1.1)
-            # gmsh.model.geo.mesh.setTransfiniteSurface(
-            #     1, "Left", [bottom_points[0], bottom_points[-1],
-            #                 top_right_point, top_left_point])
+            gmsh.model.geo.mesh.setTransfiniteCurve(1, n_x)
+            gmsh.model.geo.mesh.setTransfiniteCurve(2, n_y)
+            gmsh.model.geo.mesh.setTransfiniteCurve(3, n_x)
+            gmsh.model.geo.mesh.setTransfiniteCurve(4, n_y)
+            gmsh.model.geo.mesh.setTransfiniteSurface(1, "Left")
 
             if self.d == 3:
                 if cell_type == mesh.CellType.tetrahedron:
@@ -74,7 +70,7 @@ class GaussianBump(hdg_navier_stokes.Problem):
                     recombine = True
                 extrude_surfs = [(2, 1)]
                 gmsh.model.geo.extrude(
-                    extrude_surfs, 0, 0, 1.0, [round(height / h)], recombine=recombine)
+                    extrude_surfs, 0, 0, 1.0, [n_y - 1], recombine=recombine)
 
             gmsh.model.geo.synchronize()
 
@@ -211,7 +207,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 32.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 64.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -445,11 +441,12 @@ def solve(solver_type, k, nu, num_time_steps,
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 8
+    n_x = 12
+    n_y = 10
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
-    num_time_steps = 10
+    num_time_steps = 32
     t_end = 10
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
@@ -462,7 +459,7 @@ if __name__ == "__main__":
 
     comm = MPI.COMM_WORLD
     problem = GaussianBump(d)
-    msh, ft, boundaries = problem.create_mesh(h, cell_type)
+    msh, ft, boundaries = problem.create_mesh(n_x, n_y, cell_type)
 
     # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
     #     file.write_mesh(msh)
