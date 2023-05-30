@@ -23,10 +23,6 @@ def par_print(string):
 
 
 class Channel(hdg_navier_stokes.Problem):
-    def __init__(self, d) -> None:
-        super().__init__()
-        self.d = d
-
     def create_mesh(self, n_x, n_y, n_z, cell_type):
         comm = MPI.COMM_WORLD
 
@@ -101,34 +97,23 @@ class Channel(hdg_navier_stokes.Problem):
             gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[3], n_s_y + 1)
             gmsh.model.geo.mesh.setTransfiniteSurface(wall_1_surf, "Left")
 
-            # FIXME Make only 3D
-            if self.d == 3:
-                if cell_type == mesh.CellType.tetrahedron:
-                    recombine = False
-                else:
-                    recombine = True
-                extrude_surfs = [(2, wall_0_surf), (2, fluid_surf), (2, wall_1_surf)]
-                gmsh.model.geo.extrude(
-                    extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
+            if cell_type == mesh.CellType.tetrahedron:
+                recombine = False
+            else:
+                recombine = True
+            extrude_surfs = [(2, wall_0_surf), (2, fluid_surf), (2, wall_1_surf)]
+            gmsh.model.geo.extrude(
+                extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
 
             gmsh.model.geo.synchronize()
 
-            # if self.d == 2:
-            #     gmsh.model.addPhysicalGroup(2, [1], 1)
-
-            #     gmsh.model.addPhysicalGroup(
-            #         1, [lines[0], lines[2]], boundaries["walls"])
-            #     gmsh.model.addPhysicalGroup(
-            #         1, [lines[1]], boundaries["outlet"])
-            #     gmsh.model.addPhysicalGroup(1, [lines[3]], boundaries["inlet"])
-            # else:
-            #     gmsh.model.addPhysicalGroup(3, [1], 1)
-            #     gmsh.model.addPhysicalGroup(
-            #         2, [1, 26], boundaries["z_walls"])
-            #     gmsh.model.addPhysicalGroup(
-            #         2, [13, 21], boundaries["y_walls"])
-            #     gmsh.model.addPhysicalGroup(2, [25], boundaries["inlet"])
-            #     gmsh.model.addPhysicalGroup(2, [17], boundaries["outlet"])
+            # gmsh.model.addPhysicalGroup(3, [1], 1)
+            # gmsh.model.addPhysicalGroup(
+            #     2, [1, 26], boundaries["z_walls"])
+            # gmsh.model.addPhysicalGroup(
+            #     2, [13, 21], boundaries["y_walls"])
+            # gmsh.model.addPhysicalGroup(2, [25], boundaries["inlet"])
+            # gmsh.model.addPhysicalGroup(2, [17], boundaries["outlet"])
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
             if cell_type == mesh.CellType.quadrilateral \
@@ -137,7 +122,7 @@ class Channel(hdg_navier_stokes.Problem):
                 gmsh.option.setNumber("Mesh.Algorithm", 8)
                 # TODO Check what this is doing, it may be making things worse
                 # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-            gmsh.model.mesh.generate(self.d)
+            gmsh.model.mesh.generate(3)
             gmsh.model.mesh.setOrder(order)
 
             gmsh.write("msh.msh")
@@ -151,24 +136,15 @@ class Channel(hdg_navier_stokes.Problem):
         return msh, ft, boundaries
 
     def boundary_conditions(self):
-        if self.d == 2:
-            def inlet(x): return np.vstack(
-                (6 * x[1] * (1 - x[1]),
-                 np.zeros_like(x[0])))
+        def inlet(x): return np.vstack(
+            (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
+                np.zeros_like(x[0]),
+                np.zeros_like(x[0])))
 
-            def zero(x): return np.vstack(
-                (np.zeros_like(x[0]),
-                 np.zeros_like(x[0])))
-        else:
-            def inlet(x): return np.vstack(
-                (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
-                 np.zeros_like(x[0]),
-                 np.zeros_like(x[0])))
-
-            def zero(x): return np.vstack(
-                (np.zeros_like(x[0]),
-                 np.zeros_like(x[0]),
-                 np.zeros_like(x[0])))
+        def zero(x): return np.vstack(
+            (np.zeros_like(x[0]),
+                np.zeros_like(x[0]),
+                np.zeros_like(x[0])))
 
         u_bcs = {"inlet": (BCType.Dirichlet, inlet),
                  "outlet": (BCType.Neumann, zero),
@@ -184,10 +160,10 @@ class Channel(hdg_navier_stokes.Problem):
         return {"u": u_bcs, "A": A_bcs}
 
     def f(self, msh):
-        return fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(self.d)])
+        return fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(3)])
 
     def u_i(self):
-        return lambda x: np.zeros_like(x[:d])
+        return lambda x: np.zeros_like(x[:3])
 
 
 def solve(solver_type, k, nu, num_time_steps,
@@ -518,14 +494,8 @@ if __name__ == "__main__":
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
-    if cell_type == mesh.CellType.tetrahedron or \
-            cell_type == mesh.CellType.hexahedron:
-        d = 3
-    else:
-        d = 2
-
     comm = MPI.COMM_WORLD
-    problem = Channel(d)
+    problem = Channel()
     msh, ft, boundaries = problem.create_mesh(n_x, n_y, n_z, cell_type)
 
     with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
