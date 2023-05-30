@@ -22,13 +22,16 @@ def par_print(string):
         sys.stdout.flush()
 
 
-class GaussianBump(hdg_navier_stokes.Problem):
+class Channel(hdg_navier_stokes.Problem):
     def __init__(self, d) -> None:
         super().__init__()
         self.d = d
 
-    def create_mesh(self, n_x, n_y, cell_type):
+    def create_mesh(self, n_x, n_y, n_z, cell_type):
         comm = MPI.COMM_WORLD
+
+        volumes = {"solid": 1,
+                   "fluid": 2}
 
         boundaries = {"inlet": 1,
                       "outlet": 2,
@@ -41,12 +44,13 @@ class GaussianBump(hdg_navier_stokes.Problem):
             gmsh.model.add("channel")
             order = 1
 
-            length = 4
-            height = 1
+            L_x = 4
+            L_y = 1
+            L_z = 1
             points = [gmsh.model.geo.addPoint(0, 0, 0),
-                      gmsh.model.geo.addPoint(length, 0, 0),
-                      gmsh.model.geo.addPoint(length, height, 0),
-                      gmsh.model.geo.addPoint(0, height, 0)]
+                      gmsh.model.geo.addPoint(L_x, 0, 0),
+                      gmsh.model.geo.addPoint(L_x, L_y, 0),
+                      gmsh.model.geo.addPoint(0, L_y, 0)]
 
             # Line tags
             lines = [gmsh.model.geo.addLine(points[0], points[1]),
@@ -58,10 +62,10 @@ class GaussianBump(hdg_navier_stokes.Problem):
 
             gmsh.model.geo.addPlaneSurface([1], 1)
 
-            gmsh.model.geo.mesh.setTransfiniteCurve(1, n_x)
-            gmsh.model.geo.mesh.setTransfiniteCurve(2, n_y)
-            gmsh.model.geo.mesh.setTransfiniteCurve(3, n_x)
-            gmsh.model.geo.mesh.setTransfiniteCurve(4, n_y)
+            gmsh.model.geo.mesh.setTransfiniteCurve(1, n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(2, n_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(3, n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(4, n_y + 1)
             gmsh.model.geo.mesh.setTransfiniteSurface(1, "Left")
 
             if self.d == 3:
@@ -71,7 +75,7 @@ class GaussianBump(hdg_navier_stokes.Problem):
                     recombine = True
                 extrude_surfs = [(2, 1)]
                 gmsh.model.geo.extrude(
-                    extrude_surfs, 0, 0, 1.0, [n_y - 1], recombine=recombine)
+                    extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
 
             gmsh.model.geo.synchronize()
 
@@ -102,8 +106,8 @@ class GaussianBump(hdg_navier_stokes.Problem):
             gmsh.model.mesh.generate(self.d)
             gmsh.model.mesh.setOrder(order)
 
-            # gmsh.write("msh.msh")
-        # exit()
+            gmsh.write("msh.msh")
+        exit()
 
         partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
         msh, _, ft = gmshio.model_to_mesh(
@@ -471,6 +475,7 @@ if __name__ == "__main__":
     solver_type = SolverType.NAVIER_STOKES
     n_x = 12
     n_y = 6
+    n_z = 6
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
@@ -486,14 +491,14 @@ if __name__ == "__main__":
         d = 2
 
     comm = MPI.COMM_WORLD
-    problem = GaussianBump(d)
-    msh, ft, boundaries = problem.create_mesh(n_x, n_y, cell_type)
+    problem = Channel(d)
+    msh, ft, boundaries = problem.create_mesh(n_x, n_y, n_z, cell_type)
 
-    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-    #     file.write_mesh(msh)
-    #     # file.write_meshtags(ct)
-    #     file.write_meshtags(ft)
-    # exit()
+    with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+        file.write_mesh(msh)
+        # file.write_meshtags(ct)
+        file.write_meshtags(ft)
+    exit()
 
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
