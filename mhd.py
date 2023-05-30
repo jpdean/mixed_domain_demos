@@ -169,7 +169,7 @@ class Channel(hdg_navier_stokes.Problem):
                  "fluid_z_walls": (BCType.Dirichlet, zero)}
         # # Homogeneous Dirichlet (conducting) on y walls,
         # # homogeneous Neumann (insulating) on z walls
-        # A_bcs = {"y_walls": (BCType.Dirichlet, zero)}
+        # A_bcs = {"solid_y_walls": (BCType.Dirichlet, zero)}
 
         # Insulating walls
         A_bcs = {}
@@ -195,7 +195,12 @@ def solve(solver_type, k, nu, num_time_steps,
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
         fluid_sm, facet_mesh, scheme, k)
 
-    sigma = fem.Constant(msh, 2.0)
+    V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
+    sigma = fem.Function(V_coeff)
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], 2), ct.find(volumes["fluid"]))
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], 10), ct.find(volumes["solid"]))
     mu = fem.Constant(msh, 0.5)
 
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
