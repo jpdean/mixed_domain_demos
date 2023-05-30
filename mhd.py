@@ -23,16 +23,19 @@ def par_print(string):
 
 
 class Channel(hdg_navier_stokes.Problem):
-    def create_mesh(self, n_x, n_y, n_z, cell_type):
+    def create_mesh(self, n_x, n_y, n_z, n_s_y, cell_type):
         comm = MPI.COMM_WORLD
 
         volumes = {"solid": 1,
                    "fluid": 2}
 
-        boundaries = {"inlet": 1,
-                      "outlet": 2,
-                      "y_walls": 3,
-                      "z_walls": 4}
+        boundaries = {"solid_x_walls": 1,
+                      "solid_y_walls": 2,
+                      "solid_z_walls": 3,
+                      "fluid_y_walls": 4,
+                      "fluid_z_walls": 5,
+                      "inlet": 6,
+                      "outlet": 7}
 
         gmsh.initialize()
         if comm.rank == 0:
@@ -84,7 +87,6 @@ class Channel(hdg_navier_stokes.Problem):
             gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[3], n_y + 1)
             gmsh.model.geo.mesh.setTransfiniteSurface(fluid_surf, "Left")
 
-            n_s_y = 2
             gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[0], n_x + 1)
             gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[1], n_s_y + 1)
             gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[2], n_x + 1)
@@ -107,13 +109,21 @@ class Channel(hdg_navier_stokes.Problem):
 
             gmsh.model.geo.synchronize()
 
-            # gmsh.model.addPhysicalGroup(3, [1], 1)
-            # gmsh.model.addPhysicalGroup(
-            #     2, [1, 26], boundaries["z_walls"])
-            # gmsh.model.addPhysicalGroup(
-            #     2, [13, 21], boundaries["y_walls"])
-            # gmsh.model.addPhysicalGroup(2, [25], boundaries["inlet"])
-            # gmsh.model.addPhysicalGroup(2, [17], boundaries["outlet"])
+            gmsh.model.addPhysicalGroup(3, [1, 3], volumes["solid"])
+            gmsh.model.addPhysicalGroup(3, [2], volumes["fluid"])
+
+            gmsh.model.addPhysicalGroup(
+                2, [23, 31, 67, 75], boundaries["solid_x_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [19, 71], boundaries["solid_y_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [1, 3, 32, 76], boundaries["solid_z_walls"])
+            gmsh.model.addPhysicalGroup(2, [27, 49], boundaries["fluid_y_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [2, 54], boundaries["fluid_z_walls"])
+            gmsh.model.addPhysicalGroup(2, [53], boundaries["inlet"])
+            gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
+
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
             if cell_type == mesh.CellType.quadrilateral \
@@ -126,14 +136,13 @@ class Channel(hdg_navier_stokes.Problem):
             gmsh.model.mesh.setOrder(order)
 
             gmsh.write("msh.msh")
-        exit()
 
         partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-        msh, _, ft = gmshio.model_to_mesh(
-            gmsh.model, comm, 0, gdim=self.d, partitioner=partitioner)
+        msh, ct, ft = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
         gmsh.finalize()
 
-        return msh, ft, boundaries
+        return msh, ct, ft, boundaries
 
     def boundary_conditions(self):
         def inlet(x): return np.vstack(
@@ -486,6 +495,8 @@ if __name__ == "__main__":
     n_x = 12
     n_y = 6
     n_z = 6
+    n_s_y = 2
+
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
@@ -496,11 +507,12 @@ if __name__ == "__main__":
 
     comm = MPI.COMM_WORLD
     problem = Channel()
-    msh, ft, boundaries = problem.create_mesh(n_x, n_y, n_z, cell_type)
+    msh, ct, ft, boundaries = problem.create_mesh(
+        n_x, n_y, n_z, n_s_y, cell_type)
 
     with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
         file.write_mesh(msh)
-        # file.write_meshtags(ct)
+        file.write_meshtags(ct)
         file.write_meshtags(ft)
     exit()
 
