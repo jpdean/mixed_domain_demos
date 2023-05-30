@@ -59,18 +59,25 @@ class Channel(hdg_navier_stokes.Problem):
                             gmsh.model.geo.addPoint(0, L_y, 0)]
 
             wall_0_lines = [gmsh.model.geo.addLine(domain_points[0], domain_points[1]),
-                            gmsh.model.geo.addLine(domain_points[1], fluid_points[1]),
-                            gmsh.model.geo.addLine(fluid_points[1], fluid_points[0]),
-                            gmsh.model.geo.addLine(fluid_points[0], domain_points[0]),
+                            gmsh.model.geo.addLine(
+                                domain_points[1], fluid_points[1]),
+                            gmsh.model.geo.addLine(
+                                fluid_points[1], fluid_points[0]),
+                            gmsh.model.geo.addLine(
+                                fluid_points[0], domain_points[0]),
                             ]
             fluid_lines = [- wall_0_lines[2],
-                           gmsh.model.geo.addLine(fluid_points[1], fluid_points[2]),
-                           gmsh.model.geo.addLine(fluid_points[2], fluid_points[3]),
+                           gmsh.model.geo.addLine(
+                               fluid_points[1], fluid_points[2]),
+                           gmsh.model.geo.addLine(
+                               fluid_points[2], fluid_points[3]),
                            gmsh.model.geo.addLine(fluid_points[3], fluid_points[0])]
 
             wall_1_lines = [- fluid_lines[2],
-                            gmsh.model.geo.addLine(fluid_points[2], domain_points[2]),
-                            gmsh.model.geo.addLine(domain_points[2], domain_points[3]),
+                            gmsh.model.geo.addLine(
+                                fluid_points[2], domain_points[2]),
+                            gmsh.model.geo.addLine(
+                                domain_points[2], domain_points[3]),
                             gmsh.model.geo.addLine(domain_points[3], fluid_points[3])]
 
             wall_0_loop = gmsh.model.geo.addCurveLoop(wall_0_lines)
@@ -103,7 +110,8 @@ class Channel(hdg_navier_stokes.Problem):
                 recombine = False
             else:
                 recombine = True
-            extrude_surfs = [(2, wall_0_surf), (2, fluid_surf), (2, wall_1_surf)]
+            extrude_surfs = [(2, wall_0_surf),
+                             (2, fluid_surf), (2, wall_1_surf)]
             gmsh.model.geo.extrude(
                 extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
 
@@ -118,12 +126,12 @@ class Channel(hdg_navier_stokes.Problem):
                 2, [19, 71], boundaries["solid_y_walls"])
             gmsh.model.addPhysicalGroup(
                 2, [1, 3, 32, 76], boundaries["solid_z_walls"])
-            gmsh.model.addPhysicalGroup(2, [27, 49], boundaries["fluid_y_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [27, 49], boundaries["fluid_y_walls"])
             gmsh.model.addPhysicalGroup(
                 2, [2, 54], boundaries["fluid_z_walls"])
             gmsh.model.addPhysicalGroup(2, [53], boundaries["inlet"])
             gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
-
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
             if cell_type == mesh.CellType.quadrilateral \
@@ -142,23 +150,23 @@ class Channel(hdg_navier_stokes.Problem):
             gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
         gmsh.finalize()
 
-        return msh, ct, ft, boundaries
+        return msh, ct, ft, volumes, boundaries
 
     def boundary_conditions(self):
         def inlet(x): return np.vstack(
             (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
-                np.zeros_like(x[0]),
-                np.zeros_like(x[0])))
+             np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
 
         def zero(x): return np.vstack(
             (np.zeros_like(x[0]),
-                np.zeros_like(x[0]),
-                np.zeros_like(x[0])))
+             np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
 
         u_bcs = {"inlet": (BCType.Dirichlet, inlet),
                  "outlet": (BCType.Neumann, zero),
-                 "y_walls": (BCType.Dirichlet, zero),
-                 "z_walls": (BCType.Dirichlet, zero)}
+                 "fluid_y_walls": (BCType.Dirichlet, zero),
+                 "fluid_z_walls": (BCType.Dirichlet, zero)}
         # # Homogeneous Dirichlet (conducting) on y walls,
         # # homogeneous Neumann (insulating) on z walls
         # A_bcs = {"y_walls": (BCType.Dirichlet, zero)}
@@ -176,9 +184,15 @@ class Channel(hdg_navier_stokes.Problem):
 
 
 def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
+          delta_t, scheme, msh, ct, ft, volumes, boundaries,
           boundary_conditions, f, u_i_expr, u_e=None,
           p_e=None):
+
+    fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
+        msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
+
+    exit()
+
     facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(msh)
 
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
@@ -215,7 +229,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     facet_integration_entities = [(all_facets_tag, all_facets)]
     facet_integration_entities += compute_integration_domains(
-        fem.IntegralType.exterior_facet, mt._cpp_object)
+        fem.IntegralType.exterior_facet, ft._cpp_object)
     dx_c = ufl.Measure("dx", domain=msh)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
@@ -318,7 +332,7 @@ def solve(solver_type, k, nu, num_time_steps,
         bc_func.interpolate(bc_expr)
         bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
-            facets = inv_entity_map[mt.indices[mt.values == id]]
+            facets = inv_entity_map[ft.indices[ft.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
@@ -334,7 +348,7 @@ def solve(solver_type, k, nu, num_time_steps,
         assert bc_type == BCType.Dirichlet
         bc_func = fem.Function(X)
         bc_func.interpolate(bc_expr)
-        facets = mt.find(id)
+        facets = ft.find(id)
         dofs = fem.locate_dofs_topological(X, fdim, facets)
         bcs.append(fem.dirichletbc(bc_func, dofs))
 
@@ -507,20 +521,20 @@ if __name__ == "__main__":
 
     comm = MPI.COMM_WORLD
     problem = Channel()
-    msh, ct, ft, boundaries = problem.create_mesh(
+    msh, ct, ft, volumes, boundaries = problem.create_mesh(
         n_x, n_y, n_z, n_s_y, cell_type)
 
-    with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-        file.write_mesh(msh)
-        file.write_meshtags(ct)
-        file.write_meshtags(ft)
-    exit()
+    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+    #     file.write_mesh(msh)
+    #     file.write_meshtags(ct)
+    #     file.write_meshtags(ft)
+    # exit()
 
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
     f = problem.f(msh)
 
     solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, ft, boundaries,
+          delta_t, scheme, msh, ct, ft, volumes, boundaries,
           boundary_conditions, f, u_i_expr, problem.u_e,
           problem.p_e)
