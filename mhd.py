@@ -309,8 +309,9 @@ def solve(solver_type, k, nu, num_time_steps,
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
     # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
-    # a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx_c
-    #                 + inner(1 / mu * curl(A), curl(phi)) * dx_c)
+    dx = ufl.Measure("dx", domain=msh)
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
+                    + inner(1 / mu * curl(A), curl(phi)) * dx)
     # a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
     #                 + inner(sigma * cross(curl(A_n), u), phi) * dx_c)
     # a_04 = fem.form(
@@ -318,7 +319,7 @@ def solve(solver_type, k, nu, num_time_steps,
     #     - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
     #     + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c)
 
-    # L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx_c)
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
     L_2 = inner(fem.Constant(fluid_sm, [PETSc.ScalarType(0.0)
                                    for i in range(tdim)]),
@@ -345,15 +346,15 @@ def solve(solver_type, k, nu, num_time_steps,
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
 
-    # for name, bc in boundary_conditions["A"].items():
-    #     id = boundaries[name]
-    #     bc_type, bc_expr = bc
-    #     assert bc_type == BCType.Dirichlet
-    #     bc_func = fem.Function(X)
-    #     bc_func.interpolate(bc_expr)
-    #     facets = ft.find(id)
-    #     dofs = fem.locate_dofs_topological(X, fdim, facets)
-    #     bcs.append(fem.dirichletbc(bc_func, dofs))
+    for name, bc in boundary_conditions["A"].items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        assert bc_type == BCType.Dirichlet
+        bc_func = fem.Function(X)
+        bc_func.interpolate(bc_expr)
+        facets = ft.find(id)
+        dofs = fem.locate_dofs_topological(X, fdim, facets)
+        bcs.append(fem.dirichletbc(bc_func, dofs))
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
@@ -378,12 +379,12 @@ def solve(solver_type, k, nu, num_time_steps,
     #      [a_40, None, None, None, a_44]]
     # L = [L_0, L_1, L_2, L_3, L_4]
 
-    a = [[a_00, a_01, a_02, a_03],
-         [a_10, None, None, None],
-         [a_20, None, a_22, a_23],
-         [a_30, None, a_32, None]]
-    L = [L_0, L_1, L_2, L_3]
-
+    a = [[a_00, a_01, a_02, a_03, None],
+         [a_10, None, None, None, None],
+         [a_20, None, a_22, a_23, None],
+         [a_30, None, a_32, None, None],
+         [None, None, None, None, a_44]]
+    L = [L_0, L_1, L_2, L_3, L_4]
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
@@ -403,20 +404,16 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
-    # B_h = B_0 + curl(A_h)
-    # B_expr = fem.Expression(B_h, V_vis.element.interpolation_points())
-    # B_vis = fem.Function(V_vis)
-    # B_vis.interpolate(B_expr)
-
-    # J_h = - sigma * ((A_h - A_n) / delta_t + cross(curl(A_h), u_n))
-    # J_expr = fem.Expression(J_h, V_vis.element.interpolation_points())
-    # J_vis = fem.Function(V_vis)
-    # J_vis.interpolate(J_expr)
+    X_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+    B_h = B_0 + curl(A_h)
+    B_expr = fem.Expression(B_h, X_vis.element.interpolation_points())
+    B_vis = fem.Function(X_vis)
+    B_vis.interpolate(B_expr)
 
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
         V, Q, Vbar)
-    # pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
-    #     Qbar.dofmap.index_map_bs
+    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
+        Qbar.dofmap.index_map_bs
 
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
@@ -432,14 +429,10 @@ def solve(solver_type, k, nu, num_time_steps,
     x = A.createVecRight()
 
     # Set up files for visualisation
-    # vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
-    #              for (file_name, func)
-    #              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-    #              ("pbar.bp", pbar_h), ("B.bp", B_vis), ("J.bp", J_vis)]]
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h)]]
+                 ("pbar.bp", pbar_h), ("B.bp", B_vis)]]
 
     t = 0.0
     for vis_file in vis_files:
@@ -465,20 +458,6 @@ def solve(solver_type, k, nu, num_time_steps,
         # Compute solution
         ksp.solve(b, x)
 
-        # u_n.x.array[:u_offset] = x.array_r[:u_offset]
-        # u_n.x.scatter_forward()
-        # p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
-        # p_h.x.scatter_forward()
-        # ubar_n.x.array[:ubar_offset -
-        #                p_offset] = x.array_r[p_offset:ubar_offset]
-        # ubar_n.x.scatter_forward()
-        # pbar_h.x.array[:pbar_offset -
-        #                ubar_offset] = x.array_r[ubar_offset:pbar_offset]
-        # pbar_h.x.scatter_forward()
-        # A_h.x.array[:(len(x.array_r) - pbar_offset)
-        #             ] = x.array_r[pbar_offset:]
-        # A_h.x.scatter_forward()
-
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -486,12 +465,14 @@ def solve(solver_type, k, nu, num_time_steps,
         ubar_n.x.array[:ubar_offset -
                        p_offset] = x.array_r[p_offset:ubar_offset]
         ubar_n.x.scatter_forward()
-        pbar_h.x.array[:(len(x.array_r) - ubar_offset)
-                       ] = x.array_r[ubar_offset:]
+        pbar_h.x.array[:pbar_offset -
+                       ubar_offset] = x.array_r[ubar_offset:pbar_offset]
         pbar_h.x.scatter_forward()
+        A_h.x.array[:(len(x.array_r) - pbar_offset)
+                    ] = x.array_r[pbar_offset:]
+        A_h.x.scatter_forward()
 
-        # B_vis.interpolate(B_expr)
-        # J_vis.interpolate(J_expr)
+        B_vis.interpolate(B_expr)
 
         u_vis.interpolate(u_n)
 
