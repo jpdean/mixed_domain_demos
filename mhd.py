@@ -7,7 +7,7 @@ from dolfinx import mesh, fem, io
 from dolfinx.io import gmshio
 from hdg_navier_stokes import BCType
 from petsc4py import PETSc
-from utils import norm_L2, normal_jump_error, domain_average
+from utils import norm_L2, normal_jump_error, domain_average, convert_facet_tags
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
@@ -143,7 +143,7 @@ class Channel(hdg_navier_stokes.Problem):
             gmsh.model.mesh.generate(3)
             gmsh.model.mesh.setOrder(order)
 
-            gmsh.write("msh.msh")
+            # gmsh.write("msh.msh")
 
         partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
         msh, ct, ft = gmshio.model_to_mesh(
@@ -191,12 +191,9 @@ def solve(solver_type, k, nu, num_time_steps,
     fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
         msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
 
-    exit()
-
-    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(msh)
-
+    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(fluid_sm)
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
-        msh, facet_mesh, scheme, k)
+        fluid_sm, facet_mesh, scheme, k)
 
     sigma = fem.Constant(msh, 2.0)
     mu = fem.Constant(msh, 0.5)
@@ -222,20 +219,26 @@ def solve(solver_type, k, nu, num_time_steps,
 
     all_facets_tag = 0
     all_facets = []
-    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
-    for cell in range(msh.topology.index_map(tdim).size_local):
+    num_cell_facets = cell_num_entities(fluid_sm.topology.cell_type, fdim)
+    for cell in range(fluid_sm.topology.index_map(tdim).size_local):
         for local_facet in range(num_cell_facets):
             all_facets.extend([cell, local_facet])
 
+    ft_f = convert_facet_tags(msh, fluid_sm, fluid_sm_ent_map, ft)
+
+    with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
+        file.write_mesh(fluid_sm)
+        file.write_meshtags(ft_f)
+    exit()
     facet_integration_entities = [(all_facets_tag, all_facets)]
     facet_integration_entities += compute_integration_domains(
-        fem.IntegralType.exterior_facet, ft._cpp_object)
-    dx_c = ufl.Measure("dx", domain=msh)
+        fem.IntegralType.exterior_facet, ft_f._cpp_object)
+    dx_c = ufl.Measure("dx", domain=fluid_sm)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
     quad_deg = (k + 1)**2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=msh,
+        "ds", subdomain_data=facet_integration_entities, domain=fluid_sm,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
