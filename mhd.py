@@ -229,7 +229,6 @@ def solve(solver_type, k, nu, num_time_steps,
     with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
         file.write_mesh(fluid_sm)
         file.write_meshtags(ft_f)
-    exit()
     facet_integration_entities = [(all_facets_tag, all_facets)]
     facet_integration_entities += compute_integration_domains(
         fem.IntegralType.exterior_facet, ft_f._cpp_object)
@@ -246,7 +245,8 @@ def solve(solver_type, k, nu, num_time_steps,
     for i, facet in enumerate(entity_map):
         inv_entity_map[facet] = i
 
-    entity_maps = {facet_mesh: inv_entity_map}
+    entity_maps = {facet_mesh: inv_entity_map,
+                   msh: fluid_sm_ent_map}
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
@@ -257,13 +257,13 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar = ufl.TrialFunction(Qbar)
     qbar = ufl.TestFunction(Qbar)
 
-    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
-    n = ufl.FacetNormal(msh)
+    h = ufl.CellDiameter(fluid_sm)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(fluid_sm)
     gamma = 64.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
-    nu = fem.Constant(msh, PETSc.ScalarType(nu))
+    nu = fem.Constant(fluid_sm, PETSc.ScalarType(nu))
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
@@ -309,18 +309,18 @@ def solve(solver_type, k, nu, num_time_steps,
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
     # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
-    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx_c
-                    + inner(1 / mu * curl(A), curl(phi)) * dx_c)
-    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
-                    + inner(sigma * cross(curl(A_n), u), phi) * dx_c)
-    a_04 = fem.form(
-        inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx_c
-        - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
-        + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c)
+    # a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx_c
+    #                 + inner(1 / mu * curl(A), curl(phi)) * dx_c)
+    # a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
+    #                 + inner(sigma * cross(curl(A_n), u), phi) * dx_c)
+    # a_04 = fem.form(
+    #     inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx_c
+    #     - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
+    #     + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c)
 
-    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx_c)
+    # L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx_c)
 
-    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
+    L_2 = inner(fem.Constant(fluid_sm, [PETSc.ScalarType(0.0)
                                    for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
@@ -335,7 +335,7 @@ def solve(solver_type, k, nu, num_time_steps,
         bc_func.interpolate(bc_expr)
         bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
-            facets = inv_entity_map[ft.indices[ft.values == id]]
+            facets = inv_entity_map[ft_f.indices[ft_f.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
@@ -345,37 +345,45 @@ def solve(solver_type, k, nu, num_time_steps,
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
 
-    for name, bc in boundary_conditions["A"].items():
-        id = boundaries[name]
-        bc_type, bc_expr = bc
-        assert bc_type == BCType.Dirichlet
-        bc_func = fem.Function(X)
-        bc_func.interpolate(bc_expr)
-        facets = ft.find(id)
-        dofs = fem.locate_dofs_topological(X, fdim, facets)
-        bcs.append(fem.dirichletbc(bc_func, dofs))
+    # for name, bc in boundary_conditions["A"].items():
+    #     id = boundaries[name]
+    #     bc_type, bc_expr = bc
+    #     assert bc_type == BCType.Dirichlet
+    #     bc_func = fem.Function(X)
+    #     bc_func.interpolate(bc_expr)
+    #     facets = ft.find(id)
+    #     dofs = fem.locate_dofs_topological(X, fdim, facets)
+    #     bcs.append(fem.dirichletbc(bc_func, dofs))
 
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
     a_20 = fem.form(a_20, entity_maps=entity_maps)
     a_22 = fem.form(a_22, entity_maps=entity_maps)
 
-    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c
-                   + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
-                   + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
-                   + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c)
+    # L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c
+    #                + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
+    #                + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
+    #                + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c)
+    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
 
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
         facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
-    a = [[a_00, a_01, a_02, a_03, a_04],
-         [a_10, None, None, None, None],
-         [a_20, None, a_22, a_23, None],
-         [a_30, None, a_32, None, None],
-         [a_40, None, None, None, a_44]]
-    L = [L_0, L_1, L_2, L_3, L_4]
+    # a = [[a_00, a_01, a_02, a_03, a_04],
+    #      [a_10, None, None, None, None],
+    #      [a_20, None, a_22, a_23, None],
+    #      [a_30, None, a_32, None, None],
+    #      [a_40, None, None, None, a_44]]
+    # L = [L_0, L_1, L_2, L_3, L_4]
+
+    a = [[a_00, a_01, a_02, a_03],
+         [a_10, None, None, None],
+         [a_20, None, a_22, a_23],
+         [a_30, None, a_32, None]]
+    L = [L_0, L_1, L_2, L_3]
+
 
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
@@ -386,7 +394,7 @@ def solve(solver_type, k, nu, num_time_steps,
     if scheme == Scheme.RW:
         u_vis = fem.Function(V)
     else:
-        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+        V_vis = fem.VectorFunctionSpace(fluid_sm, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -395,20 +403,20 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
-    B_h = B_0 + curl(A_h)
-    B_expr = fem.Expression(B_h, V_vis.element.interpolation_points())
-    B_vis = fem.Function(V_vis)
-    B_vis.interpolate(B_expr)
+    # B_h = B_0 + curl(A_h)
+    # B_expr = fem.Expression(B_h, V_vis.element.interpolation_points())
+    # B_vis = fem.Function(V_vis)
+    # B_vis.interpolate(B_expr)
 
-    J_h = - sigma * ((A_h - A_n) / delta_t + cross(curl(A_h), u_n))
-    J_expr = fem.Expression(J_h, V_vis.element.interpolation_points())
-    J_vis = fem.Function(V_vis)
-    J_vis.interpolate(J_expr)
+    # J_h = - sigma * ((A_h - A_n) / delta_t + cross(curl(A_h), u_n))
+    # J_expr = fem.Expression(J_h, V_vis.element.interpolation_points())
+    # J_vis = fem.Function(V_vis)
+    # J_vis.interpolate(J_expr)
 
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
         V, Q, Vbar)
-    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
-        Qbar.dofmap.index_map_bs
+    # pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
+    #     Qbar.dofmap.index_map_bs
 
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
@@ -424,10 +432,14 @@ def solve(solver_type, k, nu, num_time_steps,
     x = A.createVecRight()
 
     # Set up files for visualisation
+    # vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+    #              for (file_name, func)
+    #              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+    #              ("pbar.bp", pbar_h), ("B.bp", B_vis), ("J.bp", J_vis)]]
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h), ("B.bp", B_vis), ("J.bp", J_vis)]]
+                 ("pbar.bp", pbar_h)]]
 
     t = 0.0
     for vis_file in vis_files:
@@ -453,6 +465,20 @@ def solve(solver_type, k, nu, num_time_steps,
         # Compute solution
         ksp.solve(b, x)
 
+        # u_n.x.array[:u_offset] = x.array_r[:u_offset]
+        # u_n.x.scatter_forward()
+        # p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+        # p_h.x.scatter_forward()
+        # ubar_n.x.array[:ubar_offset -
+        #                p_offset] = x.array_r[p_offset:ubar_offset]
+        # ubar_n.x.scatter_forward()
+        # pbar_h.x.array[:pbar_offset -
+        #                ubar_offset] = x.array_r[ubar_offset:pbar_offset]
+        # pbar_h.x.scatter_forward()
+        # A_h.x.array[:(len(x.array_r) - pbar_offset)
+        #             ] = x.array_r[pbar_offset:]
+        # A_h.x.scatter_forward()
+
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -460,15 +486,12 @@ def solve(solver_type, k, nu, num_time_steps,
         ubar_n.x.array[:ubar_offset -
                        p_offset] = x.array_r[p_offset:ubar_offset]
         ubar_n.x.scatter_forward()
-        pbar_h.x.array[:pbar_offset -
-                       ubar_offset] = x.array_r[ubar_offset:pbar_offset]
+        pbar_h.x.array[:(len(x.array_r) - ubar_offset)
+                       ] = x.array_r[ubar_offset:]
         pbar_h.x.scatter_forward()
-        A_h.x.array[:(len(x.array_r) - pbar_offset)
-                    ] = x.array_r[pbar_offset:]
-        A_h.x.scatter_forward()
 
-        B_vis.interpolate(B_expr)
-        J_vis.interpolate(J_expr)
+        # B_vis.interpolate(B_expr)
+        # J_vis.interpolate(J_expr)
 
         u_vis.interpolate(u_n)
 
@@ -479,31 +502,9 @@ def solve(solver_type, k, nu, num_time_steps,
         vis_file.close()
 
     e_div_u = norm_L2(msh.comm, div(u_n))
-    e_jump_u = normal_jump_error(msh, u_n)
+    e_jump_u = normal_jump_error(fluid_sm, u_n)
     par_print(f"e_div_u = {e_div_u}")
     par_print(f"e_jump_u = {e_jump_u}")
-
-    x = ufl.SpatialCoordinate(msh)
-    xbar = ufl.SpatialCoordinate(facet_mesh)
-    if u_e is not None:
-        e_u = norm_L2(msh.comm, u_n - u_e(x))
-        e_ubar = norm_L2(msh.comm, ubar_n - u_e(xbar))
-        par_print(f"e_u = {e_u}")
-        par_print(f"e_ubar = {e_ubar}")
-
-    # par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
-
-    if p_e is not None:
-        p_h_avg = domain_average(msh, p_h)
-        p_e_avg = domain_average(msh, p_e(x))
-        e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
-        pbar_h_avg = domain_average(facet_mesh, pbar_h)
-        pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
-        e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
-                         (p_e(xbar) - pbar_e_avg))
-
-        par_print(f"e_p = {e_p}")
-        par_print(f"e_pbar = {e_pbar}")
 
 
 if __name__ == "__main__":
