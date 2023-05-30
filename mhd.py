@@ -136,9 +136,12 @@ class GaussianBump(hdg_navier_stokes.Problem):
                  "outlet": (BCType.Neumann, zero),
                  "y_walls": (BCType.Dirichlet, zero),
                  "z_walls": (BCType.Dirichlet, zero)}
-        # Homogeneous Dirichlet (conducting) on y walls,
-        # homogeneous Neumann (insulating) on z walls
-        A_bcs = {"y_walls": (BCType.Dirichlet, zero)}
+        # # Homogeneous Dirichlet (conducting) on y walls,
+        # # homogeneous Neumann (insulating) on z walls
+        # A_bcs = {"y_walls": (BCType.Dirichlet, zero)}
+
+        # Insulating walls
+        A_bcs = {}
 
         return {"u": u_bcs, "A": A_bcs}
 
@@ -467,7 +470,7 @@ if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
     n_x = 12
-    n_y = 10
+    n_y = 6
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
