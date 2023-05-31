@@ -185,8 +185,8 @@ class Channel(hdg_navier_stokes.Problem):
 
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, ct, ft, volumes, boundaries,
-          boundary_conditions, f, u_i_expr, u_e=None,
-          p_e=None):
+          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
+          u_e=None, p_e=None):
 
     fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
         msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
@@ -198,9 +198,9 @@ def solve(solver_type, k, nu, num_time_steps,
     V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
     sigma = fem.Function(V_coeff)
     sigma.interpolate(
-        lambda x: np.full_like(x[0], 2), ct.find(volumes["fluid"]))
+        lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
     sigma.interpolate(
-        lambda x: np.full_like(x[0], 10), ct.find(volumes["solid"]))
+        lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
     mu = fem.Constant(msh, 0.5)
 
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
@@ -406,6 +406,7 @@ def solve(solver_type, k, nu, num_time_steps,
 
     X_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
     B_h = B_0 + curl(A_h)
+    # B_h = curl(A_h)
     B_expr = fem.Expression(B_h, X_vis.element.interpolation_points())
     B_vis = fem.Function(X_vis)
     B_vis.interpolate(B_expr)
@@ -495,6 +496,8 @@ if __name__ == "__main__":
     n_y = 6
     n_z = 6
     n_s_y = 2
+    sigma_f = 2
+    sigma_s = 100
 
     k = 1
     cell_type = mesh.CellType.hexahedron
@@ -521,5 +524,5 @@ if __name__ == "__main__":
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, ct, ft, volumes, boundaries,
-          boundary_conditions, f, u_i_expr, problem.u_e,
-          problem.p_e)
+          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
+          problem.u_e, problem.p_e)
