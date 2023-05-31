@@ -44,7 +44,7 @@ class Channel(hdg_navier_stokes.Problem):
             order = 1
 
             # Fluid domain x, y, and z lengths
-            L_x = 4
+            L_x = 10
             L_y = 1
             L_z = 1
             wall_thickness = 0.1
@@ -186,7 +186,7 @@ class Channel(hdg_navier_stokes.Problem):
 def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, ct, ft, volumes, boundaries,
           boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
-          u_e=None, p_e=None):
+          mu, u_e=None, p_e=None):
 
     fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
         msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
@@ -201,7 +201,7 @@ def solve(solver_type, k, nu, num_time_steps,
         lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
     sigma.interpolate(
         lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
-    mu = fem.Constant(msh, 0.5)
+    mu = fem.Constant(msh, mu)
 
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
@@ -498,10 +498,11 @@ if __name__ == "__main__":
     n_s_y = 2
     sigma_f = 2
     sigma_s = 100
+    mu = 1  # Permeability
 
     k = 1
     cell_type = mesh.CellType.hexahedron
-    nu = 1.0e-3
+    nu = 1.0e-2
     num_time_steps = 32
     t_end = 10
     delta_t = t_end / num_time_steps
@@ -525,4 +526,4 @@ if __name__ == "__main__":
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, ct, ft, volumes, boundaries,
           boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
-          problem.u_e, problem.p_e)
+          mu, problem.u_e, problem.p_e)
