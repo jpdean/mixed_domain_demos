@@ -496,13 +496,13 @@ if __name__ == "__main__":
     n_y = 6
     n_z = 6
     n_s_y = 2
-    sigma_f = 2
+    sigma_f = 2.5
     sigma_s = 100
-    mu = 1  # Permeability
+    mu = 0.4  # Permeability
 
     k = 1
     cell_type = mesh.CellType.hexahedron
-    nu = 1.0e-2
+    nu = 1.0e-3
     num_time_steps = 32
     t_end = 10
     delta_t = t_end / num_time_steps
