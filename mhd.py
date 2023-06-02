@@ -1,308 +1,529 @@
-# Simplified version of the fully coupled MHD scheme from Hiptmair2018
-# eq. (3.5).and Here we solve Stokes using a Taylor-Hood scheme instead of
-# Navier-Stokes.
-# NOTE: Extra terms arise due to prescribed current density that Hiptmair
-# doesn't include
-
-from dolfinx import mesh, fem
+import hdg_navier_stokes
+from hdg_navier_stokes import SolverType, Scheme, TimeDependentExpression
 from mpi4py import MPI
-from ufl import (TrialFunction, TestFunction, inner, grad, div,
-                 curl, cross, Measure, dx)
-from petsc4py import PETSc
+import gmsh
 import numpy as np
-from dolfinx.io import VTXWriter
-from utils import norm_L2, domain_average
+from dolfinx import mesh, fem, io
+from dolfinx.io import gmshio
+from hdg_navier_stokes import BCType
+from petsc4py import PETSc
+from utils import norm_L2, normal_jump_error, domain_average, convert_facet_tags
+import ufl
+from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
+                 as_vector, grad, outer, dot)
+import sys
+from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 
 
-def solve_mhd(k, msh, boundary_marker_msh, submesh, boundary_marker_submesh,
-              entity_map, A_expr, u_bc_expr, J_p_expr, f_expr, t_end,
-              num_time_steps):
+def par_print(string):
+    if comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
+
+
+class Channel(hdg_navier_stokes.Problem):
+    def create_mesh(self, n_x, n_y, n_z, n_s_y, cell_type):
+        comm = MPI.COMM_WORLD
+
+        volumes = {"solid": 1,
+                   "fluid": 2}
+
+        boundaries = {"solid_x_walls": 1,
+                      "solid_y_walls": 2,
+                      "solid_z_walls": 3,
+                      "fluid_y_walls": 4,
+                      "fluid_z_walls": 5,
+                      "inlet": 6,
+                      "outlet": 7}
+
+        gmsh.initialize()
+        if comm.rank == 0:
+            # TODO Pass options
+            gmsh.model.add("channel")
+            order = 1
+
+            # Fluid domain x, y, and z lengths
+            L_x = 10
+            L_y = 1
+            L_z = 1
+            wall_thickness = 0.1
+            domain_points = [gmsh.model.geo.addPoint(0, - wall_thickness, 0),
+                             gmsh.model.geo.addPoint(L_x, - wall_thickness, 0),
+                             gmsh.model.geo.addPoint(
+                                 L_x, L_y + wall_thickness, 0),
+                             gmsh.model.geo.addPoint(0, L_y + wall_thickness, 0)]
+            fluid_points = [gmsh.model.geo.addPoint(0, 0, 0),
+                            gmsh.model.geo.addPoint(L_x, 0, 0),
+                            gmsh.model.geo.addPoint(L_x, L_y, 0),
+                            gmsh.model.geo.addPoint(0, L_y, 0)]
+
+            wall_0_lines = [gmsh.model.geo.addLine(domain_points[0], domain_points[1]),
+                            gmsh.model.geo.addLine(
+                                domain_points[1], fluid_points[1]),
+                            gmsh.model.geo.addLine(
+                                fluid_points[1], fluid_points[0]),
+                            gmsh.model.geo.addLine(
+                                fluid_points[0], domain_points[0]),
+                            ]
+            fluid_lines = [- wall_0_lines[2],
+                           gmsh.model.geo.addLine(
+                               fluid_points[1], fluid_points[2]),
+                           gmsh.model.geo.addLine(
+                               fluid_points[2], fluid_points[3]),
+                           gmsh.model.geo.addLine(fluid_points[3], fluid_points[0])]
+
+            wall_1_lines = [- fluid_lines[2],
+                            gmsh.model.geo.addLine(
+                                fluid_points[2], domain_points[2]),
+                            gmsh.model.geo.addLine(
+                                domain_points[2], domain_points[3]),
+                            gmsh.model.geo.addLine(domain_points[3], fluid_points[3])]
+
+            wall_0_loop = gmsh.model.geo.addCurveLoop(wall_0_lines)
+            fluid_loop = gmsh.model.geo.addCurveLoop(fluid_lines)
+            wall_1_loop = gmsh.model.geo.addCurveLoop(wall_1_lines)
+
+            wall_0_surf = gmsh.model.geo.addPlaneSurface([wall_0_loop])
+            fluid_surf = gmsh.model.geo.addPlaneSurface([fluid_loop])
+            wall_1_surf = gmsh.model.geo.addPlaneSurface([wall_1_loop])
+
+            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[0], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[1], n_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[2], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[3], n_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteSurface(fluid_surf, "Left")
+
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[0], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[1], n_s_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[2], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[3], n_s_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteSurface(wall_0_surf, "Left")
+
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[0], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[1], n_s_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[2], n_x + 1)
+            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[3], n_s_y + 1)
+            gmsh.model.geo.mesh.setTransfiniteSurface(wall_1_surf, "Left")
+
+            if cell_type == mesh.CellType.tetrahedron:
+                recombine = False
+            else:
+                recombine = True
+            extrude_surfs = [(2, wall_0_surf),
+                             (2, fluid_surf), (2, wall_1_surf)]
+            gmsh.model.geo.extrude(
+                extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
+
+            gmsh.model.geo.synchronize()
+
+            gmsh.model.addPhysicalGroup(3, [1, 3], volumes["solid"])
+            gmsh.model.addPhysicalGroup(3, [2], volumes["fluid"])
+
+            gmsh.model.addPhysicalGroup(
+                2, [23, 31, 67, 75], boundaries["solid_x_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [19, 71], boundaries["solid_y_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [1, 3, 32, 76], boundaries["solid_z_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [27, 49], boundaries["fluid_y_walls"])
+            gmsh.model.addPhysicalGroup(
+                2, [2, 54], boundaries["fluid_z_walls"])
+            gmsh.model.addPhysicalGroup(2, [53], boundaries["inlet"])
+            gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
+
+            # gmsh.option.setNumber("Mesh.Smoothing", 5)
+            if cell_type == mesh.CellType.quadrilateral \
+                    or cell_type == mesh.CellType.hexahedron:
+                gmsh.option.setNumber("Mesh.RecombineAll", 1)
+                gmsh.option.setNumber("Mesh.Algorithm", 8)
+                # TODO Check what this is doing, it may be making things worse
+                # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+            gmsh.model.mesh.generate(3)
+            gmsh.model.mesh.setOrder(order)
+
+            # gmsh.write("msh.msh")
+
+        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+        msh, ct, ft = gmshio.model_to_mesh(
+            gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
+        gmsh.finalize()
+
+        return msh, ct, ft, volumes, boundaries
+
+    def boundary_conditions(self):
+        def inlet(x): return np.vstack(
+            (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
+             np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
+
+        def zero(x): return np.vstack(
+            (np.zeros_like(x[0]),
+             np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
+
+        u_bcs = {"inlet": (BCType.Dirichlet, inlet),
+                 "outlet": (BCType.Neumann, zero),
+                 "fluid_y_walls": (BCType.Dirichlet, zero),
+                 "fluid_z_walls": (BCType.Dirichlet, zero)}
+        # # Homogeneous Dirichlet (conducting) on y walls,
+        # # homogeneous Neumann (insulating) on z walls
+        # A_bcs = {"solid_y_walls": (BCType.Dirichlet, zero)}
+
+        # Insulating walls
+        A_bcs = {}
+
+        return {"u": u_bcs, "A": A_bcs}
+
+    def f(self, msh):
+        return fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(3)])
+
+    def u_i(self):
+        return lambda x: np.zeros_like(x[:3])
+
+
+def solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, ct, ft, volumes, boundaries,
+          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
+          mu, u_e=None, p_e=None):
+
+    fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
+        msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
+
+    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(fluid_sm)
+    V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
+        fluid_sm, facet_mesh, scheme, k)
+
+    V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
+    sigma = fem.Function(V_coeff)
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
+    mu = fem.Constant(msh, mu)
+
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
     X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
-    # [L^2(Ω)]^d-conforming function space for visualisation.
-    Z = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
 
-    # H^1(Ω) and [L^2(Ω)]^d conforming subspaces for the velocity and pressure
-    V = fem.VectorFunctionSpace(submesh, ("Lagrange", k))
-    Q = fem.FunctionSpace(submesh, ("Lagrange", k - 1))
+    u_n = fem.Function(V)
+    u_n.interpolate(u_i_expr)
+    ubar_n = fem.Function(Vbar)
+    ubar_n.interpolate(u_i_expr)
 
     # Trial and test functions for the magnetic vector potential
-    A = TrialFunction(X)
-    phi = TestFunction(X)
-
-    # Define trial and test functions for velocity and pressure spaces
-    u = TrialFunction(V)
-    v = TestFunction(V)
-    p = TrialFunction(Q)
-    q = TestFunction(Q)
-
-    # Function to represent magnetic vector potential at current time step
+    A, phi = TrialFunction(X), TestFunction(X)
     A_h = fem.Function(X)
-    A_h.interpolate(A_expr)
-    # Magnetic vector potential at previous time step
     A_n = fem.Function(X)
-    A_n.x.array[:] = A_h.x.array
-    # Velocity at previous time step
-    u_n = fem.Function(V)
 
-    # Prescribed current density
-    J_p = fem.Function(Z)
-    J_p.interpolate(J_p_expr)
+    B_0 = as_vector((0, 1, 0))
 
-    # Force on fluid
-    f = fem.Function(V)
-    f.interpolate(f_expr)
+    tdim = msh.topology.dim
+    fdim = tdim - 1
 
-    # Create integration measures and entity maps
-    dx_sm = Measure("dx", domain=submesh)
-    entity_maps_sm = {msh: entity_map}
+    all_facets_tag = 0
+    all_facets = []
+    num_cell_facets = cell_num_entities(fluid_sm.topology.cell_type, fdim)
+    for cell in range(fluid_sm.topology.index_map(tdim).size_local):
+        for local_facet in range(num_cell_facets):
+            all_facets.extend([cell, local_facet])
 
-    # Define forms
-    # TODO Check I'm not missing conductivity terms in solid region
-    delta_t = fem.Constant(msh, PETSc.ScalarType(t_end / num_time_steps))
-    a_00 = fem.form(inner(u / delta_t, v) * dx_sm
-                    + inner(grad(u), grad(v)) * dx_sm
-                    + inner(cross(curl(A_n), u), cross(curl(A_n), v)) * dx_sm,
-                    entity_maps=entity_maps_sm)
-    a_01 = fem.form(- inner(p, div(v)) * dx_sm)
-    a_02 = fem.form(inner(A / delta_t, cross(curl(A_n), v)) * dx_sm,
-                    entity_maps=entity_maps_sm)
-    a_10 = fem.form(- inner(div(u), q) * dx_sm)
-    a_11 = fem.form(fem.Constant(submesh, PETSc.ScalarType(0.0))
-                    * inner(p, q) * dx_sm)
-    a_20 = fem.form(inner(cross(curl(A_n), u), phi) * dx_sm,
-                    entity_maps=entity_maps_sm)
-    a_22 = fem.form(inner(A / delta_t, phi) * dx
-                    + inner(curl(A), curl(phi)) * dx)
+    ft_f = convert_facet_tags(msh, fluid_sm, fluid_sm_ent_map, ft)
 
-    L_0 = fem.form(inner(u_n / delta_t + f, v) * dx_sm
-                   + inner(A_n / delta_t + J_p, cross(curl(A_n), v)) * dx_sm,
-                   entity_maps=entity_maps_sm)
-    L_1 = fem.form(
-        inner(fem.Constant(submesh, PETSc.ScalarType(0.0)), q) * dx_sm)
-    L_2 = fem.form(inner(A_n / delta_t, phi) * dx + inner(J_p, phi) * dx)
+    with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
+        file.write_mesh(fluid_sm)
+        file.write_meshtags(ft_f)
+    facet_integration_entities = [(all_facets_tag, all_facets)]
+    facet_integration_entities += compute_integration_domains(
+        fem.IntegralType.exterior_facet, ft_f._cpp_object)
+    dx_c = ufl.Measure("dx", domain=fluid_sm)
+    # FIXME Figure out why this is being estimated wrong for DRW
+    # NOTE k**2 works on affine meshes
+    quad_deg = (k + 1)**2
+    ds_c = ufl.Measure(
+        "ds", subdomain_data=facet_integration_entities, domain=fluid_sm,
+        metadata={"quadrature_degree": quad_deg})
+    dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-    a = [[a_00, a_01, a_02],
-         [a_10, a_11, None],
-         [a_20, None, a_22]]
+    inv_entity_map = np.full_like(entity_map, -1)
+    for i, facet in enumerate(entity_map):
+        inv_entity_map[facet] = i
 
-    L = [L_0,
-         L_1,
-         L_2]
+    entity_maps = {facet_mesh: inv_entity_map,
+                   msh: fluid_sm_ent_map}
 
-    # Magnetic vector potential boundary condition
-    boundary_facets_m = mesh.locate_entities_boundary(
-        msh, msh.topology.dim - 1, boundary_marker_msh)
-    boundary_A_dofs = fem.locate_dofs_topological(
-        X, msh.topology.dim - 1, boundary_facets_m)
-    A_bc = fem.Function(X)
-    A_bc.interpolate(A_expr)
-    bc_A = fem.dirichletbc(A_bc, boundary_A_dofs)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    p = ufl.TrialFunction(Q)
+    q = ufl.TestFunction(Q)
+    ubar = ufl.TrialFunction(Vbar)
+    vbar = ufl.TestFunction(Vbar)
+    pbar = ufl.TrialFunction(Qbar)
+    qbar = ufl.TestFunction(Qbar)
 
-    # Velocity boundary condition
-    u_bc = fem.Function(V)
-    u_bc.interpolate(u_bc_expr)
-    boundary_facets_sm = mesh.locate_entities_boundary(
-        submesh, submesh.topology.dim - 1, boundary_marker_submesh)
-    boundary_vel_dofs = fem.locate_dofs_topological(
-        V, submesh.topology.dim - 1, boundary_facets_sm)
-    bc_u = fem.dirichletbc(u_bc, boundary_vel_dofs)
+    h = ufl.CellDiameter(fluid_sm)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(fluid_sm)
+    gamma = 64.0 * k**2 / h  # TODO Should be larger in 3D
 
-    # Pressure boundary condition
-    pressure_dof = fem.locate_dofs_geometrical(
-        Q, lambda x: np.logical_and(np.logical_and(np.isclose(x[0], 0.0),
-                                                   np.isclose(x[1], 0.0)),
-                                    np.isclose(x[2], 0.0)))
-    bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
+    lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+    delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
+    nu = fem.Constant(fluid_sm, PETSc.ScalarType(nu))
 
-    # Collect boundary conditions
-    bcs = [bc_u, bc_p, bc_A]
+    a_00 = inner(u / delta_t, v) * dx_c \
+        + nu * inner(grad(u), grad(v)) * dx_c \
+        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
+    a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
+                    grad(v)) * dx_c)
+    a_02 = - nu * gamma * inner(
+        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
+    a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
+                          outer(v, n)) * ds_c(all_facets_tag),
+                    entity_maps=entity_maps)
+    a_10 = fem.form(inner(u, grad(q)) * dx_c -
+                    inner(dot(u, n), q) * ds_c(all_facets_tag))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+        + nu * gamma * inner(outer(u, n), outer(vbar, n)
+                             ) * ds_c(all_facets_tag)
+    a_30 = fem.form(inner(dot(u, n), qbar) *
+                    ds_c(all_facets_tag), entity_maps=entity_maps)
+    a_23 = fem.form(
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
+        ds_c(all_facets_tag),
+        entity_maps=entity_maps)
+    # On the Dirichlet boundary, the contribution from this term will be
+    # added to the RHS in apply_lifting
+    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
+                    entity_maps=entity_maps)
+    a_22 = - nu * gamma * \
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
 
-    # Create matrix and vector
-    A_mat = fem.petsc.create_matrix_block(a)
-    b = fem.petsc.create_vector_block(L)
+    if solver_type == SolverType.NAVIER_STOKES:
+        a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
+            ds_c(all_facets_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
+            ds_c(all_facets_tag)
+        a_22 += inner(outer(ubar, lmbda * u_n),
+                      outer(vbar, n)) * ds_c(all_facets_tag)
 
-    # Create and configure solver
+    # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
+    dx = ufl.Measure("dx", domain=msh)
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
+                    + inner(1 / mu * curl(A), curl(phi)) * dx)
+    a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
+                    + inner(sigma * cross(curl(A_n), u), phi) * dx_c,
+                    entity_maps={msh: fluid_sm_ent_map})
+    a_04 = fem.form(
+        inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx_c
+        - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
+        + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c,
+        entity_maps={msh: fluid_sm_ent_map})
+
+    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
+
+    L_2 = inner(fem.Constant(fluid_sm, [PETSc.ScalarType(0.0)
+                                   for i in range(tdim)]),
+                vbar) * ds_c(all_facets_tag)
+
+    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
+    # MUMPS seems to cope with the small nullspace
+    bcs = []
+    bc_funcs = []
+    for name, bc in boundary_conditions["u"].items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        bc_func = fem.Function(Vbar)
+        bc_func.interpolate(bc_expr)
+        bc_funcs.append((bc_func, bc_expr))
+        if bc_type == BCType.Dirichlet:
+            facets = inv_entity_map[ft_f.indices[ft_f.values == id]]
+            dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
+            bcs.append(fem.dirichletbc(bc_func, dofs))
+        else:
+            assert bc_type == BCType.Neumann
+            L_2 += inner(bc_func, vbar) * ds_c(id)
+            if solver_type == SolverType.NAVIER_STOKES:
+                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
+                                ubar, vbar) * ds_c(id)
+
+    for name, bc in boundary_conditions["A"].items():
+        id = boundaries[name]
+        bc_type, bc_expr = bc
+        assert bc_type == BCType.Dirichlet
+        bc_func = fem.Function(X)
+        bc_func.interpolate(bc_expr)
+        facets = ft.find(id)
+        dofs = fem.locate_dofs_topological(X, fdim, facets)
+        bcs.append(fem.dirichletbc(bc_func, dofs))
+
+    a_00 = fem.form(a_00)
+    a_02 = fem.form(a_02, entity_maps=entity_maps)
+    a_20 = fem.form(a_20, entity_maps=entity_maps)
+    a_22 = fem.form(a_22, entity_maps=entity_maps)
+
+    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c
+                   + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
+                   + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
+                   + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c,
+                   entity_maps={msh: fluid_sm_ent_map})
+
+    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
+    L_2 = fem.form(L_2, entity_maps=entity_maps)
+    L_3 = fem.form(inner(fem.Constant(
+        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
+
+    a = [[a_00, a_01, a_02, a_03, a_04],
+         [a_10, None, None, None, None],
+         [a_20, None, a_22, a_23, None],
+         [a_30, None, a_32, None, None],
+         [a_40, None, None, None, a_44]]
+    L = [L_0, L_1, L_2, L_3, L_4]
+
+    if solver_type == SolverType.NAVIER_STOKES:
+        A = fem.petsc.create_matrix_block(a)
+    else:
+        A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+        A.assemble()
+
+    if scheme == Scheme.RW:
+        u_vis = fem.Function(V)
+    else:
+        V_vis = fem.VectorFunctionSpace(fluid_sm, ("Discontinuous Lagrange", k + 1))
+        u_vis = fem.Function(V_vis)
+    u_vis.name = "u"
+    u_vis.interpolate(u_n)
+    p_h = fem.Function(Q)
+    p_h.name = "p"
+    pbar_h = fem.Function(Qbar)
+    pbar_h.name = "pbar"
+
+    X_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+    B_h = B_0 + curl(A_h)
+    # B_h = curl(A_h)
+    B_expr = fem.Expression(B_h, X_vis.element.interpolation_points())
+    B_vis = fem.Function(X_vis)
+    B_vis.interpolate(B_expr)
+
+    u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
+        V, Q, Vbar)
+    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
+        Qbar.dofmap.index_map_bs
+
     ksp = PETSc.KSP().create(msh.comm)
-    ksp.setOperators(A_mat)
+    ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
-    ksp.getPC().setFactorSolverType("superlu_dist")
+    ksp.getPC().setFactorSolverType("mumps")
+    opts = PETSc.Options()
+    opts["mat_mumps_icntl_6"] = 2
+    opts["mat_mumps_icntl_14"] = 100
+    ksp.setFromOptions()
 
-    # Create vector to store solution
-    x = A_mat.createVecLeft()
+    b = fem.petsc.create_vector_block(L)
+    x = A.createVecRight()
 
-    # Create functions to output to file
-    u_h, p_h = fem.Function(V), fem.Function(Q)
-    u_h.name = "u"
-    p_h.name = "p"
-    # Interpolate A_h into Z for artifact-free visualization
-    A_Z = fem.Function(Z)
-    A_Z.name = "A"
-    A_Z.interpolate(A_h)
-    # Magnetic flux density (curl of magnetic vector potential)
-    B = curl(A_h)
-    B_expr = fem.Expression(B, Z.element.interpolation_points())
-    B_Z = fem.Function(Z)
-    B_Z.interpolate(B_expr)
-
-    u_file = VTXWriter(submesh.comm, "u.bp", [u_h._cpp_object])
-    p_file = VTXWriter(submesh.comm, "p.bp", [p_h._cpp_object])
-    A_file = VTXWriter(msh.comm, "A.bp", [A_Z._cpp_object])
-    B_file = VTXWriter(msh.comm, "B.bp", [B_Z._cpp_object])
+    # Set up files for visualisation
+    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+                 for (file_name, func)
+                 in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
+                 ("pbar.bp", pbar_h), ("B.bp", B_vis)]]
 
     t = 0.0
-    u_file.write(t)
-    p_file.write(t)
-    A_file.write(t)
-    B_file.write(t)
-    offset_0 = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    offset_1 = offset_0 + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    for vis_file in vis_files:
+        vis_file.write(t)
     for n in range(num_time_steps):
         t += delta_t.value
+        par_print(f"t = {t}")
 
-        # Update expressions
-        u_bc_expr.t = t
-        u_bc.interpolate(u_bc_expr)
-        A_expr.t = t
-        A_bc.interpolate(A_expr)
-        f_expr.t = t
-        f.interpolate(f_expr)
-        J_p_expr.t = t
-        J_p.interpolate(J_p_expr)
+        for bc_func, bc_expr in bc_funcs:
+            if isinstance(bc_expr, TimeDependentExpression):
+                bc_expr.t = t
+                bc_func.interpolate(bc_expr)
 
-        # Assemble matrix
-        A_mat.zeroEntries()
-        fem.petsc.assemble_matrix_block(A_mat, a, bcs=bcs)
-        A_mat.assemble()
+        if solver_type == SolverType.NAVIER_STOKES:
+            A.zeroEntries()
+            fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+            A.assemble()
 
-        # Assemble vector
         with b.localForm() as b_loc:
             b_loc.set(0)
         fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-        # Solve and recover solution
+        # Compute solution
         ksp.solve(b, x)
-        u_h.x.array[:offset_0] = x.array_r[:offset_0]
-        u_h.x.scatter_forward()
-        p_h.x.array[:offset_1 - offset_0] = x.array_r[offset_0:offset_1]
+
+        u_n.x.array[:u_offset] = x.array_r[:u_offset]
+        u_n.x.scatter_forward()
+        p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
         p_h.x.scatter_forward()
-        A_h.x.array[:(len(x.array_r) - offset_1)] = x.array_r[offset_1:]
+        ubar_n.x.array[:ubar_offset -
+                       p_offset] = x.array_r[p_offset:ubar_offset]
+        ubar_n.x.scatter_forward()
+        pbar_h.x.array[:pbar_offset -
+                       ubar_offset] = x.array_r[ubar_offset:pbar_offset]
+        pbar_h.x.scatter_forward()
+        A_h.x.array[:(len(x.array_r) - pbar_offset)
+                    ] = x.array_r[pbar_offset:]
         A_h.x.scatter_forward()
 
-        # Interpolate for file output
-        A_Z.interpolate(A_h)
-        B_Z.interpolate(B_expr)
+        B_vis.interpolate(B_expr)
 
-        # Save to file
-        u_file.write(t)
-        p_file.write(t)
-        A_file.write(t)
-        B_file.write(t)
+        u_vis.interpolate(u_n)
 
-        # Update
-        u_n.x.array[:] = u_h.x.array
-        A_n.x.array[:] = A_h.x.array
+        for vis_file in vis_files:
+            vis_file.write(t)
 
-    u_file.close()
-    p_file.close()
-    A_file.close()
-    B_file.close()
+    for vis_file in vis_files:
+        vis_file.close()
 
-    return u_h, p_h, A_h
+    e_div_u = norm_L2(msh.comm, div(u_n))
+    e_jump_u = normal_jump_error(fluid_sm, u_n)
+    par_print(f"e_div_u = {e_div_u}")
+    par_print(f"e_jump_u = {e_jump_u}")
 
 
 if __name__ == "__main__":
-    # Boundary marker for the mesh, over which the electromagnetism
-    # problem will be solved
-    def boundary_marker_msh(x):
-        b_0 = np.logical_or(np.isclose(x[0], 0.0),
-                            np.isclose(x[0], 1.0))
-        b_1 = np.logical_or(np.isclose(x[1], 0.0),
-                            np.isclose(x[1], 2.0))
-        b_2 = np.logical_or(np.isclose(x[2], 0.0),
-                            np.isclose(x[2], 1.0))
-        return np.logical_or(np.logical_or(b_0, b_1), b_2)
-
-    # Boundary marker for the submesh, over which the fluid problem
-    # will be solved
-    def boundary_marker_sm(x):
-        b_0 = np.logical_or(np.isclose(x[0], 0.0),
-                            np.isclose(x[0], 1.0))
-        b_1 = np.logical_or(np.isclose(x[1], 0.0),
-                            np.isclose(x[1], 1.0))
-        b_2 = np.logical_or(np.isclose(x[2], 0.0),
-                            np.isclose(x[2], 1.0))
-        return np.logical_or(np.logical_or(b_0, b_1), b_2)
-
-    class TimeDependentExpression:
-        """Simple class to represent time dependent functions"""
-
-        def __init__(self, expression):
-            self.t = 0.0
-            self.expression = expression
-
-        def __call__(self, x):
-            return self.expression(x, self.t)
-
     # Simulation parameters
-    n = 4
-    assert n % 2 == 0  # NOTE n must be even
-    k = 2
-    t_end = 0.1
-    num_time_steps = 5
+    solver_type = SolverType.NAVIER_STOKES
+    n_x = 12
+    n_y = 6
+    n_z = 6
+    n_s_y = 2
+    sigma_f = 2.5
+    sigma_s = 100
+    mu = 0.4  # Permeability
 
-    # Boundary condition for the velocity field
-    u_expr = TimeDependentExpression(
-        lambda x, t:
-            np.vstack(
-                (np.zeros_like(x[0]),
-                 np.zeros_like(x[0]),
-                 np.zeros_like(x[0]))))
+    k = 1
+    cell_type = mesh.CellType.hexahedron
+    nu = 1.0e-3
+    num_time_steps = 32
+    t_end = 10
+    delta_t = t_end / num_time_steps
+    scheme = Scheme.DRW
 
-    # Fluid forcing term
-    f_expr = TimeDependentExpression(
-        lambda x, t:
-            np.vstack(
-                (np.zeros_like(x[0]),
-                 np.zeros_like(x[0]),
-                 np.zeros_like(x[0]))))
+    comm = MPI.COMM_WORLD
+    problem = Channel()
+    msh, ct, ft, volumes, boundaries = problem.create_mesh(
+        n_x, n_y, n_z, n_s_y, cell_type)
 
-    # Initial and boundary condition for the magnetic vector potential
-    A_expr = TimeDependentExpression(
-        expression=lambda x, t:
-            np.vstack(
-                (np.zeros_like(x[0]),
-                 np.zeros_like(x[0]),
-                 np.zeros_like(x[0]))))
+    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
+    #     file.write_mesh(msh)
+    #     file.write_meshtags(ct)
+    #     file.write_meshtags(ft)
+    # exit()
 
-    # Prescribed current density
-    J_p_expr = TimeDependentExpression(
-        expression=lambda x, t:
-        np.vstack((np.zeros_like(x[0]),
-                   np.sin(np.pi * t) * np.cos(np.pi * x[0]),
-                   np.zeros_like(x[0]))))
+    boundary_conditions = problem.boundary_conditions()
+    u_i_expr = problem.u_i()
+    f = problem.f(msh)
 
-    # Create mesh and submesh
-    msh = mesh.create_box(
-        MPI.COMM_WORLD, ((0.0, 0.0, 0.0), (1.0, 2.0, 1.0)), (n, 2 * n, n))
-    fluid_cells = mesh.locate_entities(
-        msh, msh.topology.dim, lambda x: x[1] <= 1)
-    submesh, entity_map = mesh.create_submesh(
-        msh, msh.topology.dim, fluid_cells)[0:2]
-
-    u_h, p_h, A_h = solve_mhd(
-        k, msh, boundary_marker_msh, submesh, boundary_marker_sm,
-        entity_map, A_expr, u_expr, J_p_expr, f_expr, t_end,
-        num_time_steps)
-
-    u_h_norm = norm_L2(msh.comm, u_h)
-    p_h_average = domain_average(submesh, p_h)
-    p_h_norm = norm_L2(msh.comm, p_h - p_h_average)
-    A_h_norm = norm_L2(msh.comm, A_h)
-
-    if msh.comm.Get_rank() == 0:
-        print(u_h_norm)
-        print(p_h_norm)
-        print(A_h_norm)
+    solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, ct, ft, volumes, boundaries,
+          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
+          mu, problem.u_e, problem.p_e)

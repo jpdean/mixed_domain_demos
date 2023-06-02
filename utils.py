@@ -4,7 +4,12 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx import mesh
+import sys
 
+def par_print(comm, string):
+    if comm.rank == 0:
+        print(string)
+        sys.stdout.flush()
 
 def norm_L2(comm, v, measure=ufl.dx):
     return np.sqrt(comm.allreduce(fem.assemble_scalar(
@@ -49,7 +54,7 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
             if cell in cell_map:
                 local_facet = msh_c_to_f.links(cell).tolist().index(facet)
                 # FIXME Don't hardcode cell type
-                assert local_facet >= 0 and local_facet <= 2
+                assert local_facet >= 0  # and local_facet <= 2
                 submesh_cell = cell_map.index(cell)
                 submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
                 submesh_facets.append(submesh_facet)

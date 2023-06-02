@@ -6,12 +6,32 @@ import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2, create_random_mesh
+from utils import par_print
+
+
+def u_e(x):
+    u_e = 1
+    for i in range(tdim):
+        u_e *= ufl.sin(ufl.pi * x[i])
+    return u_e
+
+
+def boundary(x):
+    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+    lrtb = lr | tb
+    if tdim == 2:
+        return lrtb
+    else:
+        assert tdim == 3
+        fb = np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
+        return lrtb | fb
+
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
-out_str = f"rank {rank}:\n"
 
-n = 8
+n = 16
 # msh = mesh.create_unit_square(
 #     comm, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.quadrilateral)
@@ -32,14 +52,12 @@ facets = np.arange(num_facets, dtype=np.int32)
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-k = 1
+k = 3
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-ubar = ufl.TrialFunction(Vbar)
-vbar = ufl.TestFunction(Vbar)
+u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
@@ -52,32 +70,29 @@ for cell in range(msh.topology.index_map(tdim).size_local):
         facet_integration_entities.extend([cell, local_facet])
 
 dx_c = ufl.Measure("dx", domain=msh)
+all_facets = 1
 ds_c = ufl.Measure("ds", subdomain_data=[
-                   (1, facet_integration_entities)], domain=msh)
+                   (all_facets, facet_integration_entities)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-inv_entity_map = np.full_like(entity_map, -1)
-for i, f in enumerate(entity_map):
-    inv_entity_map[f] = i
+inv_entity_map = np.full(num_facets, -1)
+inv_entity_map[entity_map] = np.arange(len(entity_map))
 entity_maps = {facet_mesh: inv_entity_map}
 
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
-                (inner(c * u, dot(grad(v), n)) * ds_c(1) +
-                 inner(c * v, dot(grad(u), n)) * ds_c(1)) +
-                gamma * inner(c * u, v) * ds_c(1))
-a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(1),
+                (inner(c * u, dot(grad(v), n)) * ds_c(all_facets) +
+                 inner(c * v, dot(grad(u), n)) * ds_c(all_facets)) +
+                gamma * inner(c * u, v) * ds_c(all_facets))
+a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(all_facets),
                 entity_maps=entity_maps)
-a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(1),
+a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(all_facets),
                 entity_maps=entity_maps)
-a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(1),
+a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(all_facets),
                 entity_maps=entity_maps)
 
-u_e = 1
-for i in range(tdim):
-    u_e *= ufl.sin(ufl.pi * x[i])
-f = - div(c * grad(u_e))
+f = - div(c * grad(u_e(x)))
 
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
@@ -85,19 +100,6 @@ L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
-
-
-def boundary(x):
-    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
-    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-    lrtb = lr | tb
-    if tdim == 2:
-        return lrtb
-    else:
-        assert tdim == 3
-        fb = np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
-        return lrtb | fb
-
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
@@ -107,9 +109,6 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
-
-out_str += f"A.norm() = {A.norm()}\n"
-out_str += f"b.norm() = {b.norm()}\n"
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -121,10 +120,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecRight()
 ksp.solve(b, x)
 
-out_str += f"x.norm() = {x.norm()}\n"
-
-u = fem.Function(V)
-ubar = fem.Function(Vbar)
+u, ubar = fem.Function(V), fem.Function(Vbar)
 
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
@@ -137,8 +133,9 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
-e_L2 = norm_L2(msh.comm, u - u_e)
-out_str += f"e_L2 = {e_L2}\n"
-
-if rank == 0:
-    print(out_str)
+x = ufl.SpatialCoordinate(msh)
+e_u = norm_L2(msh.comm, u - u_e(x))
+x_bar = ufl.SpatialCoordinate(facet_mesh)
+e_ubar = norm_L2(msh.comm, ubar - u_e(x_bar))
+par_print(comm, f"e_u = {e_u}")
+par_print(comm, f"e_ubar = {e_ubar}")

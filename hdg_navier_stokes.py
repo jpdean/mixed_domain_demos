@@ -113,7 +113,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 6.0 * k**2 / h  # TODO Should be larger in 3D
+    gamma = 256.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -162,8 +162,8 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    L_2 = inner(
-        fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]),
+    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
+                                   for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
@@ -464,11 +464,12 @@ class GaussianBump(Problem):
 
 
 class Cylinder(Problem):
-    def create_mesh(self, h, cell_type):
-        # TODO Add cell type
+    def __init__(self, d):
+        super().__init__()
+        self.d = d
 
+    def create_mesh(self, h, cell_type):
         comm = MPI.COMM_WORLD
-        gdim = 2
 
         volume_id = {"fluid": 1}
 
@@ -482,9 +483,13 @@ class Cylinder(Problem):
             gmsh.model.add("model")
             factory = gmsh.model.geo
 
-            length = 2.2
+            if self.d == 2:
+                length = 2.2
+                c = (0.2, 0.2)
+            else:
+                length = 2.5
+                c = (0.5, 0.2)
             height = 0.41
-            c = (0.2, 0.2)
             r = 0.05
             r_s = 0.15
             order = 1
@@ -575,45 +580,89 @@ class Cylinder(Problem):
                 gmsh.model.geo.mesh.setTransfiniteSurface(
                     boundary_layer_surfaces[i])
 
+            # FIXME Don't recombine for tets
+            if self.d == 3:
+                if cell_type == mesh.CellType.tetrahedron:
+                    recombine = False
+                else:
+                    recombine = True
+                extrude_surfs = [(2, surf) for surf in [
+                    outer_surface] + boundary_layer_surfaces]
+                gmsh.model.geo.extrude(
+                    extrude_surfs, 0, 0, 0.41, [8], recombine=recombine)
+
             gmsh.model.geo.synchronize()
 
-            gmsh.model.addPhysicalGroup(
-                2, [outer_surface] + boundary_layer_surfaces,
-                volume_id["fluid"])
+            if self.d == 2:
+                gmsh.model.addPhysicalGroup(
+                    2, [outer_surface] + boundary_layer_surfaces,
+                    volume_id["fluid"])
 
-            gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[0], rectangle_lines[2]],
-                boundary_id["wall"])
-            gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[1]], boundary_id["outlet"])
-            gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[3]], boundary_id["inlet"])
-            gmsh.model.addPhysicalGroup(
-                1, circle_lines, boundary_id["obstacle"])
+                gmsh.model.addPhysicalGroup(
+                    1, [rectangle_lines[0], rectangle_lines[2]],
+                    boundary_id["wall"])
+                gmsh.model.addPhysicalGroup(
+                    1, [rectangle_lines[1]], boundary_id["outlet"])
+                gmsh.model.addPhysicalGroup(
+                    1, [rectangle_lines[3]], boundary_id["inlet"])
+                gmsh.model.addPhysicalGroup(
+                    1, circle_lines, boundary_id["obstacle"])
+            else:
+                # FIXME Mark without hardcoding
+                gmsh.model.addPhysicalGroup(
+                    3, [1, 2, 3, 4, 5], volume_id["fluid"])
+
+                gmsh.model.addPhysicalGroup(
+                    2, [41], boundary_id["inlet"])
+
+                gmsh.model.addPhysicalGroup(
+                    2, [33], boundary_id["outlet"])
+
+                gmsh.model.addPhysicalGroup(
+                    2, [1, 2, 3, 4, 5, 29, 37, 58, 80, 102, 124, 146],
+                    boundary_id["wall"])
+
+                gmsh.model.addPhysicalGroup(
+                    2, [75, 97, 119, 141],
+                    boundary_id["obstacle"])
 
             # gmsh.option.setNumber("Mesh.Smoothing", 5)
-            if cell_type == mesh.CellType.quadrilateral:
+            if cell_type == mesh.CellType.quadrilateral \
+                    or cell_type == mesh.CellType.hexahedron:
                 gmsh.option.setNumber("Mesh.RecombineAll", 1)
                 gmsh.option.setNumber("Mesh.Algorithm", 8)
                 # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-            gmsh.model.mesh.generate(2)
+            gmsh.model.mesh.generate(self.d)
             gmsh.model.mesh.setOrder(order)
 
         partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
         msh, _, mt = gmshio.model_to_mesh(
-            gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
+            gmsh.model, comm, 0, gdim=self.d, partitioner=partitioner)
         gmsh.finalize()
 
         return msh, mt, boundary_id
 
     def boundary_conditions(self):
-        def inlet(x): return np.vstack(
-            ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
-             np.zeros_like(x[0])))
+        if self.d == 2:
+            def inlet(x): return np.vstack(
+                ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
+                 np.zeros_like(x[0])))
 
-        def zero(x): return np.vstack(
-            (np.zeros_like(x[0]),
-             np.zeros_like(x[0])))
+            def zero(x): return np.vstack(
+                (np.zeros_like(x[0]),
+                 np.zeros_like(x[0])))
+        else:
+            H = 0.41
+
+            def inlet(x): return np.vstack(
+                (16 * 0.45 * x[1] * x[2] * (H - x[1]) * (H - x[2]) / H**4,
+                 np.zeros_like(x[0]),
+                 np.zeros_like(x[0])))
+
+            def zero(x): return np.vstack(
+                (np.zeros_like(x[0]),
+                 np.zeros_like(x[0]),
+                 np.zeros_like(x[0])))
 
         return {"inlet": (BCType.Dirichlet, inlet),
                 "outlet": (BCType.Neumann, zero),
@@ -621,11 +670,12 @@ class Cylinder(Problem):
                 "obstacle": (BCType.Dirichlet, zero)}
 
     def f(self, msh):
-        return fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                  PETSc.ScalarType(0.0)))
+        return fem.Constant(
+            msh, [PETSc.ScalarType(0.0) for i in range(self.d)])
 
     def u_i(self):
-        return lambda x: np.zeros_like(x[:2])
+        # FIXME Should be tdim
+        return lambda x: np.zeros_like(x[:self.d])
 
 
 class Square(Problem):
