@@ -995,17 +995,17 @@ class Wannier(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 8
-    k = 1
+    h = 1 / 16
+    k = 3
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3
-    num_time_steps = 10
-    t_end = 1e2
+    num_time_steps = 32
+    t_end = 1e4
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Square(d=2)
+    problem = Square()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
     boundary_conditions = problem.boundary_conditions()
     u_i_expr = problem.u_i()
