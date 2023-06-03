@@ -313,7 +313,7 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    # Using linearised version (3.91) https://academic.oup.com/book/5953/chapter/149296535?login=true
+    # Using linearised version in sec. 3.6.3 in https://academic.oup.com/book/5953/chapter/149296535?login=true
     dx = ufl.Measure("dx", domain=msh)
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
                     + inner(1 / mu * curl(A), curl(phi)) * dx)
