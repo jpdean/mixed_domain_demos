@@ -170,35 +170,38 @@ n = ufl.FacetNormal(msh)
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
+domain_0 = "+"
+domain_1 = "-"
+
 a_00 = inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
-    + gamma / avg(h) * inner(c * u_0("+"),
-                             v_0("+")) * dS(interface) \
-    - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
-            v_0("+")) * dS(interface) \
-    - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
-            u_0("+")) * dS(interface)
+    + gamma / avg(h) * inner(c * u_0(domain_0),
+                             v_0(domain_0)) * dS(interface) \
+    - inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)),
+            v_0(domain_0)) * dS(interface) \
+    - inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)),
+            u_0(domain_0)) * dS(interface)
 
-a_01 = - gamma / avg(h) * inner(c * u_1("-"),
-                                v_0("+")) * dS(interface) \
-    + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
-            v_0("+")) * dS(interface) \
-    + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")),
-            u_1("-")) * dS(interface)
+a_01 = - gamma / avg(h) * inner(c * u_1(domain_1),
+                                v_0(domain_0)) * dS(interface) \
+    + inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)),
+            v_0(domain_0)) * dS(interface) \
+    + inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)),
+            u_1(domain_1)) * dS(interface)
 
-a_10 = - gamma / avg(h) * inner(c * u_0("+"),
-                                v_1("-")) * dS(interface) \
-    + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")),
-            v_1("-")) * dS(interface) \
-    + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
-            u_0("+")) * dS(interface)
+a_10 = - gamma / avg(h) * inner(c * u_0(domain_0),
+                                v_1(domain_1)) * dS(interface) \
+    + inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)),
+            v_1(domain_1)) * dS(interface) \
+    + inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)),
+            u_0(domain_0)) * dS(interface)
 
 a_11 = inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
-    + gamma / avg(h) * inner(c * u_1("-"),
-                             v_1("-")) * dS(interface) \
-    - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
-            v_1("-")) * dS(interface) \
-    - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
-            u_1("-")) * dS(interface)
+    + gamma / avg(h) * inner(c * u_1(domain_1),
+                             v_1(domain_1)) * dS(interface) \
+    - inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)),
+            v_1(domain_1)) * dS(interface) \
+    - inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)),
+            u_1(domain_1)) * dS(interface)
 
 a_00 = fem.form(a_00, entity_maps=entity_maps)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
