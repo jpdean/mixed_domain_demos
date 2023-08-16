@@ -640,7 +640,7 @@ for n in range(num_time_steps):
     u_vis.interpolate(u_n)
 
     if t - t_last_write > delta_t_write or \
-        n == num_time_steps - 1:
+            n == num_time_steps - 1:
         for vis_file in vis_files:
             vis_file.write(t)
         t_last_write = t

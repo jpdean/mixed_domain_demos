@@ -7,7 +7,7 @@ from dolfinx import mesh, fem, io
 from dolfinx.io import gmshio
 from hdg_navier_stokes import BCType
 from petsc4py import PETSc
-from utils import norm_L2, normal_jump_error, domain_average, convert_facet_tags
+from utils import norm_L2, normal_jump_error, convert_facet_tags
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
@@ -52,33 +52,37 @@ class Channel(hdg_navier_stokes.Problem):
                              gmsh.model.geo.addPoint(L_x, - wall_thickness, 0),
                              gmsh.model.geo.addPoint(
                                  L_x, L_y + wall_thickness, 0),
-                             gmsh.model.geo.addPoint(0, L_y + wall_thickness, 0)]
+                             gmsh.model.geo.addPoint(
+                0, L_y + wall_thickness, 0)]
             fluid_points = [gmsh.model.geo.addPoint(0, 0, 0),
                             gmsh.model.geo.addPoint(L_x, 0, 0),
                             gmsh.model.geo.addPoint(L_x, L_y, 0),
                             gmsh.model.geo.addPoint(0, L_y, 0)]
 
-            wall_0_lines = [gmsh.model.geo.addLine(domain_points[0], domain_points[1]),
-                            gmsh.model.geo.addLine(
-                                domain_points[1], fluid_points[1]),
-                            gmsh.model.geo.addLine(
-                                fluid_points[1], fluid_points[0]),
-                            gmsh.model.geo.addLine(
-                                fluid_points[0], domain_points[0]),
-                            ]
+            wall_0_lines = [gmsh.model.geo.addLine(
+                domain_points[0], domain_points[1]),
+                gmsh.model.geo.addLine(
+                domain_points[1], fluid_points[1]),
+                gmsh.model.geo.addLine(
+                fluid_points[1], fluid_points[0]),
+                gmsh.model.geo.addLine(
+                fluid_points[0], domain_points[0]),
+            ]
             fluid_lines = [- wall_0_lines[2],
                            gmsh.model.geo.addLine(
                                fluid_points[1], fluid_points[2]),
                            gmsh.model.geo.addLine(
                                fluid_points[2], fluid_points[3]),
-                           gmsh.model.geo.addLine(fluid_points[3], fluid_points[0])]
+                           gmsh.model.geo.addLine(
+                fluid_points[3], fluid_points[0])]
 
             wall_1_lines = [- fluid_lines[2],
                             gmsh.model.geo.addLine(
                                 fluid_points[2], domain_points[2]),
                             gmsh.model.geo.addLine(
                                 domain_points[2], domain_points[3]),
-                            gmsh.model.geo.addLine(domain_points[3], fluid_points[3])]
+                            gmsh.model.geo.addLine(
+                domain_points[3], fluid_points[3])]
 
             wall_0_loop = gmsh.model.geo.addCurveLoop(wall_0_lines)
             fluid_loop = gmsh.model.geo.addCurveLoop(fluid_lines)
@@ -313,7 +317,8 @@ def solve(solver_type, k, nu, num_time_steps,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(all_facets_tag)
 
-    # Using linearised version in sec. 3.6.3 in https://academic.oup.com/book/5953/chapter/149296535?login=true
+    # Using linearised version in sec. 3.6.3 in
+    # https://academic.oup.com/book/5953/chapter/149296535?login=true
     dx = ufl.Measure("dx", domain=msh)
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
                     + inner(1 / mu * curl(A), curl(phi)) * dx)
@@ -329,7 +334,7 @@ def solve(solver_type, k, nu, num_time_steps,
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
     L_2 = inner(fem.Constant(fluid_sm, [PETSc.ScalarType(0.0)
-                                   for i in range(tdim)]),
+                                        for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
@@ -395,7 +400,8 @@ def solve(solver_type, k, nu, num_time_steps,
     if scheme == Scheme.RW:
         u_vis = fem.Function(V)
     else:
-        V_vis = fem.VectorFunctionSpace(fluid_sm, ("Discontinuous Lagrange", k + 1))
+        V_vis = fem.VectorFunctionSpace(
+            fluid_sm, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -503,7 +509,7 @@ if __name__ == "__main__":
     k = 1
     cell_type = mesh.CellType.hexahedron
     nu = 1.0e-3
-    num_time_steps = 32
+    num_time_steps = 10
     t_end = 10
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW

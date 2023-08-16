@@ -718,9 +718,12 @@ class Square(Problem):
             u = (module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
                  module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]))
         else:
-            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1]) - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
-                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[2]) - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
-                 module.sin(module.pi * x[2]) * module.cos(module.pi * x[0]) - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]))
+            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+                 - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
+                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[2])
+                 - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
+                 module.sin(module.pi * x[2]) * module.cos(module.pi * x[0])
+                 - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]))
         if module == ufl:
             return ufl.as_vector(u)
         else:
@@ -731,7 +734,8 @@ class Square(Problem):
         if self.d == 2:
             return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
         else:
-            return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
+            return module.sin(module.pi * x[0]) \
+                * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
         # return x[0] * (1 - x[0])
 
     def boundary_conditions(self):

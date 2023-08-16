@@ -1,3 +1,6 @@
+# Solve Poisson's equation using an HDG scheme.
+
+
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
@@ -85,10 +88,12 @@ a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
                 (inner(c * u, dot(grad(v), n)) * ds_c(all_facets) +
                  inner(c * v, dot(grad(u), n)) * ds_c(all_facets)) +
                 gamma * inner(c * u, v) * ds_c(all_facets))
-a_10 = fem.form(inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(all_facets),
-                entity_maps=entity_maps)
-a_01 = fem.form(inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(all_facets),
-                entity_maps=entity_maps)
+a_10 = fem.form(
+    inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(all_facets),
+    entity_maps=entity_maps)
+a_01 = fem.form(
+    inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(all_facets),
+    entity_maps=entity_maps)
 a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(all_facets),
                 entity_maps=entity_maps)
 
