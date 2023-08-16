@@ -26,39 +26,39 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      - uses: actions/checkout@v3
-        with:
-          repository: FEniCS/basix
-          ref: main
+      # - uses: actions/checkout@v3
+      #   with:
+      #     repository: FEniCS/basix
+      #     ref: main
 
-      # Runs a single command using the runners shell
-      - name: Install basix
-        run: |
-          cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} -B build-dir -S ./cpp
-          cmake --build build-dir
-          cmake --install build-dir
-          python3 -m pip install ./python
+      # # Runs a single command using the runners shell
+      # - name: Install basix
+      #   run: |
+      #     cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} -B build-dir -S ./cpp
+      #     cmake --build build-dir
+      #     cmake --install build-dir
+      #     python3 -m pip install ./python
 
-      # Runs a set of commands using the runners shell
-      - name: Install UFL and FFCx
-        run: |
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@jpdean/meshview
+      # # Runs a set of commands using the runners shell
+      # - name: Install UFL and FFCx
+      #   run: |
+      #     python3 -m pip install git+https://github.com/FEniCS/ufl.git
+      #     python3 -m pip install git+https://github.com/FEniCS/ffcx.git@jpdean/meshview
 
-      - uses: actions/checkout@v3
-        with:
-          repository: FEniCS/dolfinx
-          ref: jpdean/mixed_domain
+      # - uses: actions/checkout@v3
+      #   with:
+      #     repository: FEniCS/dolfinx
+      #     ref: jpdean/mixed_domain
 
-      # Runs a single command using the runners shell
-      - name: Install dolfinx
-        run: |
-          mkdir -p build-real
-          cd build-real
-          PETSC_ARCH=linux-gnu-real-32 cmake -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local/dolfinx-real -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} ../cpp
-          ninja install
-          cd ../python
-          CXXFLAGS=${DOLFINX_CMAKE_CXX_FLAGS} PETSC_ARCH=linux-gnu-real-32 pip3 install .
+      # # Runs a single command using the runners shell
+      # - name: Install dolfinx
+      #   run: |
+      #     mkdir -p build-real
+      #     cd build-real
+      #     PETSC_ARCH=linux-gnu-real-32 cmake -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local/dolfinx-real -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} ../cpp
+      #     ninja install
+      #     cd ../python
+      #     CXXFLAGS=${DOLFINX_CMAKE_CXX_FLAGS} PETSC_ARCH=linux-gnu-real-32 pip3 install .
 
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
