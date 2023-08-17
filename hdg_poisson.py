@@ -62,7 +62,7 @@ facets = np.arange(num_facets, dtype=np.int32)
 # Create the sub-mesh
 # NOTE Despite all facets being present in the submesh, the entity map isn't
 # necessarily the identity in parallel
-facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
+facet_mesh, facet_mesh_to_mesh = mesh.create_submesh(msh, fdim, facets)[0:2]
 
 # Define function spaces
 k = 3  # Polynomial order
@@ -93,9 +93,9 @@ ds_c = ufl.Measure("ds", subdomain_data=[
                    (cell_boundaries, cell_boundary_facets)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-inv_entity_map = np.full(num_facets, -1)
-inv_entity_map[entity_map] = np.arange(len(entity_map))
-entity_maps = {facet_mesh: inv_entity_map}
+mesh_to_facet_mesh = np.full(num_facets, -1)
+mesh_to_facet_mesh[facet_mesh_to_mesh] = np.arange(len(facet_mesh_to_mesh))
+entity_maps = {facet_mesh: mesh_to_facet_mesh}
 
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
@@ -126,7 +126,7 @@ a = [[a_00, a_01],
 L = [L_0, L_1]
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
-facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
+facet_mesh_boundary_facets = mesh_to_facet_mesh[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 
