@@ -81,22 +81,30 @@ dx_c = ufl.Measure("dx", domain=msh)
 # Cell boundaries
 # We need to define an integration measure to integrate around the
 # boundary of each cell. We create a list of facets to integrate
-# over, identified by (cell, local_facet) pairs. 
-# TODO Do this with numpy
+# over, identified by (cell, local_facet) pairs, as follows:
+# FIXME Do this efficiently with numpy
 cell_boundary_facets = []
+# Loop over each cell in the mesh
 for cell in range(msh.topology.index_map(tdim).size_local):
+    # Add each facet of the cell to the list
     for local_facet in range(num_cell_facets):
         cell_boundary_facets.extend([cell, local_facet])
 
-cell_boundaries = 1
+cell_boundaries = 1  # A tag
+# Create the measure
 ds_c = ufl.Measure("ds", subdomain_data=[
                    (cell_boundaries, cell_boundary_facets)], domain=msh)
+# Create a cell integral measure over the facet mesh
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
+# We write the mixed domain forms as integrals over msh. Hence, we must
+# provide a map from facets in msh to cells in facet_mesh. This is the
+# 'inverse' of facet_mesh_to_mesh, which we compute as follows:
 mesh_to_facet_mesh = np.full(num_facets, -1)
 mesh_to_facet_mesh[facet_mesh_to_mesh] = np.arange(len(facet_mesh_to_mesh))
 entity_maps = {facet_mesh: mesh_to_facet_mesh}
 
+# Define forms
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 gamma = 16.0 * k**2 / h
@@ -121,12 +129,19 @@ f = - div(c * grad(u_e(x)))
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
+# Define block structure
 a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
 
+# Apply Dirichlet boundary conditions
+# We begin by locating the boundary facets of msh
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
+# Since the bonndary condition is enforced in the facet space, we must
+# use the mesh_to_facet_mesh map to get the corresponding facets in
+# facet_mesh
 facet_mesh_boundary_facets = mesh_to_facet_mesh[msh_boundary_facets]
+# Get the dofs and apply the bondary condition
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 
