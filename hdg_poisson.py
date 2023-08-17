@@ -48,9 +48,9 @@ msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
 #     comm, n, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.hexahedron)
 
-# We need to create a broken Lagrange space defined over the facets of the mesh.
-# To do so, we require a sub-mesh of the all facets. We begin by creating a
-# list of all of the facets in the mesh
+# We need to create a broken Lagrange space defined over the facets of the
+# mesh. To do so, we require a sub-mesh of the all facets. We begin by
+# creating a list of all of the facets in the mesh
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
@@ -145,10 +145,12 @@ facet_mesh_boundary_facets = mesh_to_facet_mesh[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 
+# Assemble the matrix and vector
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
+# Setup the solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -159,19 +161,21 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecRight()
 ksp.solve(b, x)
 
+# Create functions for the solution and update values
 u, ubar = fem.Function(V), fem.Function(Vbar)
-
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
 ubar.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 u.x.scatter_forward()
 ubar.x.scatter_forward()
 
+# Write to file
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
+# Compute errors
 x = ufl.SpatialCoordinate(msh)
 e_u = norm_L2(msh.comm, u - u_e(x))
 x_bar = ufl.SpatialCoordinate(facet_mesh)
