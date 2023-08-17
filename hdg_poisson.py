@@ -12,6 +12,7 @@ from utils import norm_L2, create_random_mesh
 from utils import par_print
 
 
+# Exact solution
 def u_e(x):
     u_e = 1
     for i in range(tdim):
@@ -19,6 +20,7 @@ def u_e(x):
     return u_e
 
 
+# Boundary marker
 def boundary(x):
     lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
     tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
@@ -34,7 +36,10 @@ def boundary(x):
 comm = MPI.COMM_WORLD
 rank = comm.rank
 
+# Number of elements in each direction
 n = 16
+
+# Create the mesh
 # msh = mesh.create_unit_square(
 #     comm, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.quadrilateral)
@@ -43,6 +48,9 @@ msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
 #     comm, n, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.hexahedron)
 
+# We need to create a broken Lagrange space defined over the facets of the mesh.
+# To do so, we require a sub-mesh of the all facets. We begin by creating a
+# list of all of the facets in the mesh
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
@@ -51,50 +59,61 @@ facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
 
+# Create the sub-mesh
 # NOTE Despite all facets being present in the submesh, the entity map isn't
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-k = 3
+# Define function spaces
+k = 3  # Polynomial order
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
+# Trial and test functions
+# Cell space
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+# Facet space
 ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
-h = ufl.CellDiameter(msh)
-n = ufl.FacetNormal(msh)
-gamma = 16.0 * k**2 / h
-
+# Define integration measures
+# Cell
+dx_c = ufl.Measure("dx", domain=msh)
+# Cell boundaries
+# We need to define an integration measure to integrate around the
+# boundary of each cell. We create a list of facets to integrate
+# over, identified by (cell, local_facet) pairs. 
 # TODO Do this with numpy
-facet_integration_entities = []
+cell_boundary_facets = []
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
-        facet_integration_entities.extend([cell, local_facet])
+        cell_boundary_facets.extend([cell, local_facet])
 
-dx_c = ufl.Measure("dx", domain=msh)
-all_facets = 1
+cell_boundaries = 1
 ds_c = ufl.Measure("ds", subdomain_data=[
-                   (all_facets, facet_integration_entities)], domain=msh)
+                   (cell_boundaries, cell_boundary_facets)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = np.full(num_facets, -1)
 inv_entity_map[entity_map] = np.arange(len(entity_map))
 entity_maps = {facet_mesh: inv_entity_map}
 
+h = ufl.CellDiameter(msh)
+n = ufl.FacetNormal(msh)
+gamma = 16.0 * k**2 / h
+
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
-                (inner(c * u, dot(grad(v), n)) * ds_c(all_facets) +
-                 inner(c * v, dot(grad(u), n)) * ds_c(all_facets)) +
-                gamma * inner(c * u, v) * ds_c(all_facets))
+                (inner(c * u, dot(grad(v), n)) * ds_c(cell_boundaries) +
+                 inner(c * v, dot(grad(u), n)) * ds_c(cell_boundaries)) +
+                gamma * inner(c * u, v) * ds_c(cell_boundaries))
 a_10 = fem.form(
-    inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(all_facets),
+    inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(cell_boundaries),
     entity_maps=entity_maps)
 a_01 = fem.form(
-    inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(all_facets),
+    inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(cell_boundaries),
     entity_maps=entity_maps)
-a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(all_facets),
+a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(cell_boundaries),
                 entity_maps=entity_maps)
 
 f = - div(c * grad(u_e(x)))
