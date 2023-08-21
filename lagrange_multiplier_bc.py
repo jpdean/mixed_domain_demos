@@ -11,6 +11,7 @@ from petsc4py import PETSc
 from utils import norm_L2
 
 
+# Marker for the domain boundary
 def boundary_marker(x):
     return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
                                        np.isclose(x[0], l_x)),
@@ -26,25 +27,25 @@ n_y = 8
 msh = mesh.create_rectangle(
     comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
 
-# Create submesh of the boundary
+# Create sub-mesh of the boundary to define function space for the Lagrange
+# multipiler
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_facets = msh.topology.create_entities(fdim)
 boundary_facets = mesh.locate_entities_boundary(
     msh, fdim, boundary_marker)
-submesh, entity_map = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
+submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
-# Create function spaces on the mesh and submesh
-k = 1
+# Create function spaces on the mesh and sub-mesh
+k = 3  # Polynomial degree
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
+
+# Trial and test functions
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 lmbda = ufl.TrialFunction(W)
 mu = ufl.TestFunction(W)
-
-# Create measure for integral over boundary
-ds = ufl.Measure("ds", domain=msh)
 
 # Create manufactured solution
 x = ufl.SpatialCoordinate(msh)
@@ -56,9 +57,12 @@ f = u_e - div(grad(u_e))
 # Dirichlet boundary condition (enforced through Lagrange multiplier)
 u_d = u_e
 
-# Define entity maps and forms
-entity_maps = {submesh: [entity_map.index(entity)
-                         if entity in entity_map else -1
+# Create measure for integral over boundary
+ds = ufl.Measure("ds", domain=msh)
+
+# We 
+entity_maps = {submesh: [submesh_to_mesh.index(entity)
+                         if entity in submesh_to_mesh else -1
                          for entity in range(num_facets)]}
 a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
