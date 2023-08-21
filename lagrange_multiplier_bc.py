@@ -57,10 +57,13 @@ f = u_e - div(grad(u_e))
 # Dirichlet boundary condition (enforced through Lagrange multiplier)
 u_d = u_e
 
-# Create measure for integral over boundary
+# Create measure for integral over boundary. We take the integration domain
+# mesh to be msh
 ds = ufl.Measure("ds", domain=msh)
 
-# We 
+# Since the integration domain is msh, we must provide a map from facets
+# in msh to cells in submesh. This is simply the "inverse" of
+# submesh_to_mesh and can be computed as follows
 entity_maps = {submesh: [submesh_to_mesh.index(entity)
                          if entity in submesh_to_mesh else -1
                          for entity in range(num_facets)]}
