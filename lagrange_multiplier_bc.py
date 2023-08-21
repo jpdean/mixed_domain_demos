@@ -63,10 +63,14 @@ ds = ufl.Measure("ds", domain=msh)
 
 # Since the integration domain is msh, we must provide a map from facets
 # in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh and can be computed as follows
-entity_maps = {submesh: [submesh_to_mesh.index(entity)
-                         if entity in submesh_to_mesh else -1
-                         for entity in range(num_facets)]}
+# submesh_to_mesh and can be computed as follows:
+facet_imap = msh.topology.index_map(fdim)
+num_facets = facet_imap.size_local + facet_imap.num_ghosts
+mesh_to_submesh = np.full(num_facets, -1)
+mesh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
+entity_maps = {submesh: mesh_to_submesh}
+
+# Define forms
 a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
 a_10 = fem.form(- inner(u, mu) * ds, entity_maps=entity_maps)
@@ -74,6 +78,7 @@ a_11 = None
 L_0 = fem.form(inner(f, v) * ufl.dx)
 L_1 = fem.form(- inner(u_d, mu) * ds, entity_maps=entity_maps)
 
+# Define block structure
 a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
@@ -102,11 +107,13 @@ u.x.scatter_forward()
 lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
+# Write to file
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
     f.write(0.0)
 
+# Compute L^2-norm of error
 e_L2 = norm_L2(msh.comm, u - u_e)
 
 if msh.comm.rank == 0:
