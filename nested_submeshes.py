@@ -9,7 +9,7 @@ from dolfinx.io import gmshio
 from dolfinx.mesh import meshtags, exterior_facet_indices
 
 
-def create_mesh(h):
+def create_mesh(comm, h):
     # Create some geometry with gmsh
     gmsh.initialize()
     model = gmsh.model()
@@ -51,30 +51,29 @@ def create_mesh(h):
     return msh
 
 
+# Create a mesh
 comm = MPI.COMM_WORLD
-h = 0.25
-msh = create_mesh(h)
+h = 0.25  # Max cell diameter
+msh = create_mesh(comm, h)
 
-# Create a submesh of part of the boundary of the original mesh to
-# get a disk
+# Create a sub-mesh of part of the boundary of msh to get a disk
 msh_fdim = msh.topology.dim - 1
 submesh_0_entities = mesh.locate_entities_boundary(
     msh, msh_fdim, lambda x: np.isclose(x[2], 0.0))
-submesh_0, entity_map_0 = mesh.create_submesh(
+submesh_0, sm_0_to_msh = mesh.create_submesh(
     msh, msh_fdim, submesh_0_entities)[0:2]
 
-# Create a submesh of the boundary of submesh_0 to get some concentric
-# circles
+# Create a sub-mesh of the boundary of submesh_0 to get concentric circles
 submesh_0_tdim = submesh_0.topology.dim
 submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
 submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, entity_map_1 = mesh.create_submesh(
+submesh_1, sm_1_to_msh = mesh.create_submesh(
     submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a functions space on submesh_1 and interpolate a function
-k = 2
+k = 2  # Polynomial degree
 V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k))
 u_sm_1 = fem.Function(V_sm_1)
 u_sm_1.name = "u_sm_1"
@@ -84,11 +83,10 @@ u_sm_1.interpolate(lambda x: x[1]**2)
 with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1) as f:
     f.write(0.0)
 
-# Create a function space over submesh_0, and define trial and test
+# Create a function space over submesh_0 and define trial and test
 # functions
 V_sm_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k))
-u_sm_0 = ufl.TrialFunction(V_sm_0)
-v_sm_0 = ufl.TestFunction(V_sm_0)
+u_sm_0, v_sm_0 = ufl.TrialFunction(V_sm_0), ufl.TestFunction(V_sm_0)
 
 # Create a function to represent the forcing term
 f_sm_0 = fem.Function(V_sm_0)
@@ -98,8 +96,8 @@ f_sm_0.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 submesh_0_facet_imap = submesh_0.topology.index_map(submesh_0_fdim)
 submesh_0_num_facets = submesh_0_facet_imap.size_local + \
     submesh_0_facet_imap.num_ghosts
-entity_maps_sm_0 = {submesh_1: [entity_map_1.index(entity)
-                                if entity in entity_map_1 else -1
+entity_maps_sm_0 = {submesh_1: [sm_1_to_msh.index(entity)
+                                if entity in sm_1_to_msh else -1
                                 for entity in range(submesh_0_num_facets)]}
 ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 
@@ -154,8 +152,8 @@ f_msh.interpolate(lambda x: np.sin(np.pi * x[0])
 # Create entity maps
 msh_num_facets = msh.topology.index_map(msh_fdim).size_local + \
     msh.topology.index_map(msh_fdim).num_ghosts
-entity_maps_msh = {submesh_0: [entity_map_0.index(entity)
-                               if entity in entity_map_0 else -1
+entity_maps_msh = {submesh_0: [sm_0_to_msh.index(entity)
+                               if entity in sm_0_to_msh else -1
                                for entity in range(msh_num_facets)]}
 
 # Create meshtags to mark the Neumann boundary
