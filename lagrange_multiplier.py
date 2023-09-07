@@ -238,22 +238,22 @@ def create_mesh(h, d):
     return msh, ct, ft
 
 
+# Set some paramters
 comm = MPI.COMM_WORLD
-d = 2
+d = 2  # Geometric dimension
+h = 0.05  # Max cell diameter
+k = 3  # Polynomial degree
 
+# Tags for volumes and boundaries
 vol_ids = {"omega_0": 0,
            "omega_1": 1}
 bound_ids = {"gamma": 2,
              "gamma_i": 3}
 
-h = 0.05
+# Create trial and test functions for primary unknown
 msh, ct, ft = create_mesh(h, d)
-
-k = 3
-
 V = fem.FunctionSpace(msh, ("Lagrange", k))
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
+u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create Dirichlet boundary condition
 tdim = msh.topology.dim
