@@ -23,6 +23,13 @@ def u_e(x):
         module.cos(2.0 * module.pi * x[1])
 
 
+def boundary(x):
+    "A function to mark the domain boundary"
+    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+    return lr | tb
+
+
 # Create a mesh
 comm = MPI.COMM_WORLD
 n = 16
@@ -121,24 +128,25 @@ a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
 
-
-def boundary(x):
-    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
-    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-    return lr | tb
-
-
+# Define the boundary condition. We begin by locating the facets on the
+# domain boundary
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
+# Since Vbar is defined over facet_mesh, we must find the cells in
+# facet_mesh corresponding to msh_boundary_facets
 facet_mesh_boundary_facets = msh_to_facet_mesh[msh_boundary_facets]
+# We can now use these facets to locate the desired DOFs
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
+# Finally, we interpolate the boundary condition
 u_bc = fem.Function(Vbar)
 u_bc.interpolate(u_e)
 bc = fem.dirichletbc(u_bc, dofs)
 
+# Assemble system of equations
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
+# Setup solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -149,20 +157,22 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 x = A.createVecRight()
 ksp.solve(b, x)
 
+# Recover the solution
 u = fem.Function(V)
 ubar = fem.Function(Vbar)
-
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
 ubar.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 u.x.scatter_forward()
 ubar.x.scatter_forward()
 
+# Write solution to file
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
+# Compute the error
 x = ufl.SpatialCoordinate(msh)
 e_L2 = norm_L2(msh.comm, u - u_e(x))
 
