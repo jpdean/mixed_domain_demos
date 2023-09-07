@@ -15,6 +15,14 @@ from petsc4py import PETSc
 from utils import norm_L2
 
 
+def u_e(x):
+    "Function to represent the exact solution"
+    u_e = 1
+    for i in range(tdim):
+        u_e *= ufl.sin(ufl.pi * x[i])
+    return u_e
+
+
 def create_mesh(h, d):
     """
     Create a mesh with the FEniCS logo if d == 2 and a box containing
@@ -301,14 +309,6 @@ ds = ufl.Measure("ds",
                                   facet_integration_entities)],
                  domain=msh)
 
-
-def u_e(x):
-    u_e = 1
-    for i in range(tdim):
-        u_e *= ufl.sin(ufl.pi * x[i])
-    return u_e
-
-
 # Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(inner(lmbda, v) * ds(bound_ids["gamma_i"]),
@@ -316,25 +316,25 @@ a_01 = fem.form(inner(lmbda, v) * ds(bound_ids["gamma_i"]),
 a_10 = fem.form(inner(u, eta) * ds(bound_ids["gamma_i"]),
                 entity_maps=entity_maps)
 
-# f = fem.Constant(msh, PETSc.ScalarType(2.0))
 x_msh = ufl.SpatialCoordinate(msh)
 f = - div(grad(u_e(x_msh)))
-# f = 1e-12
+# f = fem.Constant(msh, PETSc.ScalarType(2.0))
 L_0 = fem.form(inner(f, v) * ufl.dx)
 
-# c = fem.Constant(submesh, PETSc.ScalarType(0.25))
 x_sm = ufl.SpatialCoordinate(submesh)
 L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
 # L_1 = fem.form(inner(0.25 + 0.3 * ufl.sin(ufl.pi * x_sm[0]), eta) * ufl.dx)
 
+# Define block structure
 a = [[a_00, a_01],
      [a_10, None]]
 L = [L_0, L_1]
 
-# Use block assembly
+# Assemble matrix
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 
+# Assemble vector
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
 
 # Configure solver
