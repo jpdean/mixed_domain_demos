@@ -247,8 +247,8 @@ k = 3  # Polynomial degree
 # Tags for volumes and boundaries
 vol_ids = {"omega_0": 0,
            "omega_1": 1}
-bound_ids = {"gamma": 2,
-             "gamma_i": 3}
+bound_ids = {"gamma": 2,  # Boundary
+             "gamma_i": 3}  # Interface
 
 # Create trial and test functions for primary unknown
 msh, ct, ft = create_mesh(h, d)
@@ -263,36 +263,42 @@ dirichlet_facets = ft.indices[ft.values == bound_ids["gamma"]]
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
-# Create submesh for Lagrange multiplier
-interface_facets = ft.indices[ft.values == bound_ids["gamma_i"]]
-submesh, entity_map = mesh.create_submesh(msh, fdim, interface_facets)[0:2]
+# Create sub-mesh for Lagrange multiplier. We locate the facets on the
+# interface (gamma_1) pass them to create_submesh
+gamma_i_facets = ft.indices[ft.values == bound_ids["gamma_i"]]
+submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
 
 # Create function space for the Lagrange multiplier
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
-lmbda = ufl.TrialFunction(W)
-eta = ufl.TestFunction(W)
+lmbda, eta = ufl.TrialFunction(W), ufl.TestFunction(W)
 
+# We take msh to be the integration domain mesh, so we must provide a map
+# from facets in msh to cells in submesh. This is simply the "inverse" of
+# submesh_to_mesh and can be computed as follows.
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
-inv_entity_map = np.full(num_facets, -1)
-inv_entity_map[entity_map] = np.arange(len(entity_map))
-entity_maps = {submesh: inv_entity_map}
+msh_to_submesh = np.full(num_facets, -1)
+msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
+entity_maps = {submesh: msh_to_submesh}
 
-# Create measure for integration
+# Create integration measure for the interface terms. We specify the facets
+# on gamma_i, which are identified as (cell, local facet index) pairs
 facet_integration_entities = []
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
-for facet in interface_facets:
+# Loop through all interface facets
+for facet in gamma_i_facets:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
         # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities.extend([cell, local_facet])
-ds = ufl.Measure("ds", subdomain_data=[
-                 (bound_ids["gamma_i"], facet_integration_entities)],
+ds = ufl.Measure("ds",
+                 subdomain_data=[(bound_ids["gamma_i"],
+                                  facet_integration_entities)],
                  domain=msh)
 
 
