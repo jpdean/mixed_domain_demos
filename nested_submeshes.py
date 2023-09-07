@@ -101,10 +101,9 @@ num_facets_sm_0 = facet_imap_sm_0.size_local + \
 sm_0_to_sm_1 = np.full(num_facets_sm_0, -1)
 sm_0_to_sm_1[sm_1_to_sm_0] = np.arange(len(sm_1_to_sm_0))
 entity_maps_sm_0 = {submesh_1: sm_0_to_sm_1}
-
 ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 
-# Define forms, using the function interpolated on the concentric circle mesh
+# Define forms using the function interpolated on the concentric circle mesh
 # as the Neumann boundary condition
 a_sm_0 = fem.form(inner(u_sm_0, v_sm_0) * dx +
                   inner(grad(u_sm_0), grad(v_sm_0)) * dx)
@@ -135,10 +134,9 @@ u_sm_0.x.scatter_forward()
 with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0) as f:
     f.write(0.0)
 
-# Create function spaces over the mesh, and define trial and test functions
+# Create function spaces over the mesh and define trial and test functions
 V_msh = fem.FunctionSpace(msh, ("Lagrange", k))
-u_msh = ufl.TrialFunction(V_msh)
-v_msh = ufl.TestFunction(V_msh)
+u_msh, v_msh = ufl.TrialFunction(V_msh), ufl.TestFunction(V_msh)
 
 # Create Dirichlet boundary condition
 dirichlet_facets = mesh.locate_entities_boundary(
@@ -153,11 +151,11 @@ f_msh.interpolate(lambda x: np.sin(np.pi * x[0])
                   * np.sin(np.pi * x[2]))
 
 # Create entity maps
-msh_num_facets = msh.topology.index_map(msh_fdim).size_local + \
+num_facets_msh = msh.topology.index_map(msh_fdim).size_local + \
     msh.topology.index_map(msh_fdim).num_ghosts
-entity_maps_msh = {submesh_0: [sm_0_to_msh.index(entity)
-                               if entity in sm_0_to_msh else -1
-                               for entity in range(msh_num_facets)]}
+msh_to_sm_0 = np.full(num_facets_msh, -1)
+msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
+entity_maps_msh = {submesh_0: msh_to_sm_0}
 
 # Create meshtags to mark the Neumann boundary
 mt = meshtags(msh, msh_fdim, submesh_0_entities,
