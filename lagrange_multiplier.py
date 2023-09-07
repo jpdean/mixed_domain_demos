@@ -15,24 +15,23 @@ from petsc4py import PETSc
 from utils import norm_L2
 
 
-comm = MPI.COMM_WORLD
-d = 2
-
-vol_ids = {"omega_0": 0,
-           "omega_1": 1}
-bound_ids = {"gamma": 2,
-             "gamma_i": 3}
-
-
 def create_mesh(h, d):
+    """
+    Create a mesh with the FEniCS logo if d == 2 and a box containing
+    a sphere in 3D.
+        Parameters:
+            h: maximum cell diameter
+            d: geometric dimension
+    """
+
     gmsh.initialize()
     if comm.rank == 0:
-        h = 0.05
         if d == 2:
             gmsh.model.add("square_with_fenics_logo")
 
             factory = gmsh.model.geo
 
+            # Corners of the square
             square_points = [
                 factory.addPoint(0.0, 0.0, 0.0, h),
                 factory.addPoint(1.0, 0.0, 0.0, h),
@@ -164,6 +163,7 @@ def create_mesh(h, d):
                                  0.5547169811320755, 0.0, h)
             ]
 
+            # Boundary of square
             square_lines = [
                 factory.addLine(square_points[0], square_points[1]),
                 factory.addLine(square_points[1], square_points[2]),
@@ -206,50 +206,45 @@ def create_mesh(h, d):
             gmsh.model.addPhysicalGroup(1, square_lines, bound_ids["gamma"])
             gmsh.model.addPhysicalGroup(1, logo_lines_0 + logo_lines_1,
                                         bound_ids["gamma_i"])
-
-            gmsh.model.mesh.generate(2)
-
         elif d == 3:
             gmsh.model.add("box_with_sphere")
             box = gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
             sphere = gmsh.model.occ.addSphere(0.5, 0.5, 0.5, 0.25)
-
             ov, ovv = gmsh.model.occ.fragment([(3, box)], [(3, sphere)])
-
-            # print("fragment produced volumes:")
-            # for e in ov:
-            #     print(e)
-
-            # print("before/after fragment relations:")
-            # for e in zip([(3, box), (3, sphere)], ovv):
-            #     print("parent " + str(e[0]) + " -> child " + str(e[1]))
 
             gmsh.model.occ.synchronize()
 
-            boundary_dim_tags = gmsh.model.getBoundary([ov[0], ov[1]])
-            interface_dim_tags = gmsh.model.getBoundary([ov[0]])
-
+            # Add physical groups
             gmsh.model.addPhysicalGroup(3, [ov[0][1]], vol_ids["omega_0"])
             gmsh.model.addPhysicalGroup(3, [ov[1][1]], vol_ids["omega_1"])
+            gamma_dim_tags = gmsh.model.getBoundary([ov[0], ov[1]])
+            gamma_i_dim_tags = gmsh.model.getBoundary([ov[0]])
             gmsh.model.addPhysicalGroup(
-                2, [surface[1] for surface in boundary_dim_tags],
+                2, [surface[1] for surface in gamma_dim_tags],
                 bound_ids["gamma"])
             gmsh.model.addPhysicalGroup(
-                2, [surface[1] for surface in interface_dim_tags],
+                2, [surface[1] for surface in gamma_i_dim_tags],
                 bound_ids["gamma_i"])
 
             # Assign a mesh size to all the points:
             gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
 
-            gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
     msh, ct, ft = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
-
     return msh, ct, ft
 
+
+comm = MPI.COMM_WORLD
+d = 2
+
+vol_ids = {"omega_0": 0,
+           "omega_1": 1}
+bound_ids = {"gamma": 2,
+             "gamma_i": 3}
 
 h = 0.05
 msh, ct, ft = create_mesh(h, d)
