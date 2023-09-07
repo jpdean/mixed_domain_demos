@@ -50,16 +50,19 @@ Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
-# TODO Do this with numpy
-all_facets = 0
+# Create integration entities and define integration measures. We want
+# to integrate around each element boundary so we loop over cells and
+# add each facet of the cells as (cell, local facet) pairs
+# TODO Create without Python loop using numpy to improve performance
+all_facets = 0  # Tag
 facet_integration_entities = []
 for cell in range(msh.topology.index_map(tdim).size_local):
     for local_facet in range(num_cell_facets):
         facet_integration_entities.extend([cell, local_facet])
-
 dx_c = ufl.Measure("dx", domain=msh)
-ds_c = ufl.Measure("ds", subdomain_data=[
-                   (all_facets, facet_integration_entities)], domain=msh)
+ds_c = ufl.Measure("ds",
+                   subdomain_data=[(all_facets, facet_integration_entities)],
+                   domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 inv_entity_map = np.full_like(entity_map, -1)
