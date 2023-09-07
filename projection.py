@@ -1,12 +1,14 @@
-# Demo showing how the trace of a solution can be projected onto the boundary
-# of a mesh
+# This demo shows how the trace of a function can be projected onto a
+# function space defined over the boundary of a mesh
+
+
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import numpy as np
 import ufl
 from petsc4py import PETSc
 
-# Create a unit square mesh
+# Create a mesh
 comm = MPI.COMM_WORLD
 n = 8
 msh = mesh.create_unit_square(comm, n, n)
@@ -16,7 +18,7 @@ V = fem.FunctionSpace(msh, ("Lagrange", 1))
 u = fem.Function(V)
 u.interpolate(lambda x: np.sin(2 * np.pi * x[0]))
 
-# Create a submesh of the boundary
+# Create a sub-mesh of the boundary
 tdim = msh.topology.dim
 facets = mesh.locate_entities_boundary(
     msh, tdim - 1, lambda x:
@@ -24,7 +26,9 @@ facets = mesh.locate_entities_boundary(
         np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0))
 submsh, sm_to_msh = mesh.create_submesh(msh, tdim - 1, facets)[:2]
 
-# Create msh to submsh entity map
+# We take msh to be the integration domain and thus need to provide
+# a map from the facets in msh to the cells in submesh. This is the
+# "inverse" of sm_to_msh.
 num_facets = msh.topology.index_map(tdim - 1).size_local + \
     msh.topology.index_map(tdim - 1).num_ghosts
 msh_to_sm = np.full(num_facets, -1)
@@ -33,8 +37,7 @@ entity_maps = {submsh: msh_to_sm}
 
 # Create function space on the boundary
 Vbar = fem.FunctionSpace(submsh, ("Lagrange", 1))
-ubar = ufl.TrialFunction(Vbar)
-vbar = ufl.TestFunction(Vbar)
+ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # Define forms for the projection
 ds = ufl.Measure("ds", domain=msh)
