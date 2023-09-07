@@ -1,3 +1,7 @@
+# Solves the convection-diffusion equation using the HDG scheme from
+# https://epubs.siam.org/doi/10.1137/090775464
+
+
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
@@ -8,8 +12,8 @@ from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2
 
 
-# TODO Try solution non-zero on inflow / outflow boundary
 def u_e(x):
+    "Function to represent the exact solution"
     if type(x) == ufl.SpatialCoordinate:
         module = ufl
     else:
@@ -19,11 +23,13 @@ def u_e(x):
         module.cos(2.0 * module.pi * x[1])
 
 
+# Create a mesh
 comm = MPI.COMM_WORLD
-
 n = 16
 msh = mesh.create_unit_square(comm, n, n)
 
+# Create a sub-mesh of all facets in the mesh to allow the facet function
+# spaces to be created
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
@@ -31,23 +37,18 @@ msh.topology.create_entities(fdim)
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
-
 # NOTE Despite all facets being present in the submesh, the entity map isn't
 # necessarily the identity in parallel
 facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-k = 3
+# Create functions spaces
+k = 3  # Polynomial degree
 V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
 
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-ubar = ufl.TrialFunction(Vbar)
-vbar = ufl.TestFunction(Vbar)
-
-h = ufl.CellDiameter(msh)
-n = ufl.FacetNormal(msh)
-gamma = 16.0 * k**2 / h
+# Create trial and test functions
+u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # TODO Do this with numpy
 all_facets = 0
@@ -66,8 +67,10 @@ for i, f in enumerate(entity_map):
     inv_entity_map[f] = i
 entity_maps = {facet_mesh: inv_entity_map}
 
+h = ufl.CellDiameter(msh)
+n = ufl.FacetNormal(msh)
 kappa = fem.Constant(msh, PETSc.ScalarType(1e-3))
-
+gamma = 16.0 * k**2 / h
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
     - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets) \
