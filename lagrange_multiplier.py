@@ -18,8 +18,9 @@ from utils import norm_L2
 comm = MPI.COMM_WORLD
 gdim = 2
 
-omega_0 = 0
-omega_1 = 1
+vol_ids = {"omega_0": 0,
+           "omega_1": 1}
+
 boundary = 2
 interface = 3
 
@@ -159,9 +160,9 @@ if comm.rank == 0:
         factory.synchronize()
 
         # Add 2D physical groups
-        gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
+        gmsh.model.addPhysicalGroup(2, [square_surface], vol_ids["omega_0"])
         gmsh.model.addPhysicalGroup(
-            2, [circle_surface, logo_surface_1], omega_1)
+            2, [circle_surface, logo_surface_1], vol_ids["omega_1"])
 
         # Add 1D physical groups
         gmsh.model.addPhysicalGroup(1, square_lines, boundary)
@@ -189,8 +190,8 @@ if comm.rank == 0:
         boundary_dim_tags = gmsh.model.getBoundary([ov[0], ov[1]])
         interface_dim_tags = gmsh.model.getBoundary([ov[0]])
 
-        gmsh.model.addPhysicalGroup(3, [ov[0][1]], omega_0)
-        gmsh.model.addPhysicalGroup(3, [ov[1][1]], omega_1)
+        gmsh.model.addPhysicalGroup(3, [ov[0][1]], vol_ids["omega_0"])
+        gmsh.model.addPhysicalGroup(3, [ov[1][1]], vol_ids["omega_1"])
         gmsh.model.addPhysicalGroup(
             2, [surface[1] for surface in boundary_dim_tags], boundary)
         gmsh.model.addPhysicalGroup(
