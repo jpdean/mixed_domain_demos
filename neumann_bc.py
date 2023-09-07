@@ -31,16 +31,21 @@ boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
 submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces
-k = 1  # Polynomial degree
+k = 3  # Polynomial degree
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create integration measure and entity maps
 ds = ufl.Measure("ds", domain=msh)
-entity_maps = {submesh: [submesh_to_mesh.index(entity)
-                         if entity in submesh_to_mesh else -1
-                         for entity in range(num_facets)]}
+# We take msh to be the integration domain, so we must provide a map from
+# facets in msh to cells in submesh. This is simply the "inverse" of
+# submesh_to_mesh
+facet_imap = msh.topology.index_map(fdim)
+num_facets = facet_imap.size_local + facet_imap.num_ghosts
+msh_to_submesh = np.full(num_facets, -1)
+msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
+entity_maps = {submesh: msh_to_submesh}
 
 # Create manufactured solution
 x = ufl.SpatialCoordinate(msh)
@@ -77,6 +82,7 @@ u.x.scatter_forward()
 with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 
+# Compute the error
 e_L2 = norm_L2(msh.comm, u - u_e)
 
 if msh.comm.rank == 0:
