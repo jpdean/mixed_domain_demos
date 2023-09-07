@@ -18,15 +18,6 @@ import sys
 import json
 
 
-def create_timer(name):
-    if comm.rank == 0:
-        print(name)
-        sys.stdout.flush()
-    timer = Timer(name)
-    timer.name = name
-    return timer
-
-
 comm = MPI.COMM_WORLD
 gdim = 2
 
@@ -35,9 +26,6 @@ omega_1 = 1
 boundary = 2
 interface = 3
 
-timings = {}
-
-timer = create_timer("create_mesh")
 gmsh.initialize()
 if comm.rank == 0:
     h = 0.05
@@ -221,23 +209,12 @@ msh, ct, ft = io.gmshio.model_to_mesh(
     gmsh.model, comm, 0, gdim=gdim, partitioner=partitioner)
 gmsh.finalize()
 
-timings[timer.name] = timer.stop()
-
-# with io.XDMFFile(comm, "msh.xdmf", "w") as f:
-#     f.write_mesh(msh)
-#     f.write_meshtags(ct)
-#     f.write_meshtags(ft)
-
 k = 3
 
-timer = create_timer("create_cell_func_space")
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 
-timings[timer.name] = timer.stop()
-
-timer = create_timer("create_dirichlet_bc")
 # Create Dirichlet boundary condition
 tdim = msh.topology.dim
 fdim = tdim - 1
@@ -245,22 +222,16 @@ msh.topology.create_entities(fdim)
 dirichlet_facets = ft.indices[ft.values == boundary]
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
-timings[timer.name] = timer.stop()
 
-timer = create_timer("create_submesh")
 # Create submesh for Lagrange multiplier
 interface_facets = ft.indices[ft.values == interface]
 submesh, entity_map = mesh.create_submesh(msh, fdim, interface_facets)[0:2]
-timings[timer.name] = timer.stop()
 
-timer = create_timer("create_lm_function_space")
 # Create function space for the Lagrange multiplier
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
 lmbda = ufl.TrialFunction(W)
 eta = ufl.TestFunction(W)
-timings[timer.name] = timer.stop()
 
-timer = create_timer("create_intergration_entities")
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
 inv_entity_map = np.full(num_facets, -1)
@@ -282,7 +253,6 @@ for facet in interface_facets:
         facet_integration_entities.extend([cell, local_facet])
 ds = ufl.Measure("ds", subdomain_data=[
                  (interface, facet_integration_entities)], domain=msh)
-timings[timer.name] = timer.stop()
 
 
 def u_e(x):
@@ -292,7 +262,6 @@ def u_e(x):
     return u_e
 
 
-timer = create_timer("create_forms")
 # Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 a_01 = fem.form(inner(lmbda, v) * ds(interface), entity_maps=entity_maps)
@@ -312,19 +281,13 @@ L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
 a = [[a_00, a_01],
      [a_10, None]]
 L = [L_0, L_1]
-timings[timer.name] = timer.stop()
 
-timer = create_timer("assemble_matrix")
 # Use block assembly
 A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
 A.assemble()
-timings[timer.name] = timer.stop()
 
-timer = create_timer("assemble_vector")
 b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
-timings[timer.name] = timer.stop()
 
-timer = create_timer("solve")
 # Configure solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -335,9 +298,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 # Compute solution
 x = A.createVecLeft()
 ksp.solve(b, x)
-timings[timer.name] = timer.stop()
 
-timer = create_timer("write_to_file")
 # Recover solution
 u, lmbda = fem.Function(V), fem.Function(W)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
@@ -351,30 +312,9 @@ with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
 with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
     f.write(0.0)
-timings[timer.name] = timer.stop()
 
-timer = create_timer("compute_error_norm")
 # Compute L^2-norm of error
 e_L2 = norm_L2(msh.comm, u - u_e(x_msh))
 rank = msh.comm.Get_rank()
 if rank == 0:
     print(f"e_L2 = {e_L2}")
-    # print(1 / (msh.topology.index_map(2).size_global)**(1/msh.topology.dim))
-timings[timer.name] = timer.stop()
-
-data = {}
-data["num_proc"] = comm.size
-data["num_cells"] = msh.topology.index_map(tdim).size_global
-data["e_L2"] = e_L2
-
-results = {}
-results["data"] = data
-results["timings"] = {}
-for name, t in timings.items():
-    results["timings"][name] = comm.allreduce(t, op=MPI.MAX)
-
-if rank == 0:
-    with open(f"results_{comm.size}.json", "w") as f:
-        json.dump(results, f)
-
-list_timings(MPI.COMM_WORLD, [TimingType.wall, TimingType.user])
