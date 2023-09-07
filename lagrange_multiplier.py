@@ -13,9 +13,6 @@ from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
-from dolfinx.common import Timer, list_timings, TimingType
-import sys
-import json
 
 
 comm = MPI.COMM_WORLD
