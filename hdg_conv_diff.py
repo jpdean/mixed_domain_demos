@@ -39,7 +39,7 @@ num_facets = facet_imap.size_local + facet_imap.num_ghosts
 facets = np.arange(num_facets, dtype=np.int32)
 # NOTE Despite all facets being present in the submesh, the entity map isn't
 # necessarily the identity in parallel
-facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
+facet_mesh, facet_mesh_to_msh = mesh.create_submesh(msh, fdim, facets)[0:2]
 
 # Create functions spaces
 k = 3  # Polynomial degree
@@ -65,15 +65,22 @@ ds_c = ufl.Measure("ds",
                    domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-inv_entity_map = np.full_like(entity_map, -1)
-for i, f in enumerate(entity_map):
-    inv_entity_map[f] = i
-entity_maps = {facet_mesh: inv_entity_map}
+# Create entity maps. We take msh to be the integration domain, so the
+# entity maps must map from facets in msh to cells in facet_mesh. This
+# is the "inverse" of facet_mesh_to_msh.
+facet_imap = msh.topology.index_map(fdim)
+num_facets = facet_imap.size_local + facet_imap.num_ghosts
+msh_to_facet_mesh = np.full(num_facets, -1)
+msh_to_facet_mesh[facet_mesh_to_msh] = np.arange(len(facet_mesh_to_msh))
+entity_maps = {facet_mesh: msh_to_facet_mesh}
 
+# Define finite element forms
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 kappa = fem.Constant(msh, PETSc.ScalarType(1e-3))
 gamma = 16.0 * k**2 / h
+
+# Diffusive terms
 a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
     - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
     - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets) \
@@ -98,6 +105,7 @@ a_10 += - inner(dot(w * u, n), vbar) * ds_c(all_facets) \
     + inner(lmbda * dot(w * u, n), vbar) * ds_c(all_facets)
 a_11 += - inner(lmbda * dot(w * ubar, n), vbar) * ds_c(all_facets)
 
+# Compile forms
 a_00 = fem.form(a_00)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
@@ -108,6 +116,7 @@ f = dot(w, grad(u_e(x))) - div(kappa * grad(u_e(x)))
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
+# Define block structure
 a = [[a_00, a_01],
      [a_10, a_11]]
 L = [L_0, L_1]
@@ -120,7 +129,7 @@ def boundary(x):
 
 
 msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
-facet_mesh_boundary_facets = inv_entity_map[msh_boundary_facets]
+facet_mesh_boundary_facets = msh_to_facet_mesh[msh_boundary_facets]
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 u_bc = fem.Function(Vbar)
 u_bc.interpolate(u_e)
