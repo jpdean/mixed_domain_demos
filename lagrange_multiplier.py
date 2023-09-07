@@ -1,7 +1,9 @@
-# NOTE: See problem in
+# Solve Poisson's equation subject to the constrain that the
+# solution takes a given value on closed surfaces embedded in
+# the domain. Also see
 # https://www.dealii.org/current/doxygen/deal.II/step_60.html
-# and also note the comments on precondition (the Schur
-# complement behaves like a Neumann-to-Dirichlet map)
+# NOTE: the Schur complement behaves like a Neumann-to-Dirichlet
+# map, which is important for designing a good preconditioner
 
 import gmsh
 import numpy as np
