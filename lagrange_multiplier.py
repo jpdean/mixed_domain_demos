@@ -20,9 +20,8 @@ gdim = 2
 
 vol_ids = {"omega_0": 0,
            "omega_1": 1}
-
-boundary = 2
-interface = 3
+bound_ids = {"gamma": 2,
+             "gamma_i": 3}
 
 gmsh.initialize()
 if comm.rank == 0:
@@ -165,8 +164,9 @@ if comm.rank == 0:
             2, [circle_surface, logo_surface_1], vol_ids["omega_1"])
 
         # Add 1D physical groups
-        gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-        gmsh.model.addPhysicalGroup(1, logo_lines_0 + logo_lines_1, interface)
+        gmsh.model.addPhysicalGroup(1, square_lines, bound_ids["gamma"])
+        gmsh.model.addPhysicalGroup(1, logo_lines_0 + logo_lines_1,
+                                    bound_ids["gamma_i"])
 
         gmsh.model.mesh.generate(2)
 
@@ -193,9 +193,11 @@ if comm.rank == 0:
         gmsh.model.addPhysicalGroup(3, [ov[0][1]], vol_ids["omega_0"])
         gmsh.model.addPhysicalGroup(3, [ov[1][1]], vol_ids["omega_1"])
         gmsh.model.addPhysicalGroup(
-            2, [surface[1] for surface in boundary_dim_tags], boundary)
+            2, [surface[1] for surface in boundary_dim_tags],
+            bound_ids["gamma"])
         gmsh.model.addPhysicalGroup(
-            2, [surface[1] for surface in interface_dim_tags], interface)
+            2, [surface[1] for surface in interface_dim_tags],
+            bound_ids["gamma_i"])
 
         # Assign a mesh size to all the points:
         gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
@@ -217,12 +219,12 @@ v = ufl.TestFunction(V)
 tdim = msh.topology.dim
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
-dirichlet_facets = ft.indices[ft.values == boundary]
+dirichlet_facets = ft.indices[ft.values == bound_ids["gamma"]]
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
 # Create submesh for Lagrange multiplier
-interface_facets = ft.indices[ft.values == interface]
+interface_facets = ft.indices[ft.values == bound_ids["gamma_i"]]
 submesh, entity_map = mesh.create_submesh(msh, fdim, interface_facets)[0:2]
 
 # Create function space for the Lagrange multiplier
@@ -250,7 +252,8 @@ for facet in interface_facets:
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities.extend([cell, local_facet])
 ds = ufl.Measure("ds", subdomain_data=[
-                 (interface, facet_integration_entities)], domain=msh)
+                 (bound_ids["gamma_i"], facet_integration_entities)],
+                 domain=msh)
 
 
 def u_e(x):
@@ -262,8 +265,10 @@ def u_e(x):
 
 # Define forms
 a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
-a_01 = fem.form(inner(lmbda, v) * ds(interface), entity_maps=entity_maps)
-a_10 = fem.form(inner(u, eta) * ds(interface), entity_maps=entity_maps)
+a_01 = fem.form(inner(lmbda, v) * ds(bound_ids["gamma_i"]),
+                entity_maps=entity_maps)
+a_10 = fem.form(inner(u, eta) * ds(bound_ids["gamma_i"]),
+                entity_maps=entity_maps)
 
 # f = fem.Constant(msh, PETSc.ScalarType(2.0))
 x_msh = ufl.SpatialCoordinate(msh)
