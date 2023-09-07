@@ -1,3 +1,9 @@
+# This demo shows how Neumann boundary conditions can be interpolated
+# into function spaces defined only over the Neumann boundary. This
+# provides a more natural representation of boundary conditions and is
+# more computationally efficient.
+
+
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
@@ -8,32 +14,32 @@ from utils import norm_L2
 
 
 def boundary_marker(x):
+    "A function to mark the domain boundary"
     return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
                                        np.isclose(x[0], 1.0)),
                          np.logical_or(np.isclose(x[1], 0.0),
                                        np.isclose(x[1], 1.0)))
 
 
-# Create mesh and submesh of boundary
+# Create a mesh and a sub-mesh of the boundary
 n = 8
 msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_facets = msh.topology.create_entities(fdim)
 boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
-submesh, entity_map = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
+submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces
-k = 1
+k = 1  # Polynomial degree
 V = fem.FunctionSpace(msh, ("Lagrange", k))
 W = fem.FunctionSpace(submesh, ("Lagrange", k))
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
+u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create integration measure and entity maps
 ds = ufl.Measure("ds", domain=msh)
-entity_maps = {submesh: [entity_map.index(entity)
-                         if entity in entity_map else -1
+entity_maps = {submesh: [submesh_to_mesh.index(entity)
+                         if entity in submesh_to_mesh else -1
                          for entity in range(num_facets)]}
 
 # Create manufactured solution
