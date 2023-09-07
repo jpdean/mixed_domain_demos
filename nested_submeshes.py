@@ -69,7 +69,7 @@ submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
 submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, sm_1_to_msh = mesh.create_submesh(
+submesh_1, sm_1_to_sm_0 = mesh.create_submesh(
     submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a functions space on submesh_1 and interpolate a function
@@ -92,13 +92,16 @@ u_sm_0, v_sm_0 = ufl.TrialFunction(V_sm_0), ufl.TestFunction(V_sm_0)
 f_sm_0 = fem.Function(V_sm_0)
 f_sm_0.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
-# Create the entity maps and an integration measure
-submesh_0_facet_imap = submesh_0.topology.index_map(submesh_0_fdim)
-submesh_0_num_facets = submesh_0_facet_imap.size_local + \
-    submesh_0_facet_imap.num_ghosts
-entity_maps_sm_0 = {submesh_1: [sm_1_to_msh.index(entity)
-                                if entity in sm_1_to_msh else -1
-                                for entity in range(submesh_0_num_facets)]}
+# We use submesh_0 as the integration domain mesh, so we must provide a
+# map from facets in submesh_0 to cells in submesh_1. This is simply
+# the "inverse" of sm_1_to_sm_0
+facet_imap_sm_0 = submesh_0.topology.index_map(submesh_0_fdim)
+num_facets_sm_0 = facet_imap_sm_0.size_local + \
+    facet_imap_sm_0.num_ghosts
+sm_0_to_sm_1 = np.full(num_facets_sm_0, -1)
+sm_0_to_sm_1[sm_1_to_sm_0] = np.arange(len(sm_1_to_sm_0))
+entity_maps_sm_0 = {submesh_1: sm_0_to_sm_1}
+
 ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 
 # Define forms, using the function interpolated on the concentric circle mesh
