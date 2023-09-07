@@ -38,6 +38,9 @@ def create_mesh(h):
         model.addPhysicalGroup(3, volume_entities, tag=2)
         model.setPhysicalName(3, 2, "Sphere volume")
 
+        # # Assign a mesh size to all the points:
+        gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
+
         # Generate the mesh
         model.mesh.generate(3)
         # Use second-order geometry
@@ -49,7 +52,7 @@ def create_mesh(h):
 
 
 comm = MPI.COMM_WORLD
-h = 0.1
+h = 0.25
 msh = create_mesh(h)
 
 # Create a submesh of part of the boundary of the original mesh to
