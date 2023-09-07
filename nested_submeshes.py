@@ -1,3 +1,9 @@
+# This demo shows how nested sub-meshes can be used to solve problems.
+# We start from an initial mesh, create a sub-mesh of part of the
+# boundary, and then create a sub-mesh of the boundary of the first
+# sub-mesh. We then solve a hierarchy of Poisson problems on the meshes.
+
+
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
