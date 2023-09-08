@@ -31,6 +31,12 @@ from dolfinx.cpp.fem import compute_integration_domains
 import gmsh
 
 
+def u_e(x, module=np):
+    "Function to represent the exact solution"
+    # return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.15**2))
+    return module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
+
+
 def create_mesh(comm, h):
     "Create a mesh of the unit square divided into two regions"
     gmsh.initialize()
@@ -126,7 +132,6 @@ submesh_0, sm_0_to_msh = mesh.create_submesh(
 submesh_1, sm_1_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
-
 # Define function spaces on each submesh
 V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", k_0))
 V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
@@ -163,6 +168,8 @@ interface_entities, msh_to_sm_0, msh_to_sm_1 = \
 boundary_entites = compute_integration_domains(
     fem.IntegralType.exterior_facet, ft._cpp_object)
 
+# Compute integration entities for the interior facet integrals
+# over omega_0. These are needed for the DG scheme
 omega_0_int_entities = compute_interior_facet_integration_entities(
     submesh_0, sm_0_to_msh)
 
@@ -175,6 +182,7 @@ dS = ufl.Measure("dS", domain=msh,
                                  (bound_ids["omega_0_int_facets"],
                                   omega_0_int_entities)])
 
+# Define forms
 # TODO Add k dependency
 gamma_int = 10  # Penalty param on interface
 gamma_dg = 10 * k_0**2  # Penalty parm for DG method
@@ -191,8 +199,7 @@ w = ufl.as_vector((0.5 - x[1], 0.0))
 # w = ufl.as_vector((1e-12, 0.0))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
-# TODO Figure out advectve ds term (just integrated over boundary,
-# or boundary + interface)
+# Forms for the left-had side
 a_00 = inner(u_0 / delta_t, v_0) * dx(vol_ids["omega_0"]) \
     - inner(w * u_0, grad(v_0)) * dx(vol_ids["omega_0"]) \
     + inner(lmbda("+") * dot(w("+"), n("+")) * u_0("+") -
@@ -239,6 +246,7 @@ a_11 = inner(u_1 / delta_t, v_1) * dx(vol_ids["omega_1"]) \
     - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
             u_1("-")) * dS(bound_ids["interface"])
 
+# Compile LHS forms
 entity_maps = {submesh_0: msh_to_sm_0,
                submesh_1: msh_to_sm_1}
 a_00 = fem.form(a_00, entity_maps=entity_maps)
@@ -248,12 +256,7 @@ a_11 = fem.form(a_11, entity_maps=entity_maps)
 a = [[a_00, a_01],
      [a_10, a_11]]
 
-
-def u_e(x, module=np):
-    # return module.exp(- ((x[0] - 0.5)**2 + (x[1] - 0.5)**2) / (2 * 0.15**2))
-    return module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
-
-
+# Forms for the righ-hand side
 f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) \
     - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 f_1 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
@@ -269,6 +272,7 @@ L_0 = inner(f_0, v_0) * dx(vol_ids["omega_0"]) \
 L_1 = inner(f_1, v_1) * dx(vol_ids["omega_1"]) \
     + inner(u_1_n / delta_t, v_1) * dx(vol_ids["omega_1"])
 
+# Compile RHS forms
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
 L = [L_0, L_1]
