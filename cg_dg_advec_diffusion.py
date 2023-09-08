@@ -277,34 +277,39 @@ L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
 L = [L_0, L_1]
 
-
-submesh_1_ft = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
-bound_facet_sm_1 = submesh_1_ft.indices[
-    submesh_1_ft.values == bound_ids["boundary_1"]]
-bound_dofs = fem.locate_dofs_topological(V_1, fdim, bound_facet_sm_1)
+# Apply boundary condition. Since the boundary condition is applied on
+# V_1, we must convert the facet tags to submesh_1 in order to locate
+# the boundary degrees of freedom.
+# NOTE: We don't do this for V_0 since the Dirichlet boundary condition
+# is enforced weakly by the DG scheme.
+ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
+bound_facets_sm_1 = ft_sm_1.indices[ft_sm_1.values == bound_ids["boundary_1"]]
+bound_dofs = fem.locate_dofs_topological(V_1, fdim, bound_facets_sm_1)
 u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
 bcs = [bc_1]
 
+# Assemble the system of equations
 A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
-
 b = fem.petsc.create_vector_block(L)
 
+# Set up solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
 
-x = A.createVecRight()
-
+# Setup files for visualisation
 u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object])
 u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object])
 
+# Time stepping loop
 t = 0.0
 u_0_file.write(t)
 u_1_file.write(t)
+x = A.createVecRight()
 for n in range(num_time_steps):
     t += delta_t
 
@@ -315,18 +320,21 @@ for n in range(num_time_steps):
     # Compute solution
     ksp.solve(b, x)
 
+    # Recover solution
     offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
     u_0_n.x.array[:offset] = x.array_r[:offset]
     u_1_n.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
     u_0_n.x.scatter_forward()
     u_1_n.x.scatter_forward()
 
+    # Write to file
     u_0_file.write(t)
     u_1_file.write(t)
 
 u_0_file.close()
 u_1_file.close()
 
+# Compute errors
 e_L2_0 = norm_L2(msh.comm, u_0_n - u_e(
     ufl.SpatialCoordinate(submesh_0), module=ufl))
 e_L2_1 = norm_L2(msh.comm, u_1_n - u_e(
