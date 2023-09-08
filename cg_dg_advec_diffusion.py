@@ -36,8 +36,8 @@ delta_t = 1  # TODO Make constant
 
 comm = MPI.COMM_WORLD
 
-omega_0 = 1
-omega_1 = 2
+vol_ids = {"omega_0": 1,
+           "omega_1": 2}
 boundary_0 = 3
 boundary_1 = 4
 interface = 5
@@ -81,8 +81,8 @@ if comm.rank == 0:
 
     factory.synchronize()
 
-    gmsh.model.addPhysicalGroup(2, [square_0_surface], omega_0)
-    gmsh.model.addPhysicalGroup(2, [square_1_surface], omega_1)
+    gmsh.model.addPhysicalGroup(2, [square_0_surface], vol_ids["omega_0"])
+    gmsh.model.addPhysicalGroup(2, [square_1_surface], vol_ids["omega_1"])
 
     gmsh.model.addPhysicalGroup(1, [square_0_lines[0],
                                     square_0_lines[1],
@@ -106,9 +106,9 @@ gmsh.finalize()
 # Create submeshes
 tdim = msh.topology.dim
 submesh_0, entity_map_0 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == omega_0])[:2]
+    msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
 submesh_1, entity_map_1 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == omega_1])[:2]
+    msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
 msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -146,8 +146,8 @@ msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
-domain_0_cells = ct.indices[ct.values == omega_0]
-domain_1_cells = ct.indices[ct.values == omega_1]
+domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
+domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
 interface_facets = ft.indices[ft.values == interface]
 for facet in interface_facets:
     # Check if this facet is owned
@@ -241,13 +241,13 @@ lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
 # TODO Figure out advectve ds term (just integrated over boundary,
 # or boundary + interface)
-a_00 = inner(u_0 / delta_t, v_0) * dx(omega_0) \
-    - inner(w * u_0, grad(v_0)) * dx(omega_0) \
+a_00 = inner(u_0 / delta_t, v_0) * dx(vol_ids["omega_0"]) \
+    - inner(w * u_0, grad(v_0)) * dx(vol_ids["omega_0"]) \
     + inner(lmbda("+") * dot(w("+"), n("+")) * u_0("+") -
             lmbda("-") * dot(w("-"), n("-")) * u_0("-"),
             jump(v_0)) * dS(omega_0_int_facets) \
     + inner(lmbda * dot(w, n) * u_0, v_0) * ds(boundary_0) + \
-    + inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
+    + inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"]) \
     - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(omega_0_int_facets) \
     - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(omega_0_int_facets) \
     + (gamma_dg / avg(h)) * inner(
@@ -276,8 +276,8 @@ a_10 = - gamma_int / avg(h) * inner(c * u_0("+"),
     + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
             u_0("+")) * dS(interface)
 
-a_11 = inner(u_1 / delta_t, v_1) * dx(omega_1) \
-    + inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
+a_11 = inner(u_1 / delta_t, v_1) * dx(vol_ids["omega_1"]) \
+    + inner(c * grad(u_1), grad(v_1)) * dx(vol_ids["omega_1"]) \
     + gamma_int / avg(h) * inner(c * u_1("-"),
                                  v_1("-")) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")),
@@ -305,13 +305,13 @@ f_1 = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
 
-L_0 = inner(f_0, v_0) * dx(omega_0) \
+L_0 = inner(f_0, v_0) * dx(vol_ids["omega_0"]) \
     - inner((1 - lmbda) * dot(w, n) * u_D, v_0) * ds(boundary_0) \
-    + inner(u_0_n / delta_t, v_0) * dx(omega_0) \
+    + inner(u_0_n / delta_t, v_0) * dx(vol_ids["omega_0"]) \
     - inner(c * u_D * n, grad(v_0)) * ds(boundary_0) \
     + gamma_dg / h * inner(c * u_D, v_0) * ds(boundary_0)
-L_1 = inner(f_1, v_1) * dx(omega_1) \
-    + inner(u_1_n / delta_t, v_1) * dx(omega_1)
+L_1 = inner(f_1, v_1) * dx(vol_ids["omega_1"]) \
+    + inner(u_1_n / delta_t, v_1) * dx(vol_ids["omega_1"])
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
