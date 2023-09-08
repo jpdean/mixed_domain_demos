@@ -24,50 +24,9 @@ import ufl
 from ufl import inner, grad, dot, avg, div, jump
 import numpy as np
 from petsc4py import PETSc
-from utils import norm_L2, convert_facet_tags
+from utils import (norm_L2, convert_facet_tags,
+                   create_interface_integration_entities)
 import gmsh
-
-
-# TODO MOVE
-def create_interface_integration_entities(
-        interface_facets, domain_0_cells, domain_1_cells, c_to_f, f_to_c,
-        facet_imap, domain_to_domain_0, domain_to_domain_1):
-    interface_entities = []
-    for facet in interface_facets:
-        # Check if this facet is owned
-        if facet < facet_imap.size_local:
-            cells = f_to_c.links(facet)
-            assert len(cells) == 2
-            cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
-            cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
-            assert cell_plus in domain_0_cells
-            assert cell_minus in domain_1_cells
-
-            # FIXME Don't use tolist
-            local_facet_plus = c_to_f.links(
-                cell_plus).tolist().index(facet)
-            local_facet_minus = c_to_f.links(
-                cell_minus).tolist().index(facet)
-            interface_entities.extend(
-                [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
-
-            # HACK cell_minus does not exist in the left submesh, so it will
-            # be mapped to index -1. This is problematic for the assembler,
-            # which assumes it is possible to get the full macro dofmap for the
-            # trial and test functions, despite the restriction meaning we
-            # don't need the non-existant dofs. To fix this, we just map
-            # cell_minus to the cell corresponding to cell plus. This will
-            # just add zeros to the assembled system, since there are no
-            # u("-") terms. Could map this to any cell in the submesh, but
-            # I think using the cell on the other side of the facet means a
-            # facet space coefficient could be used
-            domain_to_domain_0[cell_minus] = \
-                domain_to_domain_0[cell_plus]
-            # Same hack for the right submesh
-            domain_to_domain_1[cell_plus] = \
-                domain_to_domain_1[cell_minus]
-
-    return interface_entities, domain_to_domain_0, domain_to_domain_1
 
 
 def create_mesh(comm, h):
