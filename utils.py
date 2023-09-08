@@ -178,7 +178,9 @@ def create_interface_integration_entities(
     This function computes the integration entities (as a list of pairs of
     (cell, local facet index) pairs) required to assemble mixed domain forms
     over the interface. It assumes there is a domain with two sub-domains,
-    domain_0 and domain_1, that have a common interface.
+    domain_0 and domain_1, that have a common interface. Cells in domain_0
+    correspond to the "-" restriction and cells in domain_1 correspond to
+    the "-" restriction.
 
     Parameters:
         interface_facets: A list of facets on the interface
@@ -195,6 +197,10 @@ def create_interface_integration_entities(
         domain_to_domain_0: A modified map (see HACK below)
         domain_to_domain_1: A modified map (see HACK below)
     """
+    # Create measure for integration. Assign the first (cell, local facet)
+    # pair to the cell in domain_0, corresponding to the "+" restriction.
+    # Assign the second pair to the domain_1 cell, corresponding to the "-"
+    # restriction.
     # FIXME This can be done more efficiently
     interface_entities = []
     for facet in interface_facets:
