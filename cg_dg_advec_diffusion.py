@@ -123,7 +123,6 @@ submesh_0, sm_0_to_msh = mesh.create_submesh(
 submesh_1, sm_1_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
-msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
