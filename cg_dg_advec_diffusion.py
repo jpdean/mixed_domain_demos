@@ -123,17 +123,14 @@ submesh_0, sm_0_to_msh = mesh.create_submesh(
 submesh_1, sm_1_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
-dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
 V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", k_0))
 V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 
 # Test and trial functions
-u_0 = ufl.TrialFunction(V_0)
-u_1 = ufl.TrialFunction(V_1)
-v_0 = ufl.TestFunction(V_0)
-v_1 = ufl.TestFunction(V_1)
+u_0, v_0 = ufl.TrialFunction(V_0), ufl.TestFunction(V_0)
+u_1, v_1 = ufl.TrialFunction(V_1),  ufl.TestFunction(V_1)
 
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
@@ -145,6 +142,9 @@ inv_entity_map_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
 entity_maps = {submesh_0: inv_entity_map_0,
                submesh_1: inv_entity_map_1}
+
+# Create measures
+dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
