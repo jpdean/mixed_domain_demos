@@ -14,9 +14,9 @@
 # the bottom half can be thought of as a fluid and the top half
 # a solid, and the unknown u is the temperature field.
 
-# Note: Since the velocity goes to zero at the interface x[1] = 0.5,
-# couling is due only to the diffusion. No advective interface terms
-# have been added
+# NOTE: Since the velocity goes to zero at the interface x[1] = 0.5,
+# the coupling is due only to the diffusion. No advective interface
+# terms have been added
 
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
@@ -27,13 +27,14 @@ from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags
 import gmsh
 
+
+# Set some parameters
 num_time_steps = 10
-k_0 = 3
-k_1 = 3
+k_0 = 3  # Polynomial degree in omega_0
+k_1 = 3  # Polynomial degree in omgea_1
 delta_t = 1  # TODO Make constant
 
 comm = MPI.COMM_WORLD
-gdim = 2
 
 omega_0 = 1
 omega_1 = 2
@@ -42,6 +43,7 @@ boundary_1 = 4
 interface = 5
 omega_0_int_facets = 6
 
+gdim = 2
 gmsh.initialize()
 if comm.rank == 0:
     gmsh.model.add("model")
