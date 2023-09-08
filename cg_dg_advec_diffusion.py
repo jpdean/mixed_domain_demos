@@ -86,13 +86,16 @@ if comm.rank == 0:
 
     gmsh.model.addPhysicalGroup(1, [square_0_lines[0],
                                     square_0_lines[1],
-                                    square_0_lines[3]], bound_ids["boundary_0"])
+                                    square_0_lines[3]],
+                                bound_ids["boundary_0"])
 
     gmsh.model.addPhysicalGroup(1, [square_1_lines[1],
                                     square_1_lines[2],
-                                    square_1_lines[3]], bound_ids["boundary_1"])
+                                    square_1_lines[3]],
+                                bound_ids["boundary_1"])
 
-    gmsh.model.addPhysicalGroup(1, [square_0_lines[2]], bound_ids["interface"])
+    gmsh.model.addPhysicalGroup(
+        1, [square_0_lines[2]], bound_ids["interface"])
 
     gmsh.model.mesh.generate(2)
 
@@ -198,7 +201,8 @@ for facet in boundary_facets:
 
         boundary_0_entites.extend([cell, local_facet])
 ds = ufl.Measure("ds", domain=msh,
-                 subdomain_data=[(bound_ids["boundary_0"], boundary_0_entites)])
+                 subdomain_data=[(bound_ids["boundary_0"],
+                                  boundary_0_entites)])
 
 # FIXME Do this more efficiently
 submesh_0.topology.create_entities(fdim)
@@ -219,9 +223,10 @@ for facet in range(submesh_0.topology.index_map(fdim).size_local):
         omega_0_int_entities.extend(
             [entity_map_0[cells[0]], local_facet_plus,
              entity_map_0[cells[1]], local_facet_minus])
-dS = ufl.Measure("dS", domain=msh,
-                 subdomain_data=[(bound_ids["interface"], interface_entities),
-                                 (bound_ids["omega_0_int_facets"], omega_0_int_entities)])
+dS = ufl.Measure(
+    "dS", domain=msh,
+    subdomain_data=[(bound_ids["interface"], interface_entities),
+                    (bound_ids["omega_0_int_facets"], omega_0_int_entities)])
 
 # TODO Add k dependency
 gamma_int = 10  # Penalty param on interface
@@ -248,8 +253,10 @@ a_00 = inner(u_0 / delta_t, v_0) * dx(vol_ids["omega_0"]) \
             jump(v_0)) * dS(bound_ids["omega_0_int_facets"]) \
     + inner(lmbda * dot(w, n) * u_0, v_0) * ds(bound_ids["boundary_0"]) + \
     + inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"]) \
-    - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(bound_ids["omega_0_int_facets"]) \
-    - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(bound_ids["omega_0_int_facets"]) \
+    - inner(c * avg(grad(u_0)),
+            jump(v_0, n)) * dS(bound_ids["omega_0_int_facets"]) \
+    - inner(c * jump(u_0, n),
+            avg(grad(v_0))) * dS(bound_ids["omega_0_int_facets"]) \
     + (gamma_dg / avg(h)) * inner(
         c * jump(u_0, n), jump(v_0, n)) * dS(bound_ids["omega_0_int_facets"]) \
     - inner(c * grad(u_0), v_0 * n) * ds(bound_ids["boundary_0"]) \
