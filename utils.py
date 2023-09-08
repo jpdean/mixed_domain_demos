@@ -171,7 +171,7 @@ class TimeDependentExpression():
         return self.expression(x, self.t)
 
 
-def create_interface_integration_entities(
+def compute_interface_integration_entities(
         interface_facets, domain_0_cells, domain_1_cells, c_to_f, f_to_c,
         facet_imap, domain_to_domain_0, domain_to_domain_1):
     """
@@ -236,3 +236,36 @@ def create_interface_integration_entities(
             domain_to_domain_1[cell_plus] = domain_to_domain_1[cell_minus]
 
     return interface_entities, domain_to_domain_0, domain_to_domain_1
+
+
+def compute_interior_facet_integration_entities(msh, cell_map):
+    """
+    Compute the integration entities for interior facet integrals.
+
+    Parameters:
+        msh: The mesh
+        cell_map: A map to apply to the cells in the integration entities
+
+    Returns:
+        A (flattened) list of pairs of (cell, local facet index) pairs
+    """
+    # FIXME Do this more efficiently
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    msh.topology.create_entities(fdim)
+    msh.topology.create_connectivity(tdim, fdim)
+    msh.topology.create_connectivity(fdim, tdim)
+    c_to_f = msh.topology.connectivity(tdim, fdim)
+    f_to_c = msh.topology.connectivity(fdim, tdim)
+    integration_entities = []
+    for facet in range(msh.topology.index_map(fdim).size_local):
+        cells = f_to_c.links(facet)
+        if len(cells) == 2:
+            # FIXME Don't use tolist
+            local_facet_plus = c_to_f.links(cells[0]).tolist().index(facet)
+            local_facet_minus = c_to_f.links(cells[1]).tolist().index(facet)
+
+            integration_entities.extend(
+                [cell_map[cells[0]], local_facet_plus,
+                 cell_map[cells[1]], local_facet_minus])
+    return integration_entities

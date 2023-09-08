@@ -25,7 +25,8 @@ from ufl import inner, grad, dot, avg, div, jump
 import numpy as np
 from petsc4py import PETSc
 from utils import (norm_L2, convert_facet_tags,
-                   create_interface_integration_entities)
+                   compute_interface_integration_entities,
+                   compute_interior_facet_integration_entities)
 from dolfinx.cpp.fem import compute_integration_domains
 import gmsh
 
@@ -154,7 +155,7 @@ domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
 interface_facets = ft.indices[ft.values == bound_ids["interface"]]
 interface_entities, msh_to_sm_0, msh_to_sm_1 = \
-    create_interface_integration_entities(
+    compute_interface_integration_entities(
         interface_facets, domain_0_cells, domain_1_cells, c_to_f,
         f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
 
@@ -162,25 +163,8 @@ interface_entities, msh_to_sm_0, msh_to_sm_1 = \
 boundary_entites = compute_integration_domains(
     fem.IntegralType.exterior_facet, ft._cpp_object)
 
-# FIXME Do this more efficiently
-submesh_0.topology.create_entities(fdim)
-submesh_0.topology.create_connectivity(tdim, fdim)
-submesh_0.topology.create_connectivity(fdim, tdim)
-c_to_f_submesh_0 = submesh_0.topology.connectivity(tdim, fdim)
-f_to_c_submesh_0 = submesh_0.topology.connectivity(fdim, tdim)
-omega_0_int_entities = []
-for facet in range(submesh_0.topology.index_map(fdim).size_local):
-    cells = f_to_c_submesh_0.links(facet)
-    if len(cells) == 2:
-        # FIXME Don't use tolist
-        local_facet_plus = c_to_f_submesh_0.links(
-            cells[0]).tolist().index(facet)
-        local_facet_minus = c_to_f_submesh_0.links(
-            cells[1]).tolist().index(facet)
-
-        omega_0_int_entities.extend(
-            [sm_0_to_msh[cells[0]], local_facet_plus,
-             sm_0_to_msh[cells[1]], local_facet_minus])
+omega_0_int_entities = compute_interior_facet_integration_entities(
+    submesh_0, sm_0_to_msh)
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
