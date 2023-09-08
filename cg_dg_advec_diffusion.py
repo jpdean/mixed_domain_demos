@@ -133,7 +133,8 @@ V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 u_0, v_0 = ufl.TrialFunction(V_0), ufl.TestFunction(V_0)
 u_1, v_1 = ufl.TrialFunction(V_1),  ufl.TestFunction(V_1)
 
-# Create entity maps
+# We use msh as the integration domain, so we require maps from
+# cells in msh to cells in submesh_0 and submesh_1
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
 msh_to_sm_0 = np.full(num_cells, -1)
@@ -141,32 +142,20 @@ msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
-# Create measures
-dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
-
-# Create measure for integration. Assign the first (cell, local facet)
-# pair to the cell in omega_0, corresponding to the "+" restriction. Assign
-# the second pair to the omega_1 cell, corresponding to the "-" restriction.
-# facet_integration_entities = {interface: [],
-#                               omega_0_int_facets: []}
+# Create integration entities for the interface integral
 fdim = tdim - 1
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
-
 facet_imap = msh.topology.index_map(fdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
 interface_facets = ft.indices[ft.values == bound_ids["interface"]]
-
 interface_entities, msh_to_sm_0, msh_to_sm_1 = \
     create_interface_integration_entities(
         interface_facets, domain_0_cells, domain_1_cells, c_to_f,
         f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
-
-entity_maps = {submesh_0: msh_to_sm_0,
-               submesh_1: msh_to_sm_1}
 
 # ext_facet_integration_entities = {boundary_0: []}
 boundary_0_entites = []
@@ -182,9 +171,6 @@ for facet in boundary_facets:
             cell).tolist().index(facet)
 
         boundary_0_entites.extend([cell, local_facet])
-ds = ufl.Measure("ds", domain=msh,
-                 subdomain_data=[(bound_ids["boundary_0"],
-                                  boundary_0_entites)])
 
 # FIXME Do this more efficiently
 submesh_0.topology.create_entities(fdim)
@@ -205,6 +191,13 @@ for facet in range(submesh_0.topology.index_map(fdim).size_local):
         omega_0_int_entities.extend(
             [sm_0_to_msh[cells[0]], local_facet_plus,
              sm_0_to_msh[cells[1]], local_facet_minus])
+
+
+# Create measures
+dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
+ds = ufl.Measure("ds", domain=msh,
+                 subdomain_data=[(bound_ids["boundary_0"],
+                                  boundary_0_entites)])
 dS = ufl.Measure(
     "dS", domain=msh,
     subdomain_data=[(bound_ids["interface"], interface_entities),
@@ -274,6 +267,8 @@ a_11 = inner(u_1 / delta_t, v_1) * dx(vol_ids["omega_1"]) \
     - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")),
             u_1("-")) * dS(bound_ids["interface"])
 
+entity_maps = {submesh_0: msh_to_sm_0,
+               submesh_1: msh_to_sm_1}
 a_00 = fem.form(a_00, entity_maps=entity_maps)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
 a_10 = fem.form(a_10, entity_maps=entity_maps)
