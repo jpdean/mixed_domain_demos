@@ -28,7 +28,7 @@ from utils import norm_L2, convert_facet_tags
 import gmsh
 
 
-def create_mesh(h):
+def create_mesh(comm, h):
     "Create a mesh of the unit square divided into two regions"
     gmsh.initialize()
     if comm.rank == 0:
@@ -103,8 +103,7 @@ k_1 = 3  # Polynomial degree in omgea_1
 delta_t = 1  # TODO Make constant
 h = 0.05  # Maximum cell diameter
 
-comm = MPI.COMM_WORLD
-
+# Volume and boundary ids
 vol_ids = {"omega_0": 1,
            "omega_1": 2}
 bound_ids = {"boundary_0": 3,
@@ -112,9 +111,11 @@ bound_ids = {"boundary_0": 3,
              "interface": 5,  # Interface of omega_0
              "omega_0_int_facets": 6}  # Interior facets of omega_0
 
-msh, ct, ft = create_mesh(h)
+# Create the mesh
+comm = MPI.COMM_WORLD
+msh, ct, ft = create_mesh(comm, h)
 
-# Create submeshes
+# Create sub-meshes of omega_0 and omega_1
 tdim = msh.topology.dim
 submesh_0, entity_map_0 = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
