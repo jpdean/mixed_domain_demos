@@ -26,6 +26,7 @@ import numpy as np
 from petsc4py import PETSc
 from utils import (norm_L2, convert_facet_tags,
                    create_interface_integration_entities)
+from dolfinx.cpp.fem import compute_integration_domains
 import gmsh
 
 
@@ -157,20 +158,9 @@ interface_entities, msh_to_sm_0, msh_to_sm_1 = \
         interface_facets, domain_0_cells, domain_1_cells, c_to_f,
         f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
 
-# ext_facet_integration_entities = {boundary_0: []}
-boundary_0_entites = []
-boundary_facets = ft.indices[ft.values == bound_ids["boundary_0"]]
-for facet in boundary_facets:
-    # TODO Remove (bondary facets not shared)
-    if facet < facet_imap.size_local:
-        cell = f_to_c.links(facet)
-        assert len(cell) == 1
-
-        # FIXME Don't use tolist
-        local_facet = c_to_f.links(
-            cell).tolist().index(facet)
-
-        boundary_0_entites.extend([cell, local_facet])
+# Compute integration entities for boundary terms
+boundary_entites = compute_integration_domains(
+    fem.IntegralType.exterior_facet, ft._cpp_object)
 
 # FIXME Do this more efficiently
 submesh_0.topology.create_entities(fdim)
@@ -192,16 +182,14 @@ for facet in range(submesh_0.topology.index_map(fdim).size_local):
             [sm_0_to_msh[cells[0]], local_facet_plus,
              sm_0_to_msh[cells[1]], local_facet_minus])
 
-
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
-ds = ufl.Measure("ds", domain=msh,
-                 subdomain_data=[(bound_ids["boundary_0"],
-                                  boundary_0_entites)])
-dS = ufl.Measure(
-    "dS", domain=msh,
-    subdomain_data=[(bound_ids["interface"], interface_entities),
-                    (bound_ids["omega_0_int_facets"], omega_0_int_entities)])
+ds = ufl.Measure("ds", domain=msh, subdomain_data=boundary_entites)
+dS = ufl.Measure("dS", domain=msh,
+                 subdomain_data=[(bound_ids["interface"],
+                                  interface_entities),
+                                 (bound_ids["omega_0_int_facets"],
+                                  omega_0_int_entities)])
 
 # TODO Add k dependency
 gamma_int = 10  # Penalty param on interface
