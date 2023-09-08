@@ -115,11 +115,12 @@ bound_ids = {"boundary_0": 3,
 comm = MPI.COMM_WORLD
 msh, ct, ft = create_mesh(comm, h)
 
-# Create sub-meshes of omega_0 and omega_1
+# Create sub-meshes of omega_0 and omega_1 so that we can create
+# different function spaces over each part of the domain
 tdim = msh.topology.dim
-submesh_0, entity_map_0 = mesh.create_submesh(
+submesh_0, sm_0_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
-submesh_1, entity_map_1 = mesh.create_submesh(
+submesh_1, sm_1_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
 msh_cell_imap = msh.topology.index_map(tdim)
@@ -139,9 +140,9 @@ v_1 = ufl.TestFunction(V_1)
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
 inv_entity_map_0 = np.full(num_cells, -1)
-inv_entity_map_0[entity_map_0] = np.arange(len(entity_map_0))
+inv_entity_map_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 inv_entity_map_1 = np.full(num_cells, -1)
-inv_entity_map_1[entity_map_1] = np.arange(len(entity_map_1))
+inv_entity_map_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
 entity_maps = {submesh_0: inv_entity_map_0,
                submesh_1: inv_entity_map_1}
@@ -230,8 +231,8 @@ for facet in range(submesh_0.topology.index_map(fdim).size_local):
             cells[1]).tolist().index(facet)
 
         omega_0_int_entities.extend(
-            [entity_map_0[cells[0]], local_facet_plus,
-             entity_map_0[cells[1]], local_facet_minus])
+            [sm_0_to_msh[cells[0]], local_facet_plus,
+             sm_0_to_msh[cells[1]], local_facet_minus])
 dS = ufl.Measure(
     "dS", domain=msh,
     subdomain_data=[(bound_ids["interface"], interface_entities),
@@ -334,7 +335,7 @@ L_1 = fem.form(L_1, entity_maps=entity_maps)
 L = [L_0, L_1]
 
 
-submesh_1_ft = convert_facet_tags(msh, submesh_1, entity_map_1, ft)
+submesh_1_ft = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
 bound_facet_sm_1 = submesh_1_ft.indices[
     submesh_1_ft.values == bound_ids["boundary_1"]]
 bound_dofs = fem.locate_dofs_topological(V_1, fdim, bound_facet_sm_1)
