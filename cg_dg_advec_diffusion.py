@@ -28,6 +28,48 @@ from utils import norm_L2, convert_facet_tags
 import gmsh
 
 
+# TODO MOVE
+def create_interface_integration_entities(
+        interface_facets, domain_0_cells, domain_1_cells, c_to_f, f_to_c,
+        facet_imap, domain_to_domain_0, domain_to_domain_1):
+    interface_entities = []
+    for facet in interface_facets:
+        # Check if this facet is owned
+        if facet < facet_imap.size_local:
+            cells = f_to_c.links(facet)
+            assert len(cells) == 2
+            cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
+            cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
+            assert cell_plus in domain_0_cells
+            assert cell_minus in domain_1_cells
+
+            # FIXME Don't use tolist
+            local_facet_plus = c_to_f.links(
+                cell_plus).tolist().index(facet)
+            local_facet_minus = c_to_f.links(
+                cell_minus).tolist().index(facet)
+            interface_entities.extend(
+                [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
+
+            # HACK cell_minus does not exist in the left submesh, so it will
+            # be mapped to index -1. This is problematic for the assembler,
+            # which assumes it is possible to get the full macro dofmap for the
+            # trial and test functions, despite the restriction meaning we
+            # don't need the non-existant dofs. To fix this, we just map
+            # cell_minus to the cell corresponding to cell plus. This will
+            # just add zeros to the assembled system, since there are no
+            # u("-") terms. Could map this to any cell in the submesh, but
+            # I think using the cell on the other side of the facet means a
+            # facet space coefficient could be used
+            domain_to_domain_0[cell_minus] = \
+                domain_to_domain_0[cell_plus]
+            # Same hack for the right submesh
+            domain_to_domain_1[cell_plus] = \
+                domain_to_domain_1[cell_minus]
+
+    return interface_entities, domain_to_domain_0, domain_to_domain_1
+
+
 def create_mesh(comm, h):
     "Create a mesh of the unit square divided into two regions"
     gmsh.initialize()
@@ -139,8 +181,6 @@ msh_to_sm_0 = np.full(num_cells, -1)
 msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
-entity_maps = {submesh_0: msh_to_sm_0,
-               submesh_1: msh_to_sm_1}
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -150,49 +190,24 @@ dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
 # facet_integration_entities = {interface: [],
 #                               omega_0_int_facets: []}
-interface_entities = []
 fdim = tdim - 1
-facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
+
+facet_imap = msh.topology.index_map(fdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
 interface_facets = ft.indices[ft.values == bound_ids["interface"]]
-for facet in interface_facets:
-    # Check if this facet is owned
-    if facet < facet_imap.size_local:
-        cells = f_to_c.links(facet)
-        assert len(cells) == 2
-        cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
-        cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
-        assert cell_plus in domain_0_cells
-        assert cell_minus in domain_1_cells
 
-        # FIXME Don't use tolist
-        local_facet_plus = c_to_f.links(
-            cell_plus).tolist().index(facet)
-        local_facet_minus = c_to_f.links(
-            cell_minus).tolist().index(facet)
-        interface_entities.extend(
-            [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
+interface_entities, msh_to_sm_0, msh_to_sm_1 = \
+    create_interface_integration_entities(
+        interface_facets, domain_0_cells, domain_1_cells, c_to_f,
+        f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
 
-        # HACK cell_minus does not exist in the left submesh, so it will
-        # be mapped to index -1. This is problematic for the assembler,
-        # which assumes it is possible to get the full macro dofmap for the
-        # trial and test functions, despite the restriction meaning we
-        # don't need the non-existant dofs. To fix this, we just map
-        # cell_minus to the cell corresponding to cell plus. This will
-        # just add zeros to the assembled system, since there are no
-        # u("-") terms. Could map this to any cell in the submesh, but
-        # I think using the cell on the other side of the facet means a
-        # facet space coefficient could be used
-        entity_maps[submesh_0][cell_minus] = \
-            entity_maps[submesh_0][cell_plus]
-        # Same hack for the right submesh
-        entity_maps[submesh_1][cell_plus] = \
-            entity_maps[submesh_1][cell_minus]
+entity_maps = {submesh_0: msh_to_sm_0,
+               submesh_1: msh_to_sm_1}
 
 # ext_facet_integration_entities = {boundary_0: []}
 boundary_0_entites = []
