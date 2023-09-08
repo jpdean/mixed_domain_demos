@@ -135,13 +135,12 @@ u_1, v_1 = ufl.TrialFunction(V_1),  ufl.TestFunction(V_1)
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
-inv_entity_map_0 = np.full(num_cells, -1)
-inv_entity_map_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-inv_entity_map_1 = np.full(num_cells, -1)
-inv_entity_map_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
-
-entity_maps = {submesh_0: inv_entity_map_0,
-               submesh_1: inv_entity_map_1}
+msh_to_sm_0 = np.full(num_cells, -1)
+msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
+msh_to_sm_1 = np.full(num_cells, -1)
+msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
+entity_maps = {submesh_0: msh_to_sm_0,
+               submesh_1: msh_to_sm_1}
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
