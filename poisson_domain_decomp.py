@@ -1,5 +1,8 @@
-# Scheme from "A finite element method for domain decomposition
-# with non-matching grids" by Becker et al.
+# In this demo, we implement a domain decomposition scheme for
+# the Poisson equation based on Nitche's method. The scheme can
+# be found in "Mortaring by a method of J. A. Nitsche" by Rolf
+# Stenberg. See also "A finite element method for domain
+# decomposition with non-matching grids" by Becker et al.
 
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
