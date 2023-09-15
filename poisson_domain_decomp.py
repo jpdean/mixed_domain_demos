@@ -16,8 +16,8 @@ import gmsh
 comm = MPI.COMM_WORLD
 gdim = 2
 
-omega_0 = 1
-omega_1 = 2
+vol_ids = {"omega_0": 1,
+           "omega_1": 2}
 boundary = 3
 interface = 4
 
@@ -72,8 +72,8 @@ if comm.rank == 0:
 
     factory.synchronize()
 
-    gmsh.model.addPhysicalGroup(2, [square_surface], omega_0)
-    gmsh.model.addPhysicalGroup(2, [circle_surface], omega_1)
+    gmsh.model.addPhysicalGroup(2, [square_surface], vol_ids["omega_0"])
+    gmsh.model.addPhysicalGroup(2, [circle_surface], vol_ids["omega_1"])
     gmsh.model.addPhysicalGroup(1, square_lines, boundary)
     gmsh.model.addPhysicalGroup(1, circle_lines, interface)
 
@@ -89,9 +89,9 @@ gmsh.finalize()
 # Create submeshes
 tdim = msh.topology.dim
 submesh_0, entity_map_0 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == omega_0])[:2]
+    msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
 submesh_1, entity_map_1 = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == omega_1])[:2]
+    msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
 
 msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -127,8 +127,8 @@ msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
-domain_0_cells = ct.indices[ct.values == omega_0]
-domain_1_cells = ct.indices[ct.values == omega_1]
+domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
+domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
 for facet in ft.indices[ft.values == interface]:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
@@ -176,7 +176,7 @@ c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 domain_0 = "+"
 domain_1 = "-"
 
-a_00 = inner(c * grad(u_0), grad(v_0)) * dx(omega_0) \
+a_00 = inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"]) \
     + gamma / avg(h) * inner(c * u_0(domain_0),
                              v_0(domain_0)) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)),
@@ -198,7 +198,7 @@ a_10 = - gamma / avg(h) * inner(c * u_0(domain_0),
     + inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)),
             u_0(domain_0)) * dS(interface)
 
-a_11 = inner(c * grad(u_1), grad(v_1)) * dx(omega_1) \
+a_11 = inner(c * grad(u_1), grad(v_1)) * dx(vol_ids["omega_1"]) \
     + gamma / avg(h) * inner(c * u_1(domain_1),
                              v_1(domain_1)) * dS(interface) \
     - inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)),
@@ -222,8 +222,8 @@ def u_e(x, module=np):
 
 f = - div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
-L_0 = inner(f, v_0) * dx(omega_0)
-L_1 = inner(f, v_1) * dx(omega_1)
+L_0 = inner(f, v_0) * dx(vol_ids["omega_0"])
+L_1 = inner(f, v_1) * dx(vol_ids["omega_1"])
 
 L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
