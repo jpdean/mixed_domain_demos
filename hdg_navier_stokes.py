@@ -16,7 +16,6 @@ import ufl
 from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
-from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 from utils import (norm_L2, domain_average, normal_jump_error,
                    TimeDependentExpression, par_print,
