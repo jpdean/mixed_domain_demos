@@ -10,7 +10,8 @@ import ufl
 from ufl import inner, grad, dot, avg, div
 import numpy as np
 from petsc4py import PETSc
-from utils import norm_L2, convert_facet_tags
+from utils import (norm_L2, convert_facet_tags,
+                   compute_interface_integration_entities)
 import gmsh
 
 
@@ -138,57 +139,26 @@ msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 entity_maps = {submesh_0: msh_to_sm_0,
                submesh_1: msh_to_sm_1}
 
-# Create integration measures
-dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
-
-# Create measure for integration. Assign the first (cell, local facet)
-# pair to the cell in omega_0, corresponding to the "+" restriction. Assign
-# the second pair to the omega_1 cell, corresponding to the "-" restriction.
-facet_integration_entities = []
+# Compute integration entities
 fdim = tdim - 1
-facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
+facet_imap = msh.topology.index_map(fdim)
 c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
-for facet in ft.indices[ft.values == surf_ids["interface"]]:
-    # Check if this facet is owned
-    if facet < facet_imap.size_local:
-        cells = f_to_c.links(facet)
-        assert len(cells) == 2
-        cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
-        cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
-        assert cell_plus in domain_0_cells
-        assert cell_minus in domain_1_cells
+interface_facets = ft.indices[ft.values == surf_ids["interface"]]
+interface_entities, msh_to_sm_0, msh_to_sm_1 = \
+    compute_interface_integration_entities(
+        interface_facets, domain_0_cells, domain_1_cells, c_to_f,
+        f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
 
-        # FIXME Don't use tolist
-        local_facet_plus = c_to_f.links(
-            cell_plus).tolist().index(facet)
-        local_facet_minus = c_to_f.links(
-            cell_minus).tolist().index(facet)
-        facet_integration_entities.extend(
-            [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
-
-        # HACK cell_minus does not exist in the left submesh, so it will
-        # be mapped to index -1. This is problematic for the assembler,
-        # which assumes it is possible to get the full macro dofmap for the
-        # trial and test functions, despite the restriction meaning we
-        # don't need the non-existant dofs. To fix this, we just map
-        # cell_minus to the cell corresponding to cell plus. This will
-        # just add zeros to the assembled system, since there are no
-        # u("-") terms. Could map this to any cell in the submesh, but
-        # I think using the cell on the other side of the facet means a
-        # facet space coefficient could be used
-        entity_maps[submesh_0][cell_minus] = \
-            entity_maps[submesh_0][cell_plus]
-        # Same hack for the right submesh
-        entity_maps[submesh_1][cell_plus] = \
-            entity_maps[submesh_1][cell_minus]
+# Create integration measures
+dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 dS = ufl.Measure("dS", domain=msh,
                  subdomain_data=[(surf_ids["interface"],
-                                  facet_integration_entities)])
+                                  interface_entities)])
 
 # TODO Add k dependency
 gamma = 10
