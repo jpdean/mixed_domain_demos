@@ -101,6 +101,8 @@ def create_mesh(h, c=0.5, r=0.25):
 # Set some parameters
 comm = MPI.COMM_WORLD
 h = 0.05  # Maximum cell diameter
+k_0 = 1  # Polynomial degree in omega_0
+k_1 = 3  # Polynomial degree in omega_1
 
 # Tags for volumes and surfaces
 vol_ids = {"omega_0": 1,
@@ -120,8 +122,8 @@ msh_cell_imap = msh.topology.index_map(tdim)
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
-V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", 1))
-V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", 3))
+V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k_0))
+V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 
 # Test and trial functions
 u_0 = ufl.TrialFunction(V_0)
@@ -186,7 +188,8 @@ for facet in ft.indices[ft.values == surf_ids["interface"]]:
         entity_maps[submesh_1][cell_plus] = \
             entity_maps[submesh_1][cell_minus]
 dS = ufl.Measure("dS", domain=msh,
-                 subdomain_data=[(surf_ids["interface"], facet_integration_entities)])
+                 subdomain_data=[(surf_ids["interface"],
+                                  facet_integration_entities)])
 
 # TODO Add k dependency
 gamma = 10
