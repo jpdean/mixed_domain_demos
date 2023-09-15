@@ -1,3 +1,5 @@
+# TODO Tidy up problems
+
 # This demo solves the Stokes and Navier-Stokes equations using
 # hybridised discontinuous Galerkin methods. There are two schemes
 # to choose from:
@@ -1043,15 +1045,14 @@ class Wannier(Problem):
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 16
-    k = 3
+    h = 1 / 16  # Maximum cell diameter
+    k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-3
+    nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 32
     t_end = 1e4
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
-
     comm = MPI.COMM_WORLD
     problem = Square()
     msh, mt, boundaries = problem.create_mesh(h, cell_type)
