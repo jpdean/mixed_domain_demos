@@ -311,6 +311,7 @@ def solve(solver_type, k, nu, num_time_steps,
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
                  ("pbar.bp", pbar_h)]]
 
+    # Time stepping loop
     t = 0.0
     u_offset, p_offset, ubar_offset = compute_offsets(V, Q, Vbar)
     for vis_file in vis_files:
@@ -319,16 +320,19 @@ def solve(solver_type, k, nu, num_time_steps,
         t += delta_t
         par_print(comm, f"t = {t}")
 
+        # Update any boundary data
         for bc_func, bc_expr in bc_funcs:
             if isinstance(bc_expr, TimeDependentExpression):
                 bc_expr.t = t
                 bc_func.interpolate(bc_expr)
 
+        # Assemble LHS
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
             fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
             A.assemble()
 
+        # Assemble RHS
         with b.localForm() as b_loc:
             b_loc.set(0)
         fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
@@ -336,6 +340,7 @@ def solve(solver_type, k, nu, num_time_steps,
         # Compute solution
         ksp.solve(b, x)
 
+        # Recover solution
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -347,14 +352,17 @@ def solve(solver_type, k, nu, num_time_steps,
                        ] = x.array_r[ubar_offset:]
         pbar_h.x.scatter_forward()
 
+        # Interpolate solution for visualisation
         u_vis.interpolate(u_n)
 
+        # Write to file
         for vis_file in vis_files:
             vis_file.write(t)
 
     for vis_file in vis_files:
         vis_file.close()
 
+    # Compute errors
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
     par_print(comm, f"e_div_u = {e_div_u}")
@@ -367,8 +375,6 @@ def solve(solver_type, k, nu, num_time_steps,
         e_ubar = norm_L2(msh.comm, ubar_n - u_e(xbar))
         par_print(comm, f"e_u = {e_u}")
         par_print(comm, f"e_ubar = {e_ubar}")
-
-    # par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
 
     if p_e is not None:
         p_h_avg = domain_average(msh, p_h)
