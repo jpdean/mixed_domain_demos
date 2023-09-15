@@ -123,10 +123,8 @@ V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k_0))
 V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 
 # Test and trial functions
-u_0 = ufl.TrialFunction(V_0)
-u_1 = ufl.TrialFunction(V_1)
-v_0 = ufl.TestFunction(V_0)
-v_1 = ufl.TestFunction(V_1)
+u_0, u_1 = ufl.TrialFunction(V_0), ufl.TrialFunction(V_1)
+v_0, v_1 = ufl.TestFunction(V_0), ufl.TestFunction(V_1)
 
 # Create entity maps
 cell_imap = msh.topology.index_map(tdim)
