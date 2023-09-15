@@ -21,7 +21,6 @@ from utils import (norm_L2, domain_average, normal_jump_error,
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
-import sys
 
 
 class SolverType(Enum):
@@ -42,9 +41,9 @@ class BCType(Enum):
 
 
 def create_facet_mesh(msh):
+    # Create a sub-mesh containing all of the facets in msh
     tdim = msh.topology.dim
     fdim = tdim - 1
-
     msh.topology.create_entities(fdim)
     facet_imap = msh.topology.index_map(fdim)
     num_facets = facet_imap.size_local + facet_imap.num_ghosts
@@ -52,9 +51,10 @@ def create_facet_mesh(msh):
 
     # NOTE Despite all facets being present in the submesh, the entity
     # map isn't necessarily the identity in parallel
-    facet_mesh, entity_map = mesh.create_submesh(msh, fdim, facets)[0:2]
+    facet_mesh, facet_mesh_to_msh = mesh.create_submesh(
+        msh, fdim, facets)[0:2]
 
-    return facet_mesh, entity_map
+    return facet_mesh, facet_mesh_to_msh
 
 
 def create_function_spaces(msh, facet_mesh, scheme, k):
