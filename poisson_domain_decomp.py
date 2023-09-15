@@ -225,23 +225,23 @@ L_0 = fem.form(L_0, entity_maps=entity_maps)
 L_1 = fem.form(L_1, entity_maps=entity_maps)
 L = [L_0, L_1]
 
-submesh_0_ft = convert_facet_tags(msh, submesh_0, sm_0_to_msh, ft)
-bound_facet_sm_0 = submesh_0_ft.indices[
-    submesh_0_ft.values == surf_ids["boundary"]]
-
-bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facet_sm_0)
-
+# Apply boundary conditions. We require the DOFs of V_0 on the domain
+# boundary. These can be identified via that facets of submesh_0 that
+# lie on the domain boundary.
+ft_sm_0 = convert_facet_tags(msh, submesh_0, sm_0_to_msh, ft)
+bound_facets_sm_0 = ft_sm_0.indices[ft_sm_0.values == surf_ids["boundary"]]
+bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facets_sm_0)
 u_bc_0 = fem.Function(V_0)
 u_bc_0.interpolate(u_e)
 bc_0 = fem.dirichletbc(u_bc_0, bound_dofs)
-
 bcs = [bc_0]
 
+# Assemble linear system of equations
 A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
 A.assemble()
-
 b = fem.petsc.assemble_vector_block(L, a, bcs=bcs)
 
+# Set-up solver
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
