@@ -17,7 +17,7 @@ from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 from utils import (norm_L2, domain_average, normal_jump_error,
-                   TimeDependentExpression)
+                   TimeDependentExpression, par_print)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
@@ -39,12 +39,6 @@ class Scheme(Enum):
 class BCType(Enum):
     Dirichlet = 1
     Neumann = 2
-
-
-def par_print(string):
-    if comm.rank == 0:
-        print(string)
-        sys.stdout.flush()
 
 
 def create_facet_mesh(msh):
@@ -285,7 +279,7 @@ def solve(solver_type, k, nu, num_time_steps,
         vis_file.write(t)
     for n in range(num_time_steps):
         t += delta_t
-        par_print(f"t = {t}")
+        par_print(comm, f"t = {t}")
 
         for bc_func, bc_expr in bc_funcs:
             if isinstance(bc_expr, TimeDependentExpression):
@@ -325,16 +319,16 @@ def solve(solver_type, k, nu, num_time_steps,
 
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(msh, u_n)
-    par_print(f"e_div_u = {e_div_u}")
-    par_print(f"e_jump_u = {e_jump_u}")
+    par_print(comm, f"e_div_u = {e_div_u}")
+    par_print(comm, f"e_jump_u = {e_jump_u}")
 
     x = ufl.SpatialCoordinate(msh)
     xbar = ufl.SpatialCoordinate(facet_mesh)
     if u_e is not None:
         e_u = norm_L2(msh.comm, u_n - u_e(x))
         e_ubar = norm_L2(msh.comm, ubar_n - u_e(xbar))
-        par_print(f"e_u = {e_u}")
-        par_print(f"e_ubar = {e_ubar}")
+        par_print(comm, f"e_u = {e_u}")
+        par_print(comm, f"e_ubar = {e_ubar}")
 
     # par_print(1 / msh.topology.index_map(tdim).size_global**(1 / tdim))
 
@@ -347,8 +341,8 @@ def solve(solver_type, k, nu, num_time_steps,
         e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
                          (p_e(xbar) - pbar_e_avg))
 
-        par_print(f"e_p = {e_p}")
-        par_print(f"e_pbar = {e_pbar}")
+        par_print(comm, f"e_p = {e_p}")
+        par_print(comm, f"e_pbar = {e_pbar}")
 
 
 class Problem:
