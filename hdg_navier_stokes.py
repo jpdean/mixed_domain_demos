@@ -120,18 +120,24 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     # Facet pressure
     pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
 
-    h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
+    h = ufl.CellDiameter(msh)  # TODO Fix for high-order geom!
     n = ufl.FacetNormal(msh)
-    gamma = 256.0 * k**2 / h  # TODO Should be larger in 3D
+    # Scaled penalty parameter. TODO Should be larger in 3D!
+    gamma = 16 * k**2 / h
 
+    # Marker for outflow boundaries
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
+
+    # Convert some parameters to constants
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
+    # Diffusive terms
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
         - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries_tag) \
-        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries_tag) \
+        + nu * gamma * inner(outer(u, n),
+                             outer(v, n)) * ds_c(cell_boundaries_tag) \
         - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries_tag)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
@@ -159,13 +165,16 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
 
+    # Advective terms
     if solver_type == SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
             + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries_tag) \
-            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
+            - inner(outer(u, lmbda * u_n),
+                    outer(v, n)) * ds_c(cell_boundaries_tag)
         a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
             ds_c(cell_boundaries_tag)
-        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(cell_boundaries_tag) \
+        a_20 += inner(outer(u, u_n),
+                      outer(vbar, n)) * ds_c(cell_boundaries_tag) \
             - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
             ds_c(cell_boundaries_tag)
         a_22 += inner(outer(ubar, lmbda * u_n),
@@ -175,9 +184,9 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
                                    for i in range(tdim)]),
                 vbar) * ds_c(cell_boundaries_tag)
 
-    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
-    # MUMPS seems to cope with the small nullspace
+    # Apply boundary conditions
     bcs = []
+    # FIXME Can now access the bc_func through the bc
     bc_funcs = []
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
@@ -196,17 +205,20 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
 
+    # Compile LHS forms
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
     a_20 = fem.form(a_20, entity_maps=entity_maps)
     a_22 = fem.form(a_22, entity_maps=entity_maps)
 
+    # Compile RHS forms
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
         facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
+    # Define block structure
     a = [[a_00, a_01, a_02, a_03],
          [a_10, None, None, None],
          [a_20, None, a_22, a_23],
@@ -230,35 +242,51 @@ def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
           boundary_conditions, f, u_i_expr, u_e=None,
           p_e=None):
+    # Create a mesh containing the facets of the mesh
     facet_mesh, entity_map = create_facet_mesh(msh)
 
+    # Create function spaces
     V, Q, Vbar, Qbar = create_function_spaces(msh, facet_mesh, scheme, k)
 
+    # Cell velocity at previous time step
     u_n = fem.Function(V)
-    u_n.interpolate(u_i_expr)
+    # Facet velocity at previous time step
     ubar_n = fem.Function(Vbar)
+
+    # Interpolate initial condition
+    u_n.interpolate(u_i_expr)
     ubar_n.interpolate(u_i_expr)
 
+    # Create finite element forms
     a, L, bcs, bc_funcs = create_forms(
         V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         entity_map, solver_type, boundary_conditions,
         boundaries, mt, f, facet_mesh, u_n, ubar_n)
 
+    # Set up matrix
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
     else:
         A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
         A.assemble()
 
+    # Prepare functions for visualisation
+    # Cell velocity
     if scheme == Scheme.RW:
         u_vis = fem.Function(V)
     else:
+        # Since the DRW scheme uses a broken RT space for the velocity,
+        # we create a discontinuous Lagrange space to interpolate the
+        # solution into for visualisation. This allows artifact-free
+        # visualisation of the solution 
         V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
+    # Cell pressure
     p_h = fem.Function(Q)
     p_h.name = "p"
+    # Facet pressure
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
