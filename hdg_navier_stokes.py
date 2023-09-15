@@ -1,4 +1,12 @@
-# FIXME This demo needs tidying
+# This demo solves the Stokes and Navier-Stokes equations using
+# hybridised discontinuous Galerkin methods. There are two schemes
+# to choose from:
+#   1) the scheme presented in "Hybridized discontinuous Galerkin
+#      methods for incompressible flows on meshes with quadrilateral
+#      cells" by J. P. Dean, S. Rhebergen, and G. N. Well.
+#   2) The scheme from "An embedded–hybridized discontinuous Galerkin
+#      finite element method for the Stokes equations" by S. Rhebergen
+#      and G. N. Wells
 
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
