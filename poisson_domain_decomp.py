@@ -248,26 +248,25 @@ ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("superlu_dist")
 
-x = A.createVecRight()
-
 # Compute solution
+x = A.createVecRight()
 ksp.solve(b, x)
 
-u_0 = fem.Function(V_0)
-u_1 = fem.Function(V_1)
-
+# Recover solution
+u_0, u_1 = fem.Function(V_0), fem.Function(V_1)
 offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
 u_0.x.array[:offset] = x.array_r[:offset]
 u_1.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 u_0.x.scatter_forward()
 u_1.x.scatter_forward()
 
+# Write solution to file
 with io.VTXWriter(msh.comm, "u_0.bp", u_0) as f:
     f.write(0.0)
-
 with io.VTXWriter(msh.comm, "u_1.bp", u_1) as f:
     f.write(0.0)
 
+# Compute error in solution
 e_L2_0 = norm_L2(msh.comm, u_0 - u_e(
     ufl.SpatialCoordinate(submesh_0), module=ufl))
 e_L2_1 = norm_L2(msh.comm, u_1 - u_e(
