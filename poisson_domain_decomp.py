@@ -18,8 +18,8 @@ gdim = 2
 
 vol_ids = {"omega_0": 1,
            "omega_1": 2}
-boundary = 3
-interface = 4
+surf_ids = {"boundary": 3,
+            "interface": 4}
 
 gmsh.initialize()
 if comm.rank == 0:
@@ -74,8 +74,8 @@ if comm.rank == 0:
 
     gmsh.model.addPhysicalGroup(2, [square_surface], vol_ids["omega_0"])
     gmsh.model.addPhysicalGroup(2, [circle_surface], vol_ids["omega_1"])
-    gmsh.model.addPhysicalGroup(1, square_lines, boundary)
-    gmsh.model.addPhysicalGroup(1, circle_lines, interface)
+    gmsh.model.addPhysicalGroup(1, square_lines, surf_ids["boundary"])
+    gmsh.model.addPhysicalGroup(1, circle_lines, surf_ids["interface"])
 
     gmsh.model.mesh.generate(2)
 
@@ -129,7 +129,7 @@ c_to_f = msh.topology.connectivity(tdim, fdim)
 f_to_c = msh.topology.connectivity(fdim, tdim)
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
-for facet in ft.indices[ft.values == interface]:
+for facet in ft.indices[ft.values == surf_ids["interface"]]:
     # Check if this facet is owned
     if facet < facet_imap.size_local:
         cells = f_to_c.links(facet)
@@ -163,7 +163,7 @@ for facet in ft.indices[ft.values == interface]:
         entity_maps[submesh_1][cell_plus] = \
             entity_maps[submesh_1][cell_minus]
 dS = ufl.Measure("dS", domain=msh,
-                 subdomain_data=[(interface, facet_integration_entities)])
+                 subdomain_data=[(surf_ids["interface"], facet_integration_entities)])
 
 # TODO Add k dependency
 gamma = 10
@@ -178,33 +178,33 @@ domain_1 = "-"
 
 a_00 = inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"]) \
     + gamma / avg(h) * inner(c * u_0(domain_0),
-                             v_0(domain_0)) * dS(interface) \
+                             v_0(domain_0)) * dS(surf_ids["interface"]) \
     - inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)),
-            v_0(domain_0)) * dS(interface) \
+            v_0(domain_0)) * dS(surf_ids["interface"]) \
     - inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)),
-            u_0(domain_0)) * dS(interface)
+            u_0(domain_0)) * dS(surf_ids["interface"])
 
 a_01 = - gamma / avg(h) * inner(c * u_1(domain_1),
-                                v_0(domain_0)) * dS(interface) \
+                                v_0(domain_0)) * dS(surf_ids["interface"]) \
     + inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)),
-            v_0(domain_0)) * dS(interface) \
+            v_0(domain_0)) * dS(surf_ids["interface"]) \
     + inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)),
-            u_1(domain_1)) * dS(interface)
+            u_1(domain_1)) * dS(surf_ids["interface"])
 
 a_10 = - gamma / avg(h) * inner(c * u_0(domain_0),
-                                v_1(domain_1)) * dS(interface) \
+                                v_1(domain_1)) * dS(surf_ids["interface"]) \
     + inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)),
-            v_1(domain_1)) * dS(interface) \
+            v_1(domain_1)) * dS(surf_ids["interface"]) \
     + inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)),
-            u_0(domain_0)) * dS(interface)
+            u_0(domain_0)) * dS(surf_ids["interface"])
 
 a_11 = inner(c * grad(u_1), grad(v_1)) * dx(vol_ids["omega_1"]) \
     + gamma / avg(h) * inner(c * u_1(domain_1),
-                             v_1(domain_1)) * dS(interface) \
+                             v_1(domain_1)) * dS(surf_ids["interface"]) \
     - inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)),
-            v_1(domain_1)) * dS(interface) \
+            v_1(domain_1)) * dS(surf_ids["interface"]) \
     - inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)),
-            u_1(domain_1)) * dS(interface)
+            u_1(domain_1)) * dS(surf_ids["interface"])
 
 a_00 = fem.form(a_00, entity_maps=entity_maps)
 a_01 = fem.form(a_01, entity_maps=entity_maps)
@@ -232,7 +232,7 @@ L = [L_0, L_1]
 
 submesh_0_ft = convert_facet_tags(msh, submesh_0, entity_map_0, ft)
 bound_facet_sm_0 = submesh_0_ft.indices[
-    submesh_0_ft.values == boundary]
+    submesh_0_ft.values == surf_ids["boundary"]]
 
 bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facet_sm_0)
 
