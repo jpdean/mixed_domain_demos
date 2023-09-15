@@ -7,8 +7,8 @@ import ufl
 from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
-from dolfinx.cpp.mesh import cell_num_entities
-from utils import norm_L2, create_random_mesh
+from utils import (norm_L2, create_random_mesh,
+                   compute_cell_boundary_integration_entities)
 from utils import par_print
 
 
@@ -53,7 +53,6 @@ msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
 # creating a list of all of the facets in the mesh
 tdim = msh.topology.dim
 fdim = tdim - 1
-num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
 msh.topology.create_entities(fdim)
 facet_imap = msh.topology.index_map(fdim)
 num_facets = facet_imap.size_local + facet_imap.num_ghosts
@@ -80,15 +79,8 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 dx_c = ufl.Measure("dx", domain=msh)
 # Cell boundaries
 # We need to define an integration measure to integrate around the
-# boundary of each cell. We create a list of facets to integrate
-# over, identified by (cell, local_facet) pairs, as follows:
-# FIXME Do this efficiently with numpy
-cell_boundary_facets = []
-# Loop over each cell in the mesh
-for cell in range(msh.topology.index_map(tdim).size_local):
-    # Add each facet of the cell to the list
-    for local_facet in range(num_cell_facets):
-        cell_boundary_facets.extend([cell, local_facet])
+# boundary of each cell.
+cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
 
 cell_boundaries = 1  # A tag
 # Create the measure

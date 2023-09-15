@@ -5,6 +5,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx import mesh
 import sys
+from dolfinx.cpp.mesh import cell_num_entities
 
 
 def par_print(comm, string):
@@ -269,3 +270,19 @@ def compute_interior_facet_integration_entities(msh, cell_map):
                 [cell_map[cells[0]], local_facet_plus,
                  cell_map[cells[1]], local_facet_minus])
     return integration_entities
+
+
+def compute_cell_boundary_integration_entities(msh):
+    # We create a list of facets to integrate
+    # over, identified by (cell, local_facet) pairs, as follows:
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
+    # FIXME Do this efficiently with numpy
+    cell_boundary_facets = []
+    # Loop over each cell in the mesh
+    for cell in range(msh.topology.index_map(tdim).size_local):
+        # Add each facet of the cell to the list
+        for local_facet in range(num_cell_facets):
+            cell_boundary_facets.extend([cell, local_facet])
+    return cell_boundary_facets
