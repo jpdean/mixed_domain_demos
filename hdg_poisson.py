@@ -79,9 +79,9 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 dx_c = ufl.Measure("dx", domain=msh)
 # Cell boundaries
 # We need to define an integration measure to integrate around the
-# boundary of each cell.
+# boundary of each cell. The integration entities can be computed
+# using the following convenience function.
 cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
-
 cell_boundaries = 1  # A tag
 # Create the measure
 ds_c = ufl.Measure("ds", subdomain_data=[
