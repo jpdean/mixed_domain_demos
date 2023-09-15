@@ -126,16 +126,17 @@ V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
 u_0, u_1 = ufl.TrialFunction(V_0), ufl.TrialFunction(V_1)
 v_0, v_1 = ufl.TestFunction(V_0), ufl.TestFunction(V_1)
 
-# Create entity maps
+# We use msh as the integration domain, so we require maps from cells
+# in msh to cells in submesh_0 and submesh_1. These can be created
+# as follows:
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
-inv_entity_map_0 = np.full(num_cells, -1)
-inv_entity_map_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-inv_entity_map_1 = np.full(num_cells, -1)
-inv_entity_map_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
-
-entity_maps = {submesh_0: inv_entity_map_0,
-               submesh_1: inv_entity_map_1}
+msh_to_sm_0 = np.full(num_cells, -1)
+msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
+msh_to_sm_1 = np.full(num_cells, -1)
+msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
+entity_maps = {submesh_0: msh_to_sm_0,
+               submesh_1: msh_to_sm_1}
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
