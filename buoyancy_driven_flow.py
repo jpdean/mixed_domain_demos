@@ -1,5 +1,16 @@
 # TODO This demo needs tidying and simplifying
 
+# This demo solves a buoyancy driven flow problem. The domain is
+# is a cuboid and contains a heated cylinder. The cylinder is
+# surrounded by an incompressible fluid. The Navier--Stokes
+# equations are solved in the fluid portion of the domain
+# using the HDG scheme in hdg_navier_stokes.py. The thermal
+# problem is solved over the entire domain. In the solid region,
+# we use a standard conforming Galerkin method. In the fluid region,
+# we use an upwind discontinuous Galerkin method. The schemes are
+# coupled at the fluid-solid interface using Nitsche's method (see
+# cg_dg_advec_diffusion.py).
+
 import hdg_navier_stokes
 from dolfinx import fem, io, mesh
 from mpi4py import MPI
@@ -14,30 +25,26 @@ from utils import convert_facet_tags
 import sys
 
 
-def generate_mesh(comm, h=0.1, cell_type=mesh.CellType.triangle):
-    gmsh.initialize()
-
-    volume_id = {"fluid": 1,
-                 "solid": 2}
-
-    boundary_id = {"walls": 2,
-                   "obstacle": 3}
-
+def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
+    # Get geometric dimension of domain
     if cell_type == mesh.CellType.tetrahedron or \
             cell_type == mesh.CellType.hexahedron:
         d = 3
     else:
         d = 2
 
+    gmsh.initialize()
     if comm.rank == 0:
-
         gmsh.model.add("model")
         factory = gmsh.model.geo
 
-        length = 0.8
-        height = 1.25
-        c = (0.41, 0.25)
-        r = 0.05
+        # Set some parameters
+        length = 0.8  # Domain length
+        height = 1.25  # Domain height
+        c = (0.41, 0.25)  # Centre of cylinder
+        r = 0.05  # Radius of cylinder
+        # Radius of square region surrounding cylinder for
+        # meshing purposes
         r_s = 0.1
 
         rectangle_points = [
@@ -237,6 +244,12 @@ def par_print(string):
         print(string)
         sys.stdout.flush()
 
+
+volume_id = {"fluid": 1,
+             "solid": 2}
+
+boundary_id = {"walls": 2,
+               "obstacle": 3}
 
 # We define some simulation parameters
 # num_time_steps = 1280
@@ -650,6 +663,9 @@ for n in range(num_time_steps):
 
 for vis_file in vis_files:
     vis_file.close()
+
+# TODO Remove
+par_print(x.norm())
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
