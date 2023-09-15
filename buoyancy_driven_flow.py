@@ -21,8 +21,7 @@ from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
-from utils import convert_facet_tags
-import sys
+from utils import convert_facet_tags, norm_L2, par_print
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -231,28 +230,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
     return msh, ct, ft, volume_id, boundary_id
 
 
-def norm_L2(comm, v):
-    """Compute the L2(Ω)-norm of v"""
-    return np.sqrt(comm.allreduce(
-        fem.assemble_scalar(fem.form(inner(v, v) * dx)), op=MPI.SUM))
-
-
-def domain_average(msh, v):
-    """Compute the average of a function over the domain"""
-    vol = msh.comm.allreduce(
-        fem.assemble_scalar(fem.form(
-            fem.Constant(msh, PETSc.ScalarType(1.0)) * dx)), op=MPI.SUM)
-    return 1 / vol * msh.comm.allreduce(
-        fem.assemble_scalar(fem.form(v * dx)), op=MPI.SUM)
-
-
 def zero(x): return np.zeros_like(x[:msh.topology.dim])
-
-
-def par_print(string):
-    if comm.rank == 0:
-        print(string)
-        sys.stdout.flush()
 
 
 volume_id = {"fluid": 1,
@@ -617,7 +595,7 @@ for vis_file in vis_files:
     vis_file.write(t)
 for n in range(num_time_steps):
     t += delta_t.value
-    par_print(f"t = {t}")
+    par_print(comm, f"t = {t}")
 
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
@@ -675,7 +653,7 @@ for vis_file in vis_files:
     vis_file.close()
 
 # TODO Remove
-par_print(x.norm())
+par_print(comm, x.norm())
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
