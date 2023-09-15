@@ -47,6 +47,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         # meshing purposes
         r_s = 0.1
 
+        # Corners of the domain
         rectangle_points = [
             factory.addPoint(0.0, 0.0, 0.0, h),
             factory.addPoint(length, 0.0, 0.0, h),
@@ -54,6 +55,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
             factory.addPoint(0.0, height, 0.0, h)
         ]
 
+        # Create points to define the cylinder
         thetas = [np.pi / 4, 3 * np.pi / 4, 5 * np.pi / 4,
                   7 * np.pi / 4, 9 * np.pi / 4]
         circle_points = [factory.addPoint(c[0], c[1], 0.0)] + \
@@ -61,14 +63,18 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
                               c[1] + r * np.sin(theta), 0.0)
                 for theta in thetas]
 
+        # Corners of a square surrounding the cylinder
         square_points = [
             factory.addPoint(c[0] + r_s * np.cos(theta),
                              c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas]
 
+        # Some points to help define a refined region of the mesh
+        # around the buoyant plume
         plume_points = [factory.addPoint(0.31, 1.0, 0.0, h),
                         factory.addPoint(0.51, 1.0, 0.0, h)]
 
+        # Domain boundary
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
             factory.addLine(rectangle_points[1], rectangle_points[2]),
@@ -76,6 +82,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
             factory.addLine(rectangle_points[3], rectangle_points[0])
         ]
 
+        # Cylinder boundary
         circle_lines = [
             factory.addCircleArc(
                 circle_points[1], circle_points[0], circle_points[2]),
@@ -98,10 +105,11 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
                        factory.addLine(plume_points[0], plume_points[1]),
                        factory.addLine(plume_points[1], square_points[0])]
 
+        # Define regions around the cylinder where the mesh is refined
+        # to better capture the boundary layer
         bl_diag_lines = [
             factory.addLine(circle_points[i + 1], square_points[i])
             for i in range(4)]
-
         boundary_layer_lines = [
             [square_lines[0], - bl_diag_lines[1],
                 - circle_lines[0], bl_diag_lines[0]],
@@ -113,6 +121,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
                 - circle_lines[3], bl_diag_lines[3]]
         ]
 
+        # Create curves
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
         circle_curve = factory.addCurveLoop(circle_lines)
         square_curve = factory.addCurveLoop(square_lines)
@@ -120,6 +129,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
             factory.addCurveLoop(bll) for bll in boundary_layer_lines]
         plume_curve = factory.add_curve_loop(plume_lines)
 
+        # Create surfaces
         outer_surface = factory.addPlaneSurface(
             [rectangle_curve, square_curve, plume_curve])
         boundary_layer_surfaces = [
@@ -156,7 +166,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         gmsh.model.geo.mesh.setTransfiniteSurface(
             plume_surface)
 
-        # FIXME
+        # Extrude the mesh in 3D
         if d == 3:
             if cell_type == mesh.CellType.tetrahedron:
                 recombine = False
@@ -170,6 +180,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
 
         factory.synchronize()
 
+        # Define physical groups
         if d == 3:
             # FIXME Don't hardcode
             # FIXME Need to work these out again
@@ -189,7 +200,6 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
                 2, [98, 120, 142, 164],
                 boundary_id["obstacle"])
         else:
-            # TODO FIXME
             gmsh.model.addPhysicalGroup(
                 2, [outer_surface, plume_surface] + boundary_layer_surfaces,
                 volume_id["fluid"])
