@@ -17,7 +17,8 @@ from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 from utils import (norm_L2, domain_average, normal_jump_error,
-                   TimeDependentExpression, par_print)
+                   TimeDependentExpression, par_print,
+                   compute_cell_boundary_integration_entities)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
@@ -58,6 +59,7 @@ def create_facet_mesh(msh):
 
 
 def create_function_spaces(msh, facet_mesh, scheme, k):
+    # Create function spaces
     if scheme == Scheme.RW:
         V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
         Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
@@ -77,19 +79,22 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     tdim = msh.topology.dim
     fdim = tdim - 1
 
-    all_facets_tag = 0
-    all_facets = []
-    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
-    for cell in range(msh.topology.index_map(tdim).size_local):
-        for local_facet in range(num_cell_facets):
-            all_facets.extend([cell, local_facet])
-
-    facet_integration_entities = [(all_facets_tag, all_facets)]
+    # We wish to integrate around the boundary of each cell, so we
+    # get a list of cell boundary facets as follows:
+    cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
+    cell_boundaries_tag = 0
+    # Add cell boundaries to the list of integration entities
+    facet_integration_entities = [(cell_boundaries_tag, cell_boundary_facets)]
+    # We also need to integrate over portions of the boundary (e.g. to
+    # apply boundary conditions). We can add the required integration
+    # entities as follows:
     facet_integration_entities += compute_integration_domains(
         fem.IntegralType.exterior_facet, mt._cpp_object)
+
+    # Create integration measures
     dx_c = ufl.Measure("dx", domain=msh)
-    # FIXME Figure out why this is being estimated wrong for DRW
-    # NOTE k**2 works on affine meshes
+    # FIXME This is being estimated wrong for DRW. NOTE k**2 works on
+    # affine meshes
     quad_deg = (k + 1)**2
     ds_c = ufl.Measure(
         "ds", subdomain_data=facet_integration_entities, domain=msh,
@@ -121,50 +126,50 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
-        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
-        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
-        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
+        - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries_tag) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries_tag) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries_tag)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
     a_02 = - nu * gamma * inner(
-        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
-        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
+        outer(ubar, n), outer(v, n)) * ds_c(cell_boundaries_tag) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries_tag)
     a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
-                          outer(v, n)) * ds_c(all_facets_tag),
+                          outer(v, n)) * ds_c(cell_boundaries_tag),
                     entity_maps=entity_maps)
     a_10 = fem.form(inner(u, grad(q)) * dx_c -
-                    inner(dot(u, n), q) * ds_c(all_facets_tag))
-    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+                    inner(dot(u, n), q) * ds_c(cell_boundaries_tag))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(cell_boundaries_tag) \
         + nu * gamma * inner(outer(u, n), outer(vbar, n)
-                             ) * ds_c(all_facets_tag)
+                             ) * ds_c(cell_boundaries_tag)
     a_30 = fem.form(inner(dot(u, n), qbar) *
-                    ds_c(all_facets_tag), entity_maps=entity_maps)
+                    ds_c(cell_boundaries_tag), entity_maps=entity_maps)
     a_23 = fem.form(
         inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
-        ds_c(all_facets_tag),
+        ds_c(cell_boundaries_tag),
         entity_maps=entity_maps)
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
     a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
                     entity_maps=entity_maps)
     a_22 = - nu * gamma * \
-        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
 
     if solver_type == SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
-            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
-            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries_tag) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
         a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
-            ds_c(all_facets_tag)
-        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            ds_c(cell_boundaries_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(cell_boundaries_tag) \
             - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
-            ds_c(all_facets_tag)
+            ds_c(cell_boundaries_tag)
         a_22 += inner(outer(ubar, lmbda * u_n),
-                      outer(vbar, n)) * ds_c(all_facets_tag)
+                      outer(vbar, n)) * ds_c(cell_boundaries_tag)
 
     L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
                                    for i in range(tdim)]),
-                vbar) * ds_c(all_facets_tag)
+                vbar) * ds_c(cell_boundaries_tag)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
