@@ -74,7 +74,7 @@ def create_function_spaces(msh, facet_mesh, scheme, k):
 
 
 def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
-                 entity_map, solver_type, boundary_conditions,
+                 facet_mesh_to_msh, solver_type, boundary_conditions,
                  boundaries, mt, f, facet_mesh, u_n, ubar_n):
     tdim = msh.topology.dim
     fdim = tdim - 1
@@ -101,11 +101,14 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
-    inv_entity_map = np.full_like(entity_map, -1)
-    for i, facet in enumerate(entity_map):
-        inv_entity_map[facet] = i
-
-    entity_maps = {facet_mesh: inv_entity_map}
+    # We write the mixed domain forms as integrals over msh. Hence, we must
+    # provide a map from facets in msh to cells in facet_mesh. This is the
+    # 'inverse' of facet_mesh_to_mesh, which we compute as follows:
+    facet_imap = msh.topology.index_map(fdim)
+    num_facets = facet_imap.size_local + facet_imap.num_ghosts
+    msh_to_facet_mesh = np.full(num_facets, -1)
+    msh_to_facet_mesh[facet_mesh_to_msh] = np.arange(len(facet_mesh_to_msh))
+    entity_maps = {facet_mesh: msh_to_facet_mesh}
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
@@ -182,7 +185,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
         bc_func.interpolate(bc_expr)
         bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
-            facets = inv_entity_map[mt.indices[mt.values == id]]
+            facets = msh_to_facet_mesh[mt.indices[mt.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
