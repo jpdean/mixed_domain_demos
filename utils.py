@@ -273,8 +273,17 @@ def compute_interior_facet_integration_entities(msh, cell_map):
 
 
 def compute_cell_boundary_integration_entities(msh):
-    # We create a list of facets to integrate
-    # over, identified by (cell, local_facet) pairs, as follows:
+    """
+    Compute the integration entities for integrals around the
+    boundaries of all cells in msh.
+
+    Parameters:
+        msh: the mesh
+
+    Returns:
+        A list of facets to integrate over, identified by
+        (cell, local facet index) pairs
+    """
     tdim = msh.topology.dim
     fdim = tdim - 1
     num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
