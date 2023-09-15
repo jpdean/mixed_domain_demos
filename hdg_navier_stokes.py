@@ -270,6 +270,21 @@ def solve(solver_type, k, nu, num_time_steps,
         A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
         A.assemble()
 
+    # Create vectors for RHS and solution
+    b = fem.petsc.create_vector_block(L)
+    x = A.createVecRight()
+
+    # Configure solver
+    ksp = PETSc.KSP().create(msh.comm)
+    ksp.setOperators(A)
+    ksp.setType("preonly")
+    ksp.getPC().setType("lu")
+    ksp.getPC().setFactorSolverType("mumps")
+    opts = PETSc.Options()
+    opts["mat_mumps_icntl_6"] = 2
+    opts["mat_mumps_icntl_14"] = 100
+    ksp.setFromOptions()
+
     # Prepare functions for visualisation
     # Cell velocity
     if scheme == Scheme.RW:
@@ -290,21 +305,6 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
-    u_offset, p_offset, ubar_offset = compute_offsets(V, Q, Vbar)
-
-    ksp = PETSc.KSP().create(msh.comm)
-    ksp.setOperators(A)
-    ksp.setType("preonly")
-    ksp.getPC().setType("lu")
-    ksp.getPC().setFactorSolverType("mumps")
-    opts = PETSc.Options()
-    opts["mat_mumps_icntl_6"] = 2
-    opts["mat_mumps_icntl_14"] = 100
-    ksp.setFromOptions()
-
-    b = fem.petsc.create_vector_block(L)
-    x = A.createVecRight()
-
     # Set up files for visualisation
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
@@ -312,6 +312,7 @@ def solve(solver_type, k, nu, num_time_steps,
                  ("pbar.bp", pbar_h)]]
 
     t = 0.0
+    u_offset, p_offset, ubar_offset = compute_offsets(V, Q, Vbar)
     for vis_file in vis_files:
         vis_file.write(t)
     for n in range(num_time_steps):
