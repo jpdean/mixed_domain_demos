@@ -110,14 +110,15 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     msh_to_facet_mesh[facet_mesh_to_msh] = np.arange(len(facet_mesh_to_msh))
     entity_maps = {facet_mesh: msh_to_facet_mesh}
 
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    p = ufl.TrialFunction(Q)
-    q = ufl.TestFunction(Q)
-    ubar = ufl.TrialFunction(Vbar)
-    vbar = ufl.TestFunction(Vbar)
-    pbar = ufl.TrialFunction(Qbar)
-    qbar = ufl.TestFunction(Qbar)
+    # Define trial and test functitons
+    # Cell velocity
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    # Cell pressure
+    p, q = ufl.TrialFunction(Q), ufl.TestFunction(Q)
+    # Facet velocity
+    ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
+    # Facet pressure
+    pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(msh)
