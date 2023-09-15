@@ -113,13 +113,10 @@ surf_ids = {"boundary": 3,
 # Create mesh and sub-meshes
 msh, ct, ft = create_mesh(h)
 tdim = msh.topology.dim
-submesh_0, entity_map_0 = mesh.create_submesh(
+submesh_0, sm_0_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
-submesh_1, entity_map_1 = mesh.create_submesh(
+submesh_1, sm_1_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
-
-msh_cell_imap = msh.topology.index_map(tdim)
-dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Define function spaces on each submesh
 V_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k_0))
@@ -135,12 +132,15 @@ v_1 = ufl.TestFunction(V_1)
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
 inv_entity_map_0 = np.full(num_cells, -1)
-inv_entity_map_0[entity_map_0] = np.arange(len(entity_map_0))
+inv_entity_map_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 inv_entity_map_1 = np.full(num_cells, -1)
-inv_entity_map_1[entity_map_1] = np.arange(len(entity_map_1))
+inv_entity_map_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
 entity_maps = {submesh_0: inv_entity_map_0,
                submesh_1: inv_entity_map_1}
+
+# Create integration measures
+dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
 
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
@@ -256,7 +256,7 @@ L_1 = fem.form(L_1, entity_maps=entity_maps)
 
 L = [L_0, L_1]
 
-submesh_0_ft = convert_facet_tags(msh, submesh_0, entity_map_0, ft)
+submesh_0_ft = convert_facet_tags(msh, submesh_0, sm_0_to_msh, ft)
 bound_facet_sm_0 = submesh_0_ft.indices[
     submesh_0_ft.values == surf_ids["boundary"]]
 
