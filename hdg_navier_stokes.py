@@ -409,58 +409,6 @@ class Problem:
         pass
 
 
-class TaylorGreen(Problem):
-    def __init__(self, Re, t_end):
-        super().__init__()
-        self.Re = Re
-        self.t_end = t_end
-
-    def create_mesh(self, h, cell_type):
-        comm = MPI.COMM_WORLD
-        n = round(1 / h)
-        point_0 = (- np.pi / 2, - np.pi / 2)
-        point_1 = (np.pi / 2, np.pi / 2)
-        msh = mesh.create_rectangle(
-            comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none)
-
-        fdim = msh.topology.dim - 1
-        boundary_facets = mesh.locate_entities_boundary(
-            msh, fdim,
-            lambda x: np.isclose(x[0], point_0[0]) |
-            np.isclose(x[0], point_1[0]) |
-            np.isclose(x[1], point_0[1]) |
-            np.isclose(x[1], point_1[1]))
-        values = np.ones_like(boundary_facets, dtype=np.intc)
-        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
-
-        boundaries = {"boundary": 1}
-        return msh, mt, boundaries
-
-    def u_expr(self, x, t, module):
-        return (- module.cos(x[0]) * module.sin(x[1]) *
-                module.exp(- 2 * t / self.Re),
-                module.sin(x[0]) * module.cos(x[1]) *
-                module.exp(- 2 * t / self.Re))
-
-    def u_e(self, x, module=ufl):
-        return ufl.as_vector(self.u_expr(x, self.t_end, ufl))
-
-    def p_e(self, x):
-        return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
-            - 4 * self.t_end / self.Re)
-
-    def boundary_conditions(self):
-        u_bc = TimeDependentExpression(
-            lambda x, t: np.vstack(self.u_expr(x, t, np)))
-        return {"boundary": (BCType.Dirichlet, u_bc)}
-
-    def u_i(self):
-        return lambda x: self.u_expr(x, t=0, module=np)
-
-    def f(self, msh):
-        return ufl.as_vector((0.0, 0.0))
-
-
 # TODO Remove duplicate code
 class Kovasznay(Problem):
     def create_mesh(self, h, cell_type):
@@ -1079,6 +1027,70 @@ def run_cylinder_problem():
           boundary_conditions, f, u_i)
 
 
+def run_taylor_green_problem():
+    # Simulation parameters
+    comm = MPI.COMM_WORLD
+    scheme = Scheme.DRW
+    solver_type = SolverType.NAVIER_STOKES
+    h = 1 / 16  # Maximum cell diameter
+    k = 3  # Polynomial degree
+    cell_type = mesh.CellType.quadrilateral
+    nu = 1.0e-3  # Kinematic viscosity
+    num_time_steps = 10
+    t_end = 10
+    Re = 1 / nu
+
+    # Create mesh
+    n = round(1 / h)
+    point_0 = (- np.pi / 2, - np.pi / 2)
+    point_1 = (np.pi / 2, np.pi / 2)
+    msh = mesh.create_rectangle(
+        comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none)
+
+    fdim = msh.topology.dim - 1
+    boundary_facets = mesh.locate_entities_boundary(
+        msh, fdim,
+        lambda x: np.isclose(x[0], point_0[0]) |
+        np.isclose(x[0], point_1[0]) |
+        np.isclose(x[1], point_0[1]) |
+        np.isclose(x[1], point_1[1]))
+    values = np.ones_like(boundary_facets, dtype=np.intc)
+    mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+    boundaries = {"boundary": 1}
+
+    # Exact solution
+    def u_expr(x, t, module):
+        return (- module.cos(x[0]) * module.sin(x[1]) *
+                module.exp(- 2 * t / Re),
+                module.sin(x[0]) * module.cos(x[1]) *
+                module.exp(- 2 * t / Re))
+
+    def u_e(x, module=ufl):
+        return ufl.as_vector(u_expr(x, t_end, ufl))
+
+    def p_e(x):
+        return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
+            - 4 * t_end / Re)
+
+    # Boundary conditions
+    boundary_conditions = {"boundary":
+                           (BCType.Dirichlet,
+                            TimeDependentExpression(
+                                lambda x, t: np.vstack(u_expr(x, t, np))))}
+
+    # Initial condition
+    def u_i(x): return u_expr(x, t=0, module=np)
+
+    # Forcing term
+    f = ufl.as_vector((0.0, 0.0))
+
+    # Call solver
+    delta_t = t_end / num_time_steps
+    solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions, f, u_i, u_e, p_e)
+
+
 if __name__ == "__main__":
     # run_square_problem()
-    run_cylinder_problem()
+    run_taylor_green_problem()
