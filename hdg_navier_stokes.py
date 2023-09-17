@@ -972,6 +972,7 @@ def run_gaussian_bump():
     def gaussian(x, a, sigma, mu):
         return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
 
+    # Create the mesh
     gmsh.initialize()
     if comm.rank == 0:
         # TODO Pass options
@@ -1016,6 +1017,7 @@ def run_gaussian_bump():
 
         gmsh.model.geo.synchronize()
 
+        # Add physical groups
         gmsh.model.addPhysicalGroup(2, [1], 1)
 
         gmsh.model.addPhysicalGroup(1, [lines[0]], 1)
@@ -1040,6 +1042,7 @@ def run_gaussian_bump():
                   "bottom": 1,
                   "top": 3}
 
+    # Boundary conditions
     def inlet(x): return np.vstack(
         (np.ones_like(x[0]),
             np.zeros_like(x[0])))
