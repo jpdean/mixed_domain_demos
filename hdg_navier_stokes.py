@@ -243,6 +243,8 @@ def solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
           boundary_conditions, f, u_i_expr, u_e=None,
           p_e=None):
+    comm = msh.comm
+
     # Create a mesh containing the facets of the mesh
     facet_mesh, entity_map = create_facet_mesh(msh)
 
@@ -294,7 +296,7 @@ def solve(solver_type, k, nu, num_time_steps,
         # Since the DRW scheme uses a broken RT space for the velocity,
         # we create a discontinuous Lagrange space to interpolate the
         # solution into for visualisation. This allows artifact-free
-        # visualisation of the solution 
+        # visualisation of the solution
         V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
@@ -723,81 +725,6 @@ class Cylinder(Problem):
         return lambda x: np.zeros_like(x[:self.d])
 
 
-class Square(Problem):
-    def __init__(self, d=2):
-        super().__init__()
-        self.d = d
-
-    def create_mesh(self, h, cell_type):
-        comm = MPI.COMM_WORLD
-        n = round(1 / h)
-        if self.d == 2:
-            msh = mesh.create_unit_square(
-                comm, n, n, cell_type, mesh.GhostMode.none)
-
-            def boundary_marker(x):
-                return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
-                    np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-        else:
-            msh = mesh.create_unit_cube(
-                comm, n, n, n, cell_type, mesh.GhostMode.none)
-
-            def boundary_marker(x):
-                return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
-                    np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0) | \
-                    np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
-
-        fdim = msh.topology.dim - 1
-        boundary_facets = mesh.locate_entities_boundary(
-            msh, fdim, boundary_marker)
-        perm = np.argsort(boundary_facets)
-        values = np.ones_like(boundary_facets, dtype=np.intc)
-        mt = mesh.meshtags(
-            msh, fdim, boundary_facets[perm], values[perm])
-
-        boundaries = {"boundary": 1}
-        return msh, mt, boundaries
-
-    def u_e(self, x, module=ufl):
-        if self.d == 2:
-            u = (module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
-                 module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]))
-        else:
-            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-                 - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
-                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[2])
-                 - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
-                 module.sin(module.pi * x[2]) * module.cos(module.pi * x[0])
-                 - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]))
-        if module == ufl:
-            return ufl.as_vector(u)
-        else:
-            assert module == np
-            return np.vstack(u)
-
-    def p_e(self, x, module=ufl):
-        if self.d == 2:
-            return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-        else:
-            return module.sin(module.pi * x[0]) \
-                * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
-        # return x[0] * (1 - x[0])
-
-    def boundary_conditions(self):
-        def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": (BCType.Dirichlet, u_bc)}
-
-    def f(self, msh):
-        x = ufl.SpatialCoordinate(msh)
-        f = - nu * div(grad(self.u_e(x))) + grad(self.p_e(x))
-        if solver_type == SolverType.NAVIER_STOKES:
-            f += div(outer(self.u_e(x), self.u_e(x)))
-        return f
-
-    def u_i(self):
-        return lambda x: np.zeros_like(x[:self.d])
-
-
 class TaylorGreen(Problem):
     def __init__(self, Re, t_end):
         super().__init__()
@@ -1041,8 +968,10 @@ class Wannier(Problem):
         return lambda x: np.zeros_like(x[:2])
 
 
-if __name__ == "__main__":
+def run_square_problem():
     # Simulation parameters
+    comm = MPI.COMM_WORLD
+    scheme = Scheme.DRW
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
@@ -1050,16 +979,83 @@ if __name__ == "__main__":
     nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 32
     t_end = 1e4
-    delta_t = t_end / num_time_steps
-    scheme = Scheme.DRW
-    comm = MPI.COMM_WORLD
-    problem = Square()
-    msh, mt, boundaries = problem.create_mesh(h, cell_type)
-    boundary_conditions = problem.boundary_conditions()
-    u_i_expr = problem.u_i()
-    f = problem.f(msh)
+    d = 2
 
+    # Create mesh
+    n = round(1 / h)
+    if d == 2:
+        msh = mesh.create_unit_square(
+            comm, n, n, cell_type, mesh.GhostMode.none)
+
+        def boundary_marker(x):
+            return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
+                np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+    else:
+        msh = mesh.create_unit_cube(
+            comm, n, n, n, cell_type, mesh.GhostMode.none)
+
+        def boundary_marker(x):
+            return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
+                np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0) | \
+                np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
+
+    # Create meshtags for boundary
+    fdim = msh.topology.dim - 1
+    boundary_facets = mesh.locate_entities_boundary(
+        msh, fdim, boundary_marker)
+    perm = np.argsort(boundary_facets)
+    values = np.ones_like(boundary_facets, dtype=np.intc)
+    mt = mesh.meshtags(
+        msh, fdim, boundary_facets[perm], values[perm])
+    boundaries = {"boundary": 1}
+
+    # Exact velocity
+    def u_e(x, module=ufl):
+        if d == 2:
+            u = (module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
+                 module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]))
+        else:
+            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+                 - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
+                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[2])
+                 - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
+                 module.sin(module.pi * x[2]) * module.cos(module.pi * x[0])
+                 - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]))
+        if module == ufl:
+            return ufl.as_vector(u)
+        else:
+            assert module == np
+            return np.vstack(u)
+
+    # Exact pressure
+    def p_e(x, module=ufl):
+        if d == 2:
+            return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+        else:
+            return module.sin(module.pi * x[0]) \
+                * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
+
+    # Right-hand side
+    x = ufl.SpatialCoordinate(msh)
+    f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+    if solver_type == SolverType.NAVIER_STOKES:
+        f += div(outer(u_e(x), u_e(x)))
+
+    # Boundary conditions
+    boundary_conditions = {"boundary": (BCType.Dirichlet,
+                                        lambda x: u_e(x, module=np))}
+
+    # Initial condition
+    def u_i(x):
+        return np.zeros_like(x[:d])
+
+    # Call solver
+    delta_t = t_end / num_time_steps
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i_expr, problem.u_e,
-          problem.p_e)
+          boundary_conditions, f, u_i, u_e,
+          p_e)
+
+
+if __name__ == "__main__":
+    run_square_problem()
