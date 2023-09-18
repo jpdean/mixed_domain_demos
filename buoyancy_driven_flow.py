@@ -276,23 +276,17 @@ comm = MPI.COMM_WORLD
 msh, ct, ft, volume_id, boundary_id = generate_mesh(
     comm, h=h, cell_type=mesh.CellType.quadrilateral)
 
-# Acceleration due to gravity
-if msh.topology.dim == 3:
-    g = as_vector((0.0, g_y, 0.0))
-else:
-    g = as_vector((0.0, g_y))
-
 # Create sub-meshes of fluid and solid domains
 tdim = msh.topology.dim
-submesh_f, entity_map_f = mesh.create_submesh(
+submesh_f, sm_f_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
-submesh_s, entity_map_s = mesh.create_submesh(
+submesh_s, sm_s_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
 # Convert meshtags to fluid sub-mesh
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
-ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
+ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 
 # Define boundary conditions for fluid solver
 boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
@@ -323,6 +317,11 @@ delta_t = t_end / num_time_steps  # TODO Make constant
 # lumping gravity in with pressure, see 2P4 notes) and taken
 # T_0 to be 0
 eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
+# Acceleration due to gravity
+if msh.topology.dim == 3:
+    g = as_vector((0.0, g_y, 0.0))
+else:
+    g = as_vector((0.0, g_y))
 # Buoyancy force
 f = - eps * rho * T_n * g
 
@@ -379,9 +378,9 @@ dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
 inv_entity_map_f = np.full(num_cells, -1)
-inv_entity_map_f[entity_map_f] = np.arange(len(entity_map_f))
+inv_entity_map_f[sm_f_to_msh] = np.arange(len(sm_f_to_msh))
 inv_entity_map_s = np.full(num_cells, -1)
-inv_entity_map_s[entity_map_s] = np.arange(len(entity_map_s))
+inv_entity_map_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
 entity_maps = {submesh_f: inv_entity_map_f,
                submesh_s: inv_entity_map_s}
 
@@ -454,8 +453,8 @@ for facet in range(submesh_f.topology.index_map(fdim).size_local):
             cells[1]).tolist().index(facet)
 
         fluid_int_facet_entities.extend(
-            [entity_map_f[cells[0]], local_facet_plus,
-             entity_map_f[cells[1]], local_facet_minus])
+            [sm_f_to_msh[cells[0]], local_facet_plus,
+             sm_f_to_msh[cells[1]], local_facet_minus])
 facet_integration_entities = [
     (boundary_id["obstacle"], obstacle_facet_entities),
     (fluid_int_facets, fluid_int_facet_entities)]
