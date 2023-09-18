@@ -239,14 +239,19 @@ t_end = 1  # 5
 h = 0.04  # Maximum element diameter
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
+delta_t_write = t_end / 100  # How often to write to file
+g_y = -9.81  # Acceleration due to gravity
 
-delta_t_write = t_end / 100
-
-# Volume and boundary ids
-volume_id = {"fluid": 1,
-             "solid": 2}
-boundary_id = {"walls": 2,
-               "obstacle": 3}
+# Air
+mu = 1.825e-5  # Dynamic viscosity
+rho = 1.204  # Fluid density
+eps = 3.43e-3  # Thermal expansion coefficient
+f_T = 1e8  # Thermal source
+kappa_f = 0.02514  # Thermal conductivity of fluid
+kappa_s = 83.5  # Thermal conductivity of solid
+rho_s = 7860  # Solid density
+c_s = 462  # Solid specific heat
+c_f = 1007  # Fluid specific heat
 
 # Material parameters
 # Water
@@ -259,45 +264,32 @@ boundary_id = {"walls": 2,
 # rho_s = 7860  # Solid density
 # c_s = 462  # Solid specific heat
 # c_f = 4184  # Fluid specific heat
-# Air
-mu = 1.825e-5  # Dynamic viscosity
-rho = 1.204  # Fluid density
-g_y = -9.81
-eps = 3.43e-3  # Thermal expansion coefficient
-f_T = 1e8  # Thermal source
-kappa_f = 0.02514  # Thermal conductivity of fluid
-kappa_s = 83.5  # Thermal conductivity of solid
-rho_s = 7860  # Solid density
-c_s = 462  # Solid specific heat
-c_f = 1007  # Fluid specific heat
 
-nu = mu / rho  # Kinematic viscosity
+# Volume and boundary ids
+volume_id = {"fluid": 1,
+             "solid": 2}
+boundary_id = {"walls": 2,
+               "obstacle": 3}
 
 # Create mesh
 comm = MPI.COMM_WORLD
 msh, ct, ft, volume_id, boundary_id = generate_mesh(
     comm, h=h, cell_type=mesh.CellType.quadrilateral)
 
+# Acceleration due to gravity
 if msh.topology.dim == 3:
     g = as_vector((0.0, g_y, 0.0))
 else:
     g = as_vector((0.0, g_y))
 
-# with io.XDMFFile(msh.comm, "cyl_msh.xdmf", "w") as file:
-#     file.write_mesh(msh)
-#     file.write_meshtags(ct)
-#     file.write_meshtags(ft)
-
-# exit()
-
-# Create submeshes of fluid and solid domains
+# Create sub-meshes of fluid and solid domains
 tdim = msh.topology.dim
 submesh_f, entity_map_f = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
 submesh_s, entity_map_s = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
-# Convert meshtags to fluid submesh
+# Convert meshtags to fluid sub-mesh
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, entity_map_f, ft)
@@ -335,6 +327,7 @@ eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 f = - eps * rho * T_n * g
 
 # Create forms for fluid solver
+nu = mu / rho  # Kinematic viscosity
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
     facet_entity_map, solver_type, boundary_conditions,
