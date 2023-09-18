@@ -294,7 +294,7 @@ boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
 
 # Set up fluid solver
 scheme = hdg_navier_stokes.Scheme.DRW
-facet_mesh_f, facet_entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
+facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
 V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
 u_n = fem.Function(V_f)
@@ -309,12 +309,10 @@ T_s_n = fem.Function(Q_s)
 
 # Time step
 delta_t = t_end / num_time_steps  # TODO Make constant
-# Buoyancy force (taking rho as reference density)
-# TODO Figure out correct way of "linearising"
-# For buoyancy term, see
+# Buoyancy force (taking rho as reference density), see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
 # where I've omitted the rho g h part (can think of this is
-# lumping gravity in with pressure, see 2P4 notes) and taken
+# lumping gravity in with pressure, see 2P4) and taken
 # T_0 to be 0
 eps = fem.Constant(submesh_f, PETSc.ScalarType(eps))
 # Acceleration due to gravity
@@ -329,15 +327,17 @@ f = - eps * rho * T_n * g
 nu = mu / rho  # Kinematic viscosity
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
-    facet_entity_map, solver_type, boundary_conditions,
+    fm_f_to_sm_f, solver_type, boundary_conditions,
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
+# Set-up matrix for fluid problem
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
     A = fem.petsc.create_matrix_block(a)
 else:
     A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
     A.assemble()
 
+# Set-up functions for visualisation
 if scheme == hdg_navier_stokes.Scheme.RW:
     u_vis = fem.Function(V_f)
 else:
@@ -349,9 +349,6 @@ p_h = fem.Function(Q_f)
 p_h.name = "p"
 pbar_h = fem.Function(Qbar_f)
 pbar_h.name = "pbar"
-
-u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
-    V_f, Q_f, Vbar_f)
 
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
@@ -583,6 +580,8 @@ t = 0.0
 t_last_write = 0.0
 for vis_file in vis_files:
     vis_file.write(t)
+u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
+    V_f, Q_f, Vbar_f)
 for n in range(num_time_steps):
     t += delta_t.value
     par_print(comm, f"t = {t}")
