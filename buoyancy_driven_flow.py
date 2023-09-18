@@ -330,39 +330,6 @@ a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     fm_f_to_sm_f, solver_type, boundary_conditions,
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
-# Set-up matrix for fluid problem
-if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
-    A = fem.petsc.create_matrix_block(a)
-else:
-    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-    A.assemble()
-
-# Set-up functions for visualisation
-if scheme == hdg_navier_stokes.Scheme.RW:
-    u_vis = fem.Function(V_f)
-else:
-    V_vis = fem.VectorFunctionSpace(
-        submesh_f, ("Discontinuous Lagrange", k + 1))
-    u_vis = fem.Function(V_vis)
-u_vis.name = "u"
-p_h = fem.Function(Q_f)
-p_h.name = "p"
-pbar_h = fem.Function(Qbar_f)
-pbar_h.name = "pbar"
-
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-opts = PETSc.Options()
-opts["mat_mumps_icntl_6"] = 2
-opts["mat_mumps_icntl_14"] = 100
-ksp.setFromOptions()
-
-b = fem.petsc.create_vector_block(L)
-x = A.createVecRight()
-
 # Trial and test function for fluid temperature
 T, w = TrialFunction(Q), TestFunction(Q)
 # Trial and test funcitons for the solid temperature
@@ -569,6 +536,41 @@ ksp_T.setType("preonly")
 ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
+
+# Set-up matrix for fluid problem
+if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
+
+# Set-up functions for visualisation
+if scheme == hdg_navier_stokes.Scheme.RW:
+    u_vis = fem.Function(V_f)
+else:
+    V_vis = fem.VectorFunctionSpace(
+        submesh_f, ("Discontinuous Lagrange", k + 1))
+    u_vis = fem.Function(V_vis)
+u_vis.name = "u"
+p_h = fem.Function(Q_f)
+p_h.name = "p"
+pbar_h = fem.Function(Qbar_f)
+pbar_h.name = "pbar"
+
+# Set-up solver for fluid problem
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+ksp.getPC().setFactorSolverType("mumps")
+opts = PETSc.Options()
+opts["mat_mumps_icntl_6"] = 2
+opts["mat_mumps_icntl_14"] = 100
+ksp.setFromOptions()
+
+# Create vectors
+b = fem.petsc.create_vector_block(L)
+x = A.createVecRight()
 
 # Set up files for visualisation
 vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
