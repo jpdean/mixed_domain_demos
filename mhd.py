@@ -62,21 +62,16 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     # Permeability
     mu = fem.Constant(msh, mu)
 
-    tdim = msh.topology.dim
-    fdim = tdim - 1
-
+    # Create integration entities
     cell_boundaries = 0
     cell_boundary_facets = compute_cell_boundary_integration_entities(
         submesh_f)
-
     ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
-
-    with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
-        file.write_mesh(submesh_f)
-        file.write_meshtags(ft_f)
     facet_integration_entities = [(cell_boundaries, cell_boundary_facets)]
     facet_integration_entities += compute_integration_domains(
         fem.IntegralType.exterior_facet, ft_f._cpp_object)
+
+    # Define integration measures
     dx_c = ufl.Measure("dx", domain=submesh_f)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
@@ -121,6 +116,9 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(submesh_f, PETSc.ScalarType(nu))
+
+    tdim = msh.topology.dim
+    fdim = tdim - 1
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
