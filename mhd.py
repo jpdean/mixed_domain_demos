@@ -53,16 +53,6 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     # Create function space for coefficients
     V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
 
-    # Conductivity
-    sigma = fem.Function(V_coeff)
-    sigma.interpolate(
-        lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
-    sigma.interpolate(
-        lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
-
-    # Permeability
-    mu = fem.Constant(msh, mu)
-
     # Create integration entities
     cell_boundaries = 0
     cell_boundary_facets = compute_cell_boundary_integration_entities(
@@ -93,21 +83,10 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     entity_maps = {facet_mesh_f: sm_f_to_fm_f,
                    msh: sm_f_to_msh}
 
-    # Cell and facet velocities at previous time step
-    u_n = fem.Function(V)
-    ubar_n = fem.Function(Vbar)
-
-    # Interpolate initial condition
-    u_n.interpolate(u_i_expr)
-    ubar_n.interpolate(u_i_expr)
-
     # Trial and test functions for the magnetic vector potential
     A, phi = TrialFunction(X), TestFunction(X)
     A_h = fem.Function(X)
     A_n = fem.Function(X)
-
-    # Externally applied magnetic induction
-    B_0 = as_vector((0, 1, 0))
 
     # Trial and test functions
     u, v = ufl.TrialFunction(V),  ufl.TestFunction(V)
@@ -116,6 +95,12 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
 
     # Define forms
+    # Cell and facet velocities at previous time step
+    u_n = fem.Function(V)
+    ubar_n = fem.Function(Vbar)
+    # Interpolate initial condition
+    u_n.interpolate(u_i_expr)
+    ubar_n.interpolate(u_i_expr)
     h = ufl.CellDiameter(submesh_f)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(submesh_f)
     gamma = 64.0 * k**2 / h  # Scaled penalty param
@@ -123,6 +108,16 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(submesh_f, PETSc.ScalarType(nu))
+    # Conductivity
+    sigma = fem.Function(V_coeff)
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
+    sigma.interpolate(
+        lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
+    # Permeability
+    mu = fem.Constant(msh, mu)
+    # Externally applied magnetic induction
+    B_0 = as_vector((0, 1, 0))
 
     # Left-hand side diffusive terms
     a_00 = inner(u / delta_t, v) * dx_c \
