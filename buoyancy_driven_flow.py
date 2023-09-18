@@ -285,11 +285,6 @@ submesh_f, sm_f_to_msh = mesh.create_submesh(
 submesh_s, sm_s_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
-# Convert meshtags to fluid sub-mesh
-fdim = tdim - 1
-submesh_f.topology.create_connectivity(fdim, tdim)
-ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
-
 # Define boundary conditions for fluid solver
 boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
@@ -330,6 +325,9 @@ delta_t = t_end / num_time_steps  # TODO Make constant
 
 # Create forms for fluid solver
 nu = mu / rho  # Kinematic viscosity
+fdim = tdim - 1
+submesh_f.topology.create_connectivity(fdim, tdim)
+ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
     fm_f_to_sm_f, solver_type, boundary_conditions,
