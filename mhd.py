@@ -81,6 +81,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh_f)
 
+    # Create entity maps
     tdim = msh.topology.dim
     fdim = tdim - 1
     facet_imap_sm_f = msh.topology.index_map(fdim)
@@ -90,9 +91,12 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     entity_maps = {facet_mesh_f: sm_f_to_fm_f,
                    msh: sm_f_to_msh}
 
+    # Cell and facet velocities at previous time step
     u_n = fem.Function(V)
-    u_n.interpolate(u_i_expr)
     ubar_n = fem.Function(Vbar)
+
+    # Interpolate initial condition
+    u_n.interpolate(u_i_expr)
     ubar_n.interpolate(u_i_expr)
 
     # Trial and test functions for the magnetic vector potential
@@ -100,16 +104,13 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     A_h = fem.Function(X)
     A_n = fem.Function(X)
 
+    # Externally applied magnetic induction
     B_0 = as_vector((0, 1, 0))
 
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    p = ufl.TrialFunction(Q)
-    q = ufl.TestFunction(Q)
-    ubar = ufl.TrialFunction(Vbar)
-    vbar = ufl.TestFunction(Vbar)
-    pbar = ufl.TrialFunction(Qbar)
-    qbar = ufl.TestFunction(Qbar)
+    u, v = ufl.TrialFunction(V),  ufl.TestFunction(V)
+    p, q = ufl.TrialFunction(Q), ufl.TestFunction(Q)
+    ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
+    pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
 
     h = ufl.CellDiameter(submesh_f)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(submesh_f)
