@@ -128,7 +128,8 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
         - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries) \
-        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries) \
+        + nu * gamma * inner(outer(u, n),
+                             outer(v, n)) * ds_c(cell_boundaries) \
         - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
@@ -182,10 +183,16 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         entity_maps={msh: sm_f_to_msh})
 
     # Right-hand side terms
+    L_0 = inner(f + u_n / delta_t, v) * dx_c \
+        + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c \
+        + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c \
+        + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c
+    L_1 = inner(fem.Constant(msh, 0.0), q) * dx_c
     L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0)
                                          for i in range(tdim)]),
                 vbar) * ds_c(cell_boundaries)
-    L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
+    L_3 = inner(fem.Constant(facet_mesh_f, PETSc.ScalarType(0.0)), qbar) * dx_f
+    L_4 = inner(sigma * A_n / delta_t, phi) * dx
 
     # Boundary conditions
     bcs = []
@@ -217,22 +224,19 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         dofs = fem.locate_dofs_topological(X, fdim, facets)
         bcs.append(fem.dirichletbc(bc_func, dofs))
 
+    # Compile forms
     a_00 = fem.form(a_00)
     a_02 = fem.form(a_02, entity_maps=entity_maps)
     a_20 = fem.form(a_20, entity_maps=entity_maps)
     a_22 = fem.form(a_22, entity_maps=entity_maps)
 
-    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c
-                   + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
-                   + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
-                   + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c,
-                   entity_maps={msh: sm_f_to_msh})
-
-    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
+    L_0 = fem.form(L_0, entity_maps={msh: sm_f_to_msh})
+    L_1 = fem.form(L_1)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
-    L_3 = fem.form(inner(fem.Constant(
-        facet_mesh_f, PETSc.ScalarType(0.0)), qbar) * dx_f)
+    L_3 = fem.form(L_3)
+    L_4 = fem.form(L_4)
 
+    # Define block structure
     a = [[a_00, a_01, a_02, a_03, a_04],
          [a_10, None, None, None, None],
          [a_20, None, a_22, a_23, None],
