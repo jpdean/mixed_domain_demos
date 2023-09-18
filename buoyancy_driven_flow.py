@@ -292,7 +292,7 @@ boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
 # Create function spaces for fluid problem
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
-V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
+V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
 
 # Function spaces for fluid and solid temperature
@@ -300,8 +300,8 @@ W_f = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
 W_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
 
 # Cell and facet velocities at previous time step
-u_n = fem.Function(V_f)
-ubar_n = fem.Function(Vbar_f)
+u_n = fem.Function(V)
+ubar_n = fem.Function(Vbar)
 # Fluid and solid temperature at previous time step
 T_n = fem.Function(W_f)
 T_s_n = fem.Function(W_s)
@@ -329,7 +329,7 @@ fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
-    V_f, Q_f, Vbar_f, Qbar_f, submesh_f, k, delta_t, nu,
+    V, Q, Vbar, Qbar, submesh_f, k, delta_t, nu,
     fm_f_to_sm_f, solver_type, boundary_conditions,
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
@@ -518,15 +518,15 @@ ksp.setFromOptions()
 
 # Set-up functions for visualisation
 if scheme == hdg_navier_stokes.Scheme.RW:
-    u_vis = fem.Function(V_f)
+    u_vis = fem.Function(V)
 else:
     V_vis = fem.VectorFunctionSpace(
         submesh_f, ("Discontinuous Lagrange", k + 1))
     u_vis = fem.Function(V_vis)
 u_vis.name = "u"
-p_h = fem.Function(Q_f)
+p_h = fem.Function(Q)
 p_h.name = "p"
-pbar_h = fem.Function(Qbar_f)
+pbar_h = fem.Function(Qbar)
 pbar_h.name = "pbar"
 
 # Set up files for visualisation
@@ -540,7 +540,7 @@ t_last_write = 0.0
 for vis_file in vis_files:
     vis_file.write(t)
 u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
-    V_f, Q_f, Vbar_f)
+    V, Q, Vbar)
 for n in range(num_time_steps):
     t += delta_t.value
     par_print(comm, f"t = {t}")
