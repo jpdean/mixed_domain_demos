@@ -355,7 +355,7 @@ entity_maps = {submesh_f: msh_to_sm_f,
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
-fluid_int_facets = 7  # FIXME Don't hardcode
+fluid_int_facets = 3
 # facet_integration_entities = {boundary_id["obstacle"]: [],
 #                               fluid_int_facets: []}
 facet_imap = msh.topology.index_map(fdim)
