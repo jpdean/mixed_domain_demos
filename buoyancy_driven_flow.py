@@ -404,6 +404,8 @@ kappa_w_f = kappa_s / (kappa_f + kappa_s)
 kappa_w_s = kappa_f / (kappa_f + kappa_s)
 
 # Define forms for the thermal problem
+# FIXME Refactor cg_dg_advec_diffusion.py and use forms in this code to avoid
+# duplication
 a_T_00 = inner(rho * c_f * T_f / delta_t, w_f) * dx_T(volume_id["fluid"]) + \
     rho * c_f * (- inner(u_h * T_f, grad(w_f)) * dx_T(volume_id["fluid"]) +
                  inner(lmbda_T("+") * dot(u_h("+"), n_T("+")) * T_f("+") -
