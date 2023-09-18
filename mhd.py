@@ -21,19 +21,13 @@ from dolfinx import mesh, fem, io
 from dolfinx.io import gmshio
 from hdg_navier_stokes import BCType
 from petsc4py import PETSc
-from utils import norm_L2, normal_jump_error, convert_facet_tags
+from utils import norm_L2, normal_jump_error, convert_facet_tags, par_print
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
 import sys
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
-
-
-def par_print(string):
-    if comm.rank == 0:
-        print(string)
-        sys.stdout.flush()
 
 
 class Channel(hdg_navier_stokes.Problem):
@@ -460,7 +454,7 @@ def solve(solver_type, k, nu, num_time_steps,
         vis_file.write(t)
     for n in range(num_time_steps):
         t += delta_t.value
-        par_print(f"t = {t}")
+        par_print(comm, f"t = {t}")
 
         for bc_func, bc_expr in bc_funcs:
             if isinstance(bc_expr, TimeDependentExpression):
@@ -505,10 +499,10 @@ def solve(solver_type, k, nu, num_time_steps,
 
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(fluid_sm, u_n)
-    par_print(f"e_div_u = {e_div_u}")
-    par_print(f"e_jump_u = {e_jump_u}")
+    par_print(comm, f"e_div_u = {e_div_u}")
+    par_print(comm, f"e_jump_u = {e_jump_u}")
 
-    par_print(x.norm())
+    par_print(comm, x.norm())
 
 
 if __name__ == "__main__":
