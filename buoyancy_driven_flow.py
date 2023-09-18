@@ -490,6 +490,16 @@ L_T = [L_T_0, L_T_1]
 A_T = fem.petsc.create_matrix_block(a_T)
 b_T = fem.petsc.create_vector_block(L_T)
 
+# Set-up matrix and vectors for fluid problem
+if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
+    A = fem.petsc.create_matrix_block(a)
+else:
+    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A.assemble()
+b = fem.petsc.create_vector_block(L)
+x = A.createVecRight()
+
+# Set-up solver for thermal problem
 ksp_T = PETSc.KSP().create(msh.comm)
 ksp_T.setOperators(A_T)
 ksp_T.setType("preonly")
@@ -497,12 +507,16 @@ ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
 
-# Set-up matrix for fluid problem
-if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
-    A = fem.petsc.create_matrix_block(a)
-else:
-    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
-    A.assemble()
+# Set-up solver for fluid problem
+ksp = PETSc.KSP().create(msh.comm)
+ksp.setOperators(A)
+ksp.setType("preonly")
+ksp.getPC().setType("lu")
+ksp.getPC().setFactorSolverType("mumps")
+opts = PETSc.Options()
+opts["mat_mumps_icntl_6"] = 2
+opts["mat_mumps_icntl_14"] = 100
+ksp.setFromOptions()
 
 # Set-up functions for visualisation
 if scheme == hdg_navier_stokes.Scheme.RW:
@@ -516,21 +530,6 @@ p_h = fem.Function(Q_f)
 p_h.name = "p"
 pbar_h = fem.Function(Qbar_f)
 pbar_h.name = "pbar"
-
-# Set-up solver for fluid problem
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-opts = PETSc.Options()
-opts["mat_mumps_icntl_6"] = 2
-opts["mat_mumps_icntl_14"] = 100
-ksp.setFromOptions()
-
-# Create vectors
-b = fem.petsc.create_vector_block(L)
-x = A.createVecRight()
 
 # Set up files for visualisation
 vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
@@ -548,6 +547,7 @@ for n in range(num_time_steps):
     t += delta_t.value
     par_print(comm, f"t = {t}")
 
+    # Assemble Navier--Stokes problem
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
         fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
@@ -557,9 +557,10 @@ for n in range(num_time_steps):
         b_loc.set(0)
     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-    # Compute solution
+    # Compute Navier--Stokes solution
     ksp.solve(b, x)
 
+    # Recover Navier--Stokes solution
     u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
     p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -570,10 +571,8 @@ for n in range(num_time_steps):
     pbar_h.x.array[:(len(x.array_r) - ubar_offset)
                    ] = x.array_r[ubar_offset:]
     pbar_h.x.scatter_forward()
-    # TODO
-    # if len(neumann_bcs) == 0:
-    #     p_h.x.array[:] -= domain_average(submesh_f, p_h)
 
+    # Assemble thermal problem
     A_T.zeroEntries()
     fem.petsc.assemble_matrix_block(A_T, a_T)
     A_T.assemble()
@@ -582,15 +581,20 @@ for n in range(num_time_steps):
         b_T_loc.set(0)
     fem.petsc.assemble_vector_block(b_T, L_T, a_T)
 
+    # Solver thermal problem
     ksp_T.solve(b_T, x_T)
+
+    # Recover thermal solution
     offset_T = Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
     T_n.x.array[:offset_T] = x_T.array_r[:offset_T]
     T_n.x.scatter_forward()
     T_s_n.x.array[:(len(x_T.array_r) - offset_T)] = x_T.array_r[offset_T:]
     T_s_n.x.scatter_forward()
 
+    # Interpolate for visualisation
     u_vis.interpolate(u_n)
 
+    # Write solution to file
     if t - t_last_write > delta_t_write or \
             n == num_time_steps - 1:
         for vis_file in vis_files:
