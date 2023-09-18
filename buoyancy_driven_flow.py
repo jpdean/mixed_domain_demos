@@ -341,16 +341,17 @@ T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 # Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
 
-# Create entity maps
+# Create entity maps for the thermal problem
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
-inv_entity_map_f = np.full(num_cells, -1)
-inv_entity_map_f[sm_f_to_msh] = np.arange(len(sm_f_to_msh))
-inv_entity_map_s = np.full(num_cells, -1)
-inv_entity_map_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
-entity_maps = {submesh_f: inv_entity_map_f,
-               submesh_s: inv_entity_map_s}
+msh_to_sm_f = np.full(num_cells, -1)
+msh_to_sm_f[sm_f_to_msh] = np.arange(len(sm_f_to_msh))
+msh_to_sm_s = np.full(num_cells, -1)
+msh_to_sm_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
+entity_maps = {submesh_f: msh_to_sm_f,
+               submesh_s: msh_to_sm_s}
 
+# Create integration measures
 dx_T = Measure("dx", domain=msh, subdomain_data=ct)
 ds_T = Measure("ds", domain=msh, subdomain_data=ft)
 
