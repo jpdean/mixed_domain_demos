@@ -309,7 +309,12 @@ ubar_n = fem.Function(Vbar)
 T_f_n = fem.Function(W_f)
 T_s_n = fem.Function(W_s)
 
-# Buoyancy force (taking rho as reference density), see
+# Time step
+delta_t = t_end / num_time_steps  # TODO Make constant
+
+
+# Create forms for Navier-Stokes solver. We begin by defining the
+# buoyancy force (taking rho as reference density), see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
 # where I've omitted the rho g h part (can think of this is
 # lumping gravity in with pressure, see 2P4) and taken
@@ -322,11 +327,6 @@ else:
     g = as_vector((0.0, g_y))
 # Buoyancy force
 f = - eps * rho * T_f_n * g
-
-# Time step
-delta_t = t_end / num_time_steps  # TODO Make constant
-
-# Create forms for Navier-Stokes solver
 nu = mu / rho  # Kinematic viscosity
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
