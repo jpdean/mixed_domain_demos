@@ -21,7 +21,8 @@ from dolfinx import mesh, fem, io
 from dolfinx.io import gmshio
 from hdg_navier_stokes import BCType
 from petsc4py import PETSc
-from utils import norm_L2, normal_jump_error, convert_facet_tags, par_print
+from utils import (norm_L2, normal_jump_error, convert_facet_tags, par_print,
+                   compute_cell_boundary_integration_entities)
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
@@ -64,19 +65,16 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     tdim = msh.topology.dim
     fdim = tdim - 1
 
-    all_facets_tag = 0
-    all_facets = []
-    num_cell_facets = cell_num_entities(submesh_f.topology.cell_type, fdim)
-    for cell in range(submesh_f.topology.index_map(tdim).size_local):
-        for local_facet in range(num_cell_facets):
-            all_facets.extend([cell, local_facet])
+    cell_boundaries = 0
+    cell_boundary_facets = compute_cell_boundary_integration_entities(
+        submesh_f)
 
     ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 
     with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
         file.write_mesh(submesh_f)
         file.write_meshtags(ft_f)
-    facet_integration_entities = [(all_facets_tag, all_facets)]
+    facet_integration_entities = [(cell_boundaries, cell_boundary_facets)]
     facet_integration_entities += compute_integration_domains(
         fem.IntegralType.exterior_facet, ft_f._cpp_object)
     dx_c = ufl.Measure("dx", domain=submesh_f)
@@ -126,46 +124,46 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
-        - nu * inner(grad(u), outer(v, n)) * ds_c(all_facets_tag) \
-        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(all_facets_tag) \
-        - nu * inner(outer(u, n), grad(v)) * ds_c(all_facets_tag)
+        - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries) \
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries) \
+        - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries)
     a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
                     grad(v)) * dx_c)
     a_02 = - nu * gamma * inner(
-        outer(ubar, n), outer(v, n)) * ds_c(all_facets_tag) \
-        + nu * inner(outer(ubar, n), grad(v)) * ds_c(all_facets_tag)
+        outer(ubar, n), outer(v, n)) * ds_c(cell_boundaries) \
+        + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries)
     a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
-                          outer(v, n)) * ds_c(all_facets_tag),
+                          outer(v, n)) * ds_c(cell_boundaries),
                     entity_maps=entity_maps)
     a_10 = fem.form(inner(u, grad(q)) * dx_c -
-                    inner(dot(u, n), q) * ds_c(all_facets_tag))
-    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(all_facets_tag) \
+                    inner(dot(u, n), q) * ds_c(cell_boundaries))
+    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(cell_boundaries) \
         + nu * gamma * inner(outer(u, n), outer(vbar, n)
-                             ) * ds_c(all_facets_tag)
+                             ) * ds_c(cell_boundaries)
     a_30 = fem.form(inner(dot(u, n), qbar) *
-                    ds_c(all_facets_tag), entity_maps=entity_maps)
+                    ds_c(cell_boundaries), entity_maps=entity_maps)
     a_23 = fem.form(
         inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
-        ds_c(all_facets_tag),
+        ds_c(cell_boundaries),
         entity_maps=entity_maps)
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
     a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
                     entity_maps=entity_maps)
     a_22 = - nu * gamma * \
-        inner(outer(ubar, n), outer(vbar, n)) * ds_c(all_facets_tag)
+        inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries)
 
     if solver_type == SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
-            + inner(outer(u, u_n), outer(v, n)) * ds_c(all_facets_tag) \
-            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(all_facets_tag)
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries) \
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries)
         a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
-            ds_c(all_facets_tag)
-        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(all_facets_tag) \
+            ds_c(cell_boundaries)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(cell_boundaries) \
             - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
-            ds_c(all_facets_tag)
+            ds_c(cell_boundaries)
         a_22 += inner(outer(ubar, lmbda * u_n),
-                      outer(vbar, n)) * ds_c(all_facets_tag)
+                      outer(vbar, n)) * ds_c(cell_boundaries)
 
     # Using linearised version in sec. 3.6.3 in
     # https://academic.oup.com/book/5953/chapter/149296535?login=true
@@ -185,7 +183,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
 
     L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0)
                                         for i in range(tdim)]),
-                vbar) * ds_c(all_facets_tag)
+                vbar) * ds_c(cell_boundaries)
 
     # NOTE: Don't set pressure BC to avoid affecting conservation properties.
     # MUMPS seems to cope with the small nullspace
