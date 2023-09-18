@@ -233,24 +233,20 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
 def zero(x): return np.zeros_like(x[:msh.topology.dim])
 
 
-volume_id = {"fluid": 1,
-             "solid": 2}
-
-boundary_id = {"walls": 2,
-               "obstacle": 3}
-
-# We define some simulation parameters
-# num_time_steps = 1280
-# t_end = 5
-num_time_steps = 5
-t_end = 1
-h = 0.04
+# Simulation parameters
+num_time_steps = 5  # 1280
+t_end = 1  # 5
+h = 0.04  # Maximum element diameter
 k = 2  # Polynomial degree
 solver_type = hdg_navier_stokes.SolverType.NAVIER_STOKES
-gamma_int = 32  # Penalty param for temperature on interface
-alpha = 32.0 * k**2  # Penalty param for DG temp solver
 
 delta_t_write = t_end / 100
+
+# Volume and boundary ids
+volume_id = {"fluid": 1,
+             "solid": 2}
+boundary_id = {"walls": 2,
+               "obstacle": 3}
 
 # Material parameters
 # Water
@@ -383,16 +379,6 @@ T, w = TrialFunction(Q), TestFunction(Q)
 # Trial and test funcitons for the solid temperature
 T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
 
-# Convert to Constants
-delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
-alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
-gamma_int = fem.Constant(msh, PETSc.ScalarType(gamma_int))
-kappa_f = fem.Constant(msh, PETSc.ScalarType(kappa_f))
-kappa_s = fem.Constant(msh, PETSc.ScalarType(kappa_s))
-rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
-c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
-c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
-
 # Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
 
@@ -486,9 +472,21 @@ dS_T = Measure("dS", domain=msh,
 h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
+gamma_int = 32  # Penalty param for temperature on interface
+alpha = 32.0 * k**2  # Penalty param for DG temp solver
 
 # Fluid velocity at current time step
 u_h = u_n.copy()
+
+# Convert to Constants
+delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
+alpha = fem.Constant(msh, PETSc.ScalarType(alpha))
+gamma_int = fem.Constant(msh, PETSc.ScalarType(gamma_int))
+kappa_f = fem.Constant(msh, PETSc.ScalarType(kappa_f))
+kappa_s = fem.Constant(msh, PETSc.ScalarType(kappa_s))
+rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
+c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
+c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
 # Jump in kappa at interface dealt with using approach in DiPietro
 # p. 150 sec 4.5
