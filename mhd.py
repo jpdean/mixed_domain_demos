@@ -58,20 +58,8 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     sigma.interpolate(
         lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
 
-    # Permiability
+    # Permeability
     mu = fem.Constant(msh, mu)
-
-    u_n = fem.Function(V)
-    u_n.interpolate(u_i_expr)
-    ubar_n = fem.Function(Vbar)
-    ubar_n.interpolate(u_i_expr)
-
-    # Trial and test functions for the magnetic vector potential
-    A, phi = TrialFunction(X), TestFunction(X)
-    A_h = fem.Function(X)
-    A_n = fem.Function(X)
-
-    B_0 = as_vector((0, 1, 0))
 
     tdim = msh.topology.dim
     fdim = tdim - 1
@@ -106,6 +94,18 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
 
     entity_maps = {facet_mesh_f: inv_entity_map,
                    msh: sm_f_to_msh}
+
+    u_n = fem.Function(V)
+    u_n.interpolate(u_i_expr)
+    ubar_n = fem.Function(Vbar)
+    ubar_n.interpolate(u_i_expr)
+
+    # Trial and test functions for the magnetic vector potential
+    A, phi = TrialFunction(X), TestFunction(X)
+    A_h = fem.Function(X)
+    A_n = fem.Function(X)
+
+    B_0 = as_vector((0, 1, 0))
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
