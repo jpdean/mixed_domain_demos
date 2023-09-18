@@ -36,9 +36,13 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     submesh_f, sm_f_to_msh = mesh.create_submesh(
         msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
 
-    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
+    # Create a facet sub-mesh of the fluid sub-mesh for the HDG Navier-Stokes
+    # solver
+    facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
+
+    # Create function spaces for Navier-Stokes solver
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
-        submesh_f, facet_mesh, scheme, k)
+        submesh_f, facet_mesh_f, scheme, k)
 
     V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
     sigma = fem.Function(V_coeff)
@@ -89,13 +93,13 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     ds_c = ufl.Measure(
         "ds", subdomain_data=facet_integration_entities, domain=submesh_f,
         metadata={"quadrature_degree": quad_deg})
-    dx_f = ufl.Measure("dx", domain=facet_mesh)
+    dx_f = ufl.Measure("dx", domain=facet_mesh_f)
 
-    inv_entity_map = np.full_like(entity_map, -1)
-    for i, facet in enumerate(entity_map):
+    inv_entity_map = np.full_like(fm_f_to_sm_f, -1)
+    for i, facet in enumerate(fm_f_to_sm_f):
         inv_entity_map[facet] = i
 
-    entity_maps = {facet_mesh: inv_entity_map,
+    entity_maps = {facet_mesh_f: inv_entity_map,
                    msh: sm_f_to_msh}
 
     u = ufl.TrialFunction(V)
@@ -223,7 +227,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
     L_3 = fem.form(inner(fem.Constant(
-        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
+        facet_mesh_f, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
     a = [[a_00, a_01, a_02, a_03, a_04],
          [a_10, None, None, None, None],
