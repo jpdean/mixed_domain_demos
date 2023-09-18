@@ -29,17 +29,16 @@ from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 
 
-def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, ct, ft, volumes, boundaries,
-          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
-          mu, u_e=None, p_e=None):
-
-    fluid_sm, fluid_sm_ent_map = mesh.create_submesh(
+def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
+          volumes, boundaries, boundary_conditions, f, u_i_expr, sigma_s,
+          sigma_f, mu):
+    # Create a sub-mesh of the fluid region
+    submesh_f, sm_f_to_msh = mesh.create_submesh(
         msh, msh.topology.dim, ct.find(volumes["fluid"]))[:2]
 
-    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(fluid_sm)
+    facet_mesh, entity_map = hdg_navier_stokes.create_facet_mesh(submesh_f)
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
-        fluid_sm, facet_mesh, scheme, k)
+        submesh_f, facet_mesh, scheme, k)
 
     V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
     sigma = fem.Function(V_coeff)
@@ -70,25 +69,25 @@ def solve(solver_type, k, nu, num_time_steps,
 
     all_facets_tag = 0
     all_facets = []
-    num_cell_facets = cell_num_entities(fluid_sm.topology.cell_type, fdim)
-    for cell in range(fluid_sm.topology.index_map(tdim).size_local):
+    num_cell_facets = cell_num_entities(submesh_f.topology.cell_type, fdim)
+    for cell in range(submesh_f.topology.index_map(tdim).size_local):
         for local_facet in range(num_cell_facets):
             all_facets.extend([cell, local_facet])
 
-    ft_f = convert_facet_tags(msh, fluid_sm, fluid_sm_ent_map, ft)
+    ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 
     with io.XDMFFile(msh.comm, "sm.xdmf", "w") as file:
-        file.write_mesh(fluid_sm)
+        file.write_mesh(submesh_f)
         file.write_meshtags(ft_f)
     facet_integration_entities = [(all_facets_tag, all_facets)]
     facet_integration_entities += compute_integration_domains(
         fem.IntegralType.exterior_facet, ft_f._cpp_object)
-    dx_c = ufl.Measure("dx", domain=fluid_sm)
+    dx_c = ufl.Measure("dx", domain=submesh_f)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
     quad_deg = (k + 1)**2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=fluid_sm,
+        "ds", subdomain_data=facet_integration_entities, domain=submesh_f,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
@@ -97,7 +96,7 @@ def solve(solver_type, k, nu, num_time_steps,
         inv_entity_map[facet] = i
 
     entity_maps = {facet_mesh: inv_entity_map,
-                   msh: fluid_sm_ent_map}
+                   msh: sm_f_to_msh}
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
@@ -108,13 +107,13 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar = ufl.TrialFunction(Qbar)
     qbar = ufl.TestFunction(Qbar)
 
-    h = ufl.CellDiameter(fluid_sm)  # TODO Fix for high order geom!
-    n = ufl.FacetNormal(fluid_sm)
+    h = ufl.CellDiameter(submesh_f)  # TODO Fix for high order geom!
+    n = ufl.FacetNormal(submesh_f)
     gamma = 64.0 * k**2 / h  # TODO Should be larger in 3D
 
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
-    nu = fem.Constant(fluid_sm, PETSc.ScalarType(nu))
+    nu = fem.Constant(submesh_f, PETSc.ScalarType(nu))
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
@@ -166,16 +165,16 @@ def solve(solver_type, k, nu, num_time_steps,
                     + inner(1 / mu * curl(A), curl(phi)) * dx)
     a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
                     + inner(sigma * cross(curl(A_n), u), phi) * dx_c,
-                    entity_maps={msh: fluid_sm_ent_map})
+                    entity_maps={msh: sm_f_to_msh})
     a_04 = fem.form(
         inner(sigma * A / delta_t, cross(curl(A_n), v)) * dx_c
         - inner(sigma * cross(u_n, curl(A)), cross(curl(A_n), v)) * dx_c
         + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c,
-        entity_maps={msh: fluid_sm_ent_map})
+        entity_maps={msh: sm_f_to_msh})
 
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
-    L_2 = inner(fem.Constant(fluid_sm, [PETSc.ScalarType(0.0)
+    L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0)
                                         for i in range(tdim)]),
                 vbar) * ds_c(all_facets_tag)
 
@@ -219,7 +218,7 @@ def solve(solver_type, k, nu, num_time_steps,
                    + inner(sigma * A_n / delta_t, cross(curl(A_n), v)) * dx_c
                    + inner(sigma * A_n / delta_t, cross(B_0, v)) * dx_c
                    + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c,
-                   entity_maps={msh: fluid_sm_ent_map})
+                   entity_maps={msh: sm_f_to_msh})
 
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
@@ -243,7 +242,7 @@ def solve(solver_type, k, nu, num_time_steps,
         u_vis = fem.Function(V)
     else:
         V_vis = fem.VectorFunctionSpace(
-            fluid_sm, ("Discontinuous Lagrange", k + 1))
+            submesh_f, ("Discontinuous Lagrange", k + 1))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -332,7 +331,7 @@ def solve(solver_type, k, nu, num_time_steps,
         vis_file.close()
 
     e_div_u = norm_L2(msh.comm, div(u_n))
-    e_jump_u = normal_jump_error(fluid_sm, u_n)
+    e_jump_u = normal_jump_error(submesh_f, u_n)
     par_print(comm, f"e_div_u = {e_div_u}")
     par_print(comm, f"e_jump_u = {e_jump_u}")
 
