@@ -25,174 +25,8 @@ from utils import norm_L2, normal_jump_error, convert_facet_tags, par_print
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
-import sys
 from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
-
-
-class Channel(hdg_navier_stokes.Problem):
-    def create_mesh(self, n_x, n_y, n_z, n_s_y, cell_type):
-        comm = MPI.COMM_WORLD
-
-        volumes = {"solid": 1,
-                   "fluid": 2}
-
-        boundaries = {"solid_x_walls": 1,
-                      "solid_y_walls": 2,
-                      "solid_z_walls": 3,
-                      "fluid_y_walls": 4,
-                      "fluid_z_walls": 5,
-                      "inlet": 6,
-                      "outlet": 7}
-
-        gmsh.initialize()
-        if comm.rank == 0:
-            # TODO Pass options
-            gmsh.model.add("channel")
-            order = 1
-
-            # Fluid domain x, y, and z lengths
-            L_x = 10
-            L_y = 1
-            L_z = 1
-            wall_thickness = 0.1
-            domain_points = [gmsh.model.geo.addPoint(0, - wall_thickness, 0),
-                             gmsh.model.geo.addPoint(L_x, - wall_thickness, 0),
-                             gmsh.model.geo.addPoint(
-                                 L_x, L_y + wall_thickness, 0),
-                             gmsh.model.geo.addPoint(
-                0, L_y + wall_thickness, 0)]
-            fluid_points = [gmsh.model.geo.addPoint(0, 0, 0),
-                            gmsh.model.geo.addPoint(L_x, 0, 0),
-                            gmsh.model.geo.addPoint(L_x, L_y, 0),
-                            gmsh.model.geo.addPoint(0, L_y, 0)]
-
-            wall_0_lines = [gmsh.model.geo.addLine(
-                domain_points[0], domain_points[1]),
-                gmsh.model.geo.addLine(
-                domain_points[1], fluid_points[1]),
-                gmsh.model.geo.addLine(
-                fluid_points[1], fluid_points[0]),
-                gmsh.model.geo.addLine(
-                fluid_points[0], domain_points[0]),
-            ]
-            fluid_lines = [- wall_0_lines[2],
-                           gmsh.model.geo.addLine(
-                               fluid_points[1], fluid_points[2]),
-                           gmsh.model.geo.addLine(
-                               fluid_points[2], fluid_points[3]),
-                           gmsh.model.geo.addLine(
-                fluid_points[3], fluid_points[0])]
-
-            wall_1_lines = [- fluid_lines[2],
-                            gmsh.model.geo.addLine(
-                                fluid_points[2], domain_points[2]),
-                            gmsh.model.geo.addLine(
-                                domain_points[2], domain_points[3]),
-                            gmsh.model.geo.addLine(
-                domain_points[3], fluid_points[3])]
-
-            wall_0_loop = gmsh.model.geo.addCurveLoop(wall_0_lines)
-            fluid_loop = gmsh.model.geo.addCurveLoop(fluid_lines)
-            wall_1_loop = gmsh.model.geo.addCurveLoop(wall_1_lines)
-
-            wall_0_surf = gmsh.model.geo.addPlaneSurface([wall_0_loop])
-            fluid_surf = gmsh.model.geo.addPlaneSurface([fluid_loop])
-            wall_1_surf = gmsh.model.geo.addPlaneSurface([wall_1_loop])
-
-            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[0], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[1], n_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[2], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[3], n_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteSurface(fluid_surf, "Left")
-
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[0], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[1], n_s_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[2], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[3], n_s_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteSurface(wall_0_surf, "Left")
-
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[0], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[1], n_s_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[2], n_x + 1)
-            gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[3], n_s_y + 1)
-            gmsh.model.geo.mesh.setTransfiniteSurface(wall_1_surf, "Left")
-
-            if cell_type == mesh.CellType.tetrahedron:
-                recombine = False
-            else:
-                recombine = True
-            extrude_surfs = [(2, wall_0_surf),
-                             (2, fluid_surf), (2, wall_1_surf)]
-            gmsh.model.geo.extrude(
-                extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
-
-            gmsh.model.geo.synchronize()
-
-            gmsh.model.addPhysicalGroup(3, [1, 3], volumes["solid"])
-            gmsh.model.addPhysicalGroup(3, [2], volumes["fluid"])
-
-            gmsh.model.addPhysicalGroup(
-                2, [23, 31, 67, 75], boundaries["solid_x_walls"])
-            gmsh.model.addPhysicalGroup(
-                2, [19, 71], boundaries["solid_y_walls"])
-            gmsh.model.addPhysicalGroup(
-                2, [1, 3, 32, 76], boundaries["solid_z_walls"])
-            gmsh.model.addPhysicalGroup(
-                2, [27, 49], boundaries["fluid_y_walls"])
-            gmsh.model.addPhysicalGroup(
-                2, [2, 54], boundaries["fluid_z_walls"])
-            gmsh.model.addPhysicalGroup(2, [53], boundaries["inlet"])
-            gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
-
-            # gmsh.option.setNumber("Mesh.Smoothing", 5)
-            if cell_type == mesh.CellType.quadrilateral \
-                    or cell_type == mesh.CellType.hexahedron:
-                gmsh.option.setNumber("Mesh.RecombineAll", 1)
-                gmsh.option.setNumber("Mesh.Algorithm", 8)
-                # TODO Check what this is doing, it may be making things worse
-                # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-            gmsh.model.mesh.generate(3)
-            gmsh.model.mesh.setOrder(order)
-
-            # gmsh.write("msh.msh")
-
-        partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-        msh, ct, ft = gmshio.model_to_mesh(
-            gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
-        gmsh.finalize()
-
-        return msh, ct, ft, volumes, boundaries
-
-    def boundary_conditions(self):
-        def inlet(x): return np.vstack(
-            (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
-             np.zeros_like(x[0]),
-             np.zeros_like(x[0])))
-
-        def zero(x): return np.vstack(
-            (np.zeros_like(x[0]),
-             np.zeros_like(x[0]),
-             np.zeros_like(x[0])))
-
-        u_bcs = {"inlet": (BCType.Dirichlet, inlet),
-                 "outlet": (BCType.Neumann, zero),
-                 "fluid_y_walls": (BCType.Dirichlet, zero),
-                 "fluid_z_walls": (BCType.Dirichlet, zero)}
-        # # Homogeneous Dirichlet (conducting) on y walls,
-        # # homogeneous Neumann (insulating) on z walls
-        # A_bcs = {"solid_y_walls": (BCType.Dirichlet, zero)}
-
-        # Insulating walls
-        A_bcs = {}
-
-        return {"u": u_bcs, "A": A_bcs}
-
-    def f(self, msh):
-        return fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(3)])
-
-    def u_i(self):
-        return lambda x: np.zeros_like(x[:3])
 
 
 def solve(solver_type, k, nu, num_time_steps,
@@ -525,21 +359,160 @@ if __name__ == "__main__":
     scheme = Scheme.DRW
 
     comm = MPI.COMM_WORLD
-    problem = Channel()
-    msh, ct, ft, volumes, boundaries = problem.create_mesh(
-        n_x, n_y, n_z, n_s_y, cell_type)
 
-    # with io.XDMFFile(msh.comm, "msh.xdmf", "w") as file:
-    #     file.write_mesh(msh)
-    #     file.write_meshtags(ct)
-    #     file.write_meshtags(ft)
-    # exit()
+    volumes = {"solid": 1,
+               "fluid": 2}
+    boundaries = {"solid_x_walls": 1,
+                  "solid_y_walls": 2,
+                  "solid_z_walls": 3,
+                  "fluid_y_walls": 4,
+                  "fluid_z_walls": 5,
+                  "inlet": 6,
+                  "outlet": 7}
 
-    boundary_conditions = problem.boundary_conditions()
-    u_i_expr = problem.u_i()
-    f = problem.f(msh)
+    gmsh.initialize()
+    if comm.rank == 0:
+        # TODO Pass options
+        gmsh.model.add("channel")
+        order = 1
+
+        # Fluid domain x, y, and z lengths
+        L_x = 10
+        L_y = 1
+        L_z = 1
+        wall_thickness = 0.1
+        domain_points = [gmsh.model.geo.addPoint(0, - wall_thickness, 0),
+                         gmsh.model.geo.addPoint(L_x, - wall_thickness, 0),
+                         gmsh.model.geo.addPoint(
+                                L_x, L_y + wall_thickness, 0),
+                         gmsh.model.geo.addPoint(
+            0, L_y + wall_thickness, 0)]
+        fluid_points = [gmsh.model.geo.addPoint(0, 0, 0),
+                        gmsh.model.geo.addPoint(L_x, 0, 0),
+                        gmsh.model.geo.addPoint(L_x, L_y, 0),
+                        gmsh.model.geo.addPoint(0, L_y, 0)]
+
+        wall_0_lines = [gmsh.model.geo.addLine(
+            domain_points[0], domain_points[1]),
+            gmsh.model.geo.addLine(
+            domain_points[1], fluid_points[1]),
+            gmsh.model.geo.addLine(
+            fluid_points[1], fluid_points[0]),
+            gmsh.model.geo.addLine(
+            fluid_points[0], domain_points[0]),
+        ]
+        fluid_lines = [- wall_0_lines[2],
+                       gmsh.model.geo.addLine(
+                            fluid_points[1], fluid_points[2]),
+                       gmsh.model.geo.addLine(
+                            fluid_points[2], fluid_points[3]),
+                       gmsh.model.geo.addLine(
+            fluid_points[3], fluid_points[0])]
+
+        wall_1_lines = [- fluid_lines[2],
+                        gmsh.model.geo.addLine(
+                            fluid_points[2], domain_points[2]),
+                        gmsh.model.geo.addLine(
+                            domain_points[2], domain_points[3]),
+                        gmsh.model.geo.addLine(
+            domain_points[3], fluid_points[3])]
+
+        wall_0_loop = gmsh.model.geo.addCurveLoop(wall_0_lines)
+        fluid_loop = gmsh.model.geo.addCurveLoop(fluid_lines)
+        wall_1_loop = gmsh.model.geo.addCurveLoop(wall_1_lines)
+
+        wall_0_surf = gmsh.model.geo.addPlaneSurface([wall_0_loop])
+        fluid_surf = gmsh.model.geo.addPlaneSurface([fluid_loop])
+        wall_1_surf = gmsh.model.geo.addPlaneSurface([wall_1_loop])
+
+        gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[0], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[1], n_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[2], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(fluid_lines[3], n_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteSurface(fluid_surf, "Left")
+
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[0], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[1], n_s_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[2], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_0_lines[3], n_s_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteSurface(wall_0_surf, "Left")
+
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[0], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[1], n_s_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[2], n_x + 1)
+        gmsh.model.geo.mesh.setTransfiniteCurve(wall_1_lines[3], n_s_y + 1)
+        gmsh.model.geo.mesh.setTransfiniteSurface(wall_1_surf, "Left")
+
+        if cell_type == mesh.CellType.tetrahedron:
+            recombine = False
+        else:
+            recombine = True
+        extrude_surfs = [(2, wall_0_surf),
+                         (2, fluid_surf), (2, wall_1_surf)]
+        gmsh.model.geo.extrude(
+            extrude_surfs, 0, 0, L_z, [n_z], recombine=recombine)
+
+        gmsh.model.geo.synchronize()
+
+        gmsh.model.addPhysicalGroup(3, [1, 3], volumes["solid"])
+        gmsh.model.addPhysicalGroup(3, [2], volumes["fluid"])
+
+        gmsh.model.addPhysicalGroup(
+            2, [23, 31, 67, 75], boundaries["solid_x_walls"])
+        gmsh.model.addPhysicalGroup(
+            2, [19, 71], boundaries["solid_y_walls"])
+        gmsh.model.addPhysicalGroup(
+            2, [1, 3, 32, 76], boundaries["solid_z_walls"])
+        gmsh.model.addPhysicalGroup(
+            2, [27, 49], boundaries["fluid_y_walls"])
+        gmsh.model.addPhysicalGroup(
+            2, [2, 54], boundaries["fluid_z_walls"])
+        gmsh.model.addPhysicalGroup(2, [53], boundaries["inlet"])
+        gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
+
+        # gmsh.option.setNumber("Mesh.Smoothing", 5)
+        if cell_type == mesh.CellType.quadrilateral \
+                or cell_type == mesh.CellType.hexahedron:
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)
+            gmsh.option.setNumber("Mesh.Algorithm", 8)
+            # TODO Check what this is doing, it may be making things worse
+            # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(order)
+
+        # gmsh.write("msh.msh")
+
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+    msh, ct, ft = gmshio.model_to_mesh(
+        gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
+    gmsh.finalize()
+
+    def inlet(x): return np.vstack(
+            (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
+             np.zeros_like(x[0]),
+             np.zeros_like(x[0])))
+
+    def zero(x): return np.vstack(
+        (np.zeros_like(x[0]),
+            np.zeros_like(x[0]),
+            np.zeros_like(x[0])))
+
+    u_bcs = {"inlet": (BCType.Dirichlet, inlet),
+             "outlet": (BCType.Neumann, zero),
+             "fluid_y_walls": (BCType.Dirichlet, zero),
+             "fluid_z_walls": (BCType.Dirichlet, zero)}
+    # # Homogeneous Dirichlet (conducting) on y walls,
+    # # homogeneous Neumann (insulating) on z walls
+    # A_bcs = {"solid_y_walls": (BCType.Dirichlet, zero)}
+    # Insulating walls
+    A_bcs = {}
+
+    boundary_conditions = {"u": u_bcs, "A": A_bcs}
+
+    def u_i_expr(x): return np.zeros_like(x[:3])
+    f = fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(3)])
 
     solve(solver_type, k, nu, num_time_steps,
           delta_t, scheme, msh, ct, ft, volumes, boundaries,
           boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
-          mu, problem.u_e, problem.p_e)
+          mu)
