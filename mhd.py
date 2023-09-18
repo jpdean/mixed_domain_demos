@@ -27,7 +27,6 @@ from utils import (norm_L2, normal_jump_error, convert_facet_tags, par_print,
 import ufl
 from ufl import (div, TrialFunction, TestFunction, inner, curl, cross,
                  as_vector, grad, outer, dot)
-from dolfinx.cpp.mesh import cell_num_entities
 from dolfinx.cpp.fem import compute_integration_domains
 
 
@@ -190,6 +189,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     L_4 = inner(sigma * A_n / delta_t, phi) * dx
 
     # Boundary conditions
+    # Fluid problem
     bcs = []
     bc_funcs = []  # FIXME Can now simplify this by getting func through bc
     for name, bc in boundary_conditions["u"].items():
@@ -208,7 +208,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
             if solver_type == SolverType.NAVIER_STOKES:
                 a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
                                 ubar, vbar) * ds_c(id)
-
+    # Electromagnetic problem
     for name, bc in boundary_conditions["A"].items():
         id = boundaries[name]
         bc_type, bc_expr = bc
