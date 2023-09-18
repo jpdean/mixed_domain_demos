@@ -338,10 +338,12 @@ a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
 
 # Trial and test function for fluid temperature
 T_f, w_f = TrialFunction(W_f), TestFunction(W_f)
-# Trial and test funcitons for the solid temperature
+# Trial and test functions for the solid temperature
 T_s, w_s = TrialFunction(W_s), TestFunction(W_s)
 
-# Create entity maps for the thermal problem
+# Create entity maps for the thermal problem. Since we take msh to be the
+# integration domain, we must create maps from cells in msh to cells in
+# submesh_f
 cell_imap = msh.topology.index_map(tdim)
 num_cells = cell_imap.size_local + cell_imap.num_ghosts
 msh_to_sm_f = np.full(num_cells, -1)
@@ -351,7 +353,7 @@ msh_to_sm_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
 entity_maps = {submesh_f: msh_to_sm_f,
                submesh_s: msh_to_sm_s}
 
-# Create integration entities for the interface integral.
+# Create integration entities for the interface integral
 interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 domain_f_cells = ct.indices[ct.values == volume_id["fluid"]]
 domain_s_cells = ct.indices[ct.values == volume_id["solid"]]
@@ -599,9 +601,6 @@ for n in range(num_time_steps):
 
 for vis_file in vis_files:
     vis_file.close()
-
-# TODO Remove
-par_print(comm, x.norm())
 
 # Compute errors
 e_div_u = norm_L2(msh.comm, div(u_h))
