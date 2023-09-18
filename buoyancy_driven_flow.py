@@ -467,15 +467,15 @@ for bc in dirichlet_bcs_T:
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
 
-# Compile forms
+# Compile forms for the thermal problem
 a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
 a_T_01 = fem.form(a_T_01, entity_maps=entity_maps)
 a_T_10 = fem.form(a_T_10, entity_maps=entity_maps)
 a_T_11 = fem.form(a_T_11, entity_maps=entity_maps)
-
 L_T_0 = fem.form(L_T_0, entity_maps=entity_maps)
 L_T_1 = fem.form(L_T_1, entity_maps=entity_maps)
 
+# Define block structure for thermal problem
 a_T = [[a_T_00, a_T_01],
        [a_T_10, a_T_11]]
 L_T = [L_T_0, L_T_1]
@@ -531,6 +531,7 @@ vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
                  ("pbar.bp", pbar_h), ("T.bp", T_f_n), ("T_s.bp", T_s_n)]]
 
+# Time-stepping loop
 t = 0.0
 t_last_write = 0.0
 for vis_file in vis_files:
