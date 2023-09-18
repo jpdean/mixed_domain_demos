@@ -270,8 +270,8 @@ c_f = 1007  # Fluid specific heat
 # Volume and boundary ids
 volume_id = {"fluid": 1,
              "solid": 2}
-boundary_id = {"walls": 2,
-               "obstacle": 3}
+boundary_id = {"walls": 1,
+               "obstacle": 2}
 
 # Define boundary conditions for fluid solver
 boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
