@@ -292,23 +292,23 @@ ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
 boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
 
-# Set up fluid solver
+# Create function spaces for fluid problem
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
 V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
-u_n = fem.Function(V_f)
-ubar_n = fem.Function(Vbar_f)
 
 # Function spaces for fluid and solid temperature
 Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
 Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+
+# Cell and facet velocities at previous time step
+u_n = fem.Function(V_f)
+ubar_n = fem.Function(Vbar_f)
 # Fluid and solid temperature at previous time step
 T_n = fem.Function(Q)
 T_s_n = fem.Function(Q_s)
 
-# Time step
-delta_t = t_end / num_time_steps  # TODO Make constant
 # Buoyancy force (taking rho as reference density), see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
 # where I've omitted the rho g h part (can think of this is
@@ -322,6 +322,9 @@ else:
     g = as_vector((0.0, g_y))
 # Buoyancy force
 f = - eps * rho * T_n * g
+
+# Time step
+delta_t = t_end / num_time_steps  # TODO Make constant
 
 # Create forms for fluid solver
 nu = mu / rho  # Kinematic viscosity
