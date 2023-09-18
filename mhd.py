@@ -8,9 +8,10 @@
 # J. P. Dean, S. Rhebergen, and G. N. Well. to solve
 # the incompressible Navier-Stokes equations. We solve Maxwell's equations
 # using a scheme similar to "A fully divergence-free finite element method
-# for magnetohydrodynamic equations" by Hiptmair et al. Our approach is fully
-# coupled and yields exactly divergence free velocity field and magnetic
-# induction.
+# for magnetohydrodynamic equations" by Hiptmair et al. See also Sec. 3.6.3
+# in https://academic.oup.com/book/5953/chapter/149296535?login=true. Our
+# approach is fully coupled and yields exactly divergence free velocity field
+# and magnetic induction.
 
 import hdg_navier_stokes
 from hdg_navier_stokes import SolverType, Scheme, TimeDependentExpression
@@ -72,6 +73,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         fem.IntegralType.exterior_facet, ft_f._cpp_object)
 
     # Define integration measures
+    dx = ufl.Measure("dx", domain=msh)
     dx_c = ufl.Measure("dx", domain=submesh_f)
     # FIXME Figure out why this is being estimated wrong for DRW
     # NOTE k**2 works on affine meshes
@@ -107,19 +109,22 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     # Externally applied magnetic induction
     B_0 = as_vector((0, 1, 0))
 
+    # Trial and test functions
     u, v = ufl.TrialFunction(V),  ufl.TestFunction(V)
     p, q = ufl.TrialFunction(Q), ufl.TestFunction(Q)
     ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
     pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
 
+    # Define forms
     h = ufl.CellDiameter(submesh_f)  # TODO Fix for high order geom!
     n = ufl.FacetNormal(submesh_f)
-    gamma = 64.0 * k**2 / h  # TODO Should be larger in 3D
-
+    gamma = 64.0 * k**2 / h  # Scaled penalty param
+    # Marker for outflow boundaries
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(submesh_f, PETSc.ScalarType(nu))
 
+    # Left-hand side diffusive terms
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
         - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries) \
@@ -151,6 +156,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     a_22 = - nu * gamma * \
         inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries)
 
+    # LHS advective terms
     if solver_type == SolverType.NAVIER_STOKES:
         a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
             + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries) \
@@ -163,9 +169,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         a_22 += inner(outer(ubar, lmbda * u_n),
                       outer(vbar, n)) * ds_c(cell_boundaries)
 
-    # Using linearised version in sec. 3.6.3 in
-    # https://academic.oup.com/book/5953/chapter/149296535?login=true
-    dx = ufl.Measure("dx", domain=msh)
+    # Add LHS terms from Maxwell's equations
     a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx
                     + inner(1 / mu * curl(A), curl(phi)) * dx)
     a_40 = fem.form(inner(sigma * cross(B_0, u), phi) * dx_c
@@ -177,16 +181,15 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         + inner(sigma * A / delta_t, cross(B_0, v)) * dx_c,
         entity_maps={msh: sm_f_to_msh})
 
+    # Right-hand side terms
+    L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0)
+                                         for i in range(tdim)]),
+                vbar) * ds_c(cell_boundaries)
     L_4 = fem.form(inner(sigma * A_n / delta_t, phi) * dx)
 
-    L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0)
-                                        for i in range(tdim)]),
-                vbar) * ds_c(cell_boundaries)
-
-    # NOTE: Don't set pressure BC to avoid affecting conservation properties.
-    # MUMPS seems to cope with the small nullspace
+    # Boundary conditions
     bcs = []
-    bc_funcs = []
+    bc_funcs = []  # FIXME Can now simplify this by getting func through bc
     for name, bc in boundary_conditions["u"].items():
         id = boundaries[name]
         bc_type, bc_expr = bc
