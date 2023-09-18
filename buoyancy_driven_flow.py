@@ -21,7 +21,8 @@ from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
-from utils import convert_facet_tags, norm_L2, par_print
+from utils import (convert_facet_tags, norm_L2, par_print,
+                   compute_interface_integration_entities)
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -361,7 +362,6 @@ ds_T = Measure("ds", domain=msh, subdomain_data=ft)
 fluid_int_facets = 7  # FIXME Don't hardcode
 # facet_integration_entities = {boundary_id["obstacle"]: [],
 #                               fluid_int_facets: []}
-obstacle_facet_entities = []
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
@@ -370,39 +370,10 @@ f_to_c = msh.topology.connectivity(fdim, tdim)
 domain_f_cells = ct.indices[ct.values == volume_id["fluid"]]
 domain_s_cells = ct.indices[ct.values == volume_id["solid"]]
 interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
-for facet in interface_facets:
-    # Check if this facet is owned
-    if facet < facet_imap.size_local:
-        cells = f_to_c.links(facet)
-        assert len(cells) == 2
-        cell_plus = cells[0] if cells[0] in domain_f_cells else cells[1]
-        cell_minus = cells[0] if cells[0] in domain_s_cells else cells[1]
-        assert cell_plus in domain_f_cells
-        assert cell_minus in domain_s_cells
-
-        # FIXME Don't use tolist
-        local_facet_plus = c_to_f.links(
-            cell_plus).tolist().index(facet)
-        local_facet_minus = c_to_f.links(
-            cell_minus).tolist().index(facet)
-        obstacle_facet_entities.extend(
-            [cell_plus, local_facet_plus, cell_minus, local_facet_minus])
-
-        # HACK cell_minus does not exist in the left submesh, so it will
-        # be mapped to index -1. This is problematic for the assembler,
-        # which assumes it is possible to get the full macro dofmap for the
-        # trial and test functions, despite the restriction meaning we
-        # don't need the non-existant dofs. To fix this, we just map
-        # cell_minus to the cell corresponding to cell plus. This will
-        # just add zeros to the assembled system, since there are no
-        # u("-") terms. Could map this to any cell in the submesh, but
-        # I think using the cell on the other side of the facet means a
-        # facet space coefficient could be used
-        entity_maps[submesh_f][cell_minus] = \
-            entity_maps[submesh_f][cell_plus]
-        # Same hack for the right submesh
-        entity_maps[submesh_s][cell_plus] = \
-            entity_maps[submesh_s][cell_minus]
+obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
+    compute_interface_integration_entities(
+        interface_facets, domain_f_cells, domain_s_cells, c_to_f, f_to_c,
+        facet_imap, msh_to_sm_f, msh_to_sm_s)
 
 # FIXME Do this more efficiently
 submesh_f.topology.create_entities(fdim)
