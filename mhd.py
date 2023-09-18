@@ -304,16 +304,19 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         t += delta_t.value
         par_print(comm, f"t = {t}")
 
+        # Update time dependent expressions
         for bc_func, bc_expr in bc_funcs:
             if isinstance(bc_expr, TimeDependentExpression):
                 bc_expr.t = t
                 bc_func.interpolate(bc_expr)
 
+        # Assemble matrix
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
             fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
             A.assemble()
 
+        # Assemble vector
         with b.localForm() as b_loc:
             b_loc.set(0)
         fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
@@ -321,6 +324,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         # Compute solution
         ksp.solve(b, x)
 
+        # Recover solution
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
         p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
@@ -335,16 +339,18 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
                     ] = x.array_r[pbar_offset:]
         A_h.x.scatter_forward()
 
+        # Interpolate for visualisation
         B_vis.interpolate(B_expr)
-
         u_vis.interpolate(u_n)
 
+        # Write to file
         for vis_file in vis_files:
             vis_file.write(t)
 
     for vis_file in vis_files:
         vis_file.close()
 
+    # Compute divergence and jump errors
     e_div_u = norm_L2(msh.comm, div(u_n))
     e_jump_u = normal_jump_error(submesh_f, u_n)
     par_print(comm, f"e_div_u = {e_div_u}")
