@@ -81,11 +81,13 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         metadata={"quadrature_degree": quad_deg})
     dx_f = ufl.Measure("dx", domain=facet_mesh_f)
 
-    inv_entity_map = np.full_like(fm_f_to_sm_f, -1)
-    for i, facet in enumerate(fm_f_to_sm_f):
-        inv_entity_map[facet] = i
-
-    entity_maps = {facet_mesh_f: inv_entity_map,
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    facet_imap_sm_f = msh.topology.index_map(fdim)
+    num_facets_sm_f = facet_imap_sm_f.size_local + facet_imap_sm_f.num_ghosts
+    sm_f_to_fm_f = np.full(num_facets_sm_f, -1)
+    sm_f_to_fm_f[fm_f_to_sm_f] = np.arange(len(fm_f_to_sm_f))
+    entity_maps = {facet_mesh_f: sm_f_to_fm_f,
                    msh: sm_f_to_msh}
 
     u_n = fem.Function(V)
@@ -116,9 +118,6 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     lmbda = ufl.conditional(ufl.lt(dot(u_n, n), 0), 1, 0)
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(submesh_f, PETSc.ScalarType(nu))
-
-    tdim = msh.topology.dim
-    fdim = tdim - 1
 
     a_00 = inner(u / delta_t, v) * dx_c \
         + nu * inner(grad(u), grad(v)) * dx_c \
@@ -194,7 +193,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
         bc_func.interpolate(bc_expr)
         bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
-            facets = inv_entity_map[ft_f.indices[ft_f.values == id]]
+            facets = sm_f_to_fm_f[ft_f.indices[ft_f.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
         else:
