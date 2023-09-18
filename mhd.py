@@ -44,17 +44,22 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
         submesh_f, facet_mesh_f, scheme, k)
 
+    # H(curl; Ω)-conforming space for magnetic vector potential and electric
+    # field
+    X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
+
+    # Create function space for coefficients
     V_coeff = fem.FunctionSpace(msh, ("Discontinuous Lagrange", 0))
+
+    # Conductivity
     sigma = fem.Function(V_coeff)
     sigma.interpolate(
         lambda x: np.full_like(x[0], sigma_f), ct.find(volumes["fluid"]))
     sigma.interpolate(
         lambda x: np.full_like(x[0], sigma_s), ct.find(volumes["solid"]))
-    mu = fem.Constant(msh, mu)
 
-    # H(curl; Ω)-conforming space for magnetic vector potential and electric
-    # field
-    X = fem.FunctionSpace(msh, ("Nedelec 1st kind H(curl)", k + 1))
+    # Permiability
+    mu = fem.Constant(msh, mu)
 
     u_n = fem.Function(V)
     u_n.interpolate(u_i_expr)
