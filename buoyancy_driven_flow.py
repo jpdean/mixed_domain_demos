@@ -296,15 +296,15 @@ V_f, Q_f, Vbar_f, Qbar_f = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
 
 # Function spaces for fluid and solid temperature
-Q = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
-Q_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+W_f = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
+W_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
 
 # Cell and facet velocities at previous time step
 u_n = fem.Function(V_f)
 ubar_n = fem.Function(Vbar_f)
 # Fluid and solid temperature at previous time step
-T_n = fem.Function(Q)
-T_s_n = fem.Function(Q_s)
+T_n = fem.Function(W_f)
+T_s_n = fem.Function(W_s)
 
 # Buoyancy force (taking rho as reference density), see
 # https://en.wikipedia.org/wiki/Boussinesq_approximation_(buoyancy)
@@ -334,9 +334,9 @@ a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     boundary_id, ft_f, f, facet_mesh_f, u_n, ubar_n)
 
 # Trial and test function for fluid temperature
-T, w = TrialFunction(Q), TestFunction(Q)
+T, w = TrialFunction(W_f), TestFunction(W_f)
 # Trial and test funcitons for the solid temperature
-T_s, w_s = TrialFunction(Q_s), TestFunction(Q_s)
+T_s, w_s = TrialFunction(W_s), TestFunction(W_s)
 
 # Boundary conditions for the thermal solver
 dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
@@ -458,7 +458,7 @@ L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 # Apply Dirichlet BCs for the thermal problem
 for bc in dirichlet_bcs_T:
-    T_D = fem.Function(Q)
+    T_D = fem.Function(W_f)
     T_D.interpolate(bc[1])
     a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
                          inner(grad(w), T * n_T) * ds_T(bc[0]) +
@@ -583,7 +583,7 @@ for n in range(num_time_steps):
     ksp_T.solve(b_T, x_T)
 
     # Recover thermal solution
-    offset_T = Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    offset_T = W_f.dofmap.index_map.size_local * W_f.dofmap.index_map_bs
     T_n.x.array[:offset_T] = x_T.array_r[:offset_T]
     T_n.x.scatter_forward()
     T_s_n.x.array[:(len(x_T.array_r) - offset_T)] = x_T.array_r[offset_T:]
