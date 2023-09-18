@@ -273,6 +273,13 @@ volume_id = {"fluid": 1,
 boundary_id = {"walls": 2,
                "obstacle": 3}
 
+# Define boundary conditions for fluid solver
+boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
+                       "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
+
+# Boundary conditions for the thermal solver
+dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
+
 # Create mesh
 comm = MPI.COMM_WORLD
 msh, ct, ft, volume_id, boundary_id = generate_mesh(
@@ -285,9 +292,6 @@ submesh_f, sm_f_to_msh = mesh.create_submesh(
 submesh_s, sm_s_to_msh = mesh.create_submesh(
     msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
 
-# Define boundary conditions for fluid solver
-boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
-                       "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
 
 # Create function spaces for fluid problem
 scheme = hdg_navier_stokes.Scheme.DRW
@@ -337,9 +341,6 @@ a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
 T, w = TrialFunction(W_f), TestFunction(W_f)
 # Trial and test funcitons for the solid temperature
 T_s, w_s = TrialFunction(W_s), TestFunction(W_s)
-
-# Boundary conditions for the thermal solver
-dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
 
 # Create entity maps for the thermal problem
 cell_imap = msh.topology.index_map(tdim)
