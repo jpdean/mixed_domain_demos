@@ -278,7 +278,7 @@ boundary_conditions = {"walls": (hdg_navier_stokes.BCType.Dirichlet, zero),
                        "obstacle": (hdg_navier_stokes.BCType.Dirichlet, zero)}
 
 # Boundary conditions for the thermal solver
-dirichlet_bcs_T = [(boundary_id["walls"], lambda x: np.zeros_like(x[0]))]
+dirichlet_bcs_T = {"walls": lambda x: np.zeros_like(x[0])}
 
 # Create mesh
 comm = MPI.COMM_WORLD
@@ -453,16 +453,17 @@ a_T_11 = inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
 L_T_0 = inner(rho * c_f * T_f_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 # Apply Dirichlet BCs for the thermal problem
-for bc in dirichlet_bcs_T:
+for b_name, bc_func in dirichlet_bcs_T.items():
+    b_id = boundary_id[b_name]
     T_D = fem.Function(W_f)
-    T_D.interpolate(bc[1])
-    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(bc[0]) -
-                         inner(grad(w), T * n_T) * ds_T(bc[0]) +
-                         (alpha / h_T) * inner(T, w) * ds_T(bc[0]))
+    T_D.interpolate(bc_func)
+    a_T_00 += kappa_f * (- inner(grad(T), w * n_T) * ds_T(b_id) -
+                         inner(grad(w), T * n_T) * ds_T(b_id) +
+                         (alpha / h_T) * inner(T, w) * ds_T(b_id))
     L_T_0 += - rho * c_f * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D,
-                                 w) * ds_T(bc[0]) + \
-        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(bc[0]) +
-                   (alpha / h_T) * inner(T_D, w) * ds_T(bc[0]))
+                                 w) * ds_T(b_id) + \
+        kappa_f * (- inner(T_D * n_T, grad(w)) * ds_T(b_id) +
+                   (alpha / h_T) * inner(T_D, w) * ds_T(b_id))
 
 L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) \
     + inner(rho_s * c_s * T_s_n / delta_t, w_s) * dx_T(volume_id["solid"])
