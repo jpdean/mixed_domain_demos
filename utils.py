@@ -172,9 +172,9 @@ class TimeDependentExpression():
         return self.expression(x, self.t)
 
 
-def compute_interface_integration_entities(
-        interface_facets, domain_0_cells, domain_1_cells, c_to_f, f_to_c,
-        facet_imap, domain_to_domain_0, domain_to_domain_1):
+def compute_interface_integration_entities(msh,
+        interface_facets, domain_0_cells, domain_1_cells,
+        domain_to_domain_0, domain_to_domain_1):
     """
     This function computes the integration entities (as a list of pairs of
     (cell, local facet index) pairs) required to assemble mixed domain forms
@@ -202,6 +202,13 @@ def compute_interface_integration_entities(
     # pair to the cell in domain_0, corresponding to the "+" restriction.
     # Assign the second pair to the domain_1 cell, corresponding to the "-"
     # restriction.
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    msh.topology.create_connectivity(tdim, fdim)
+    msh.topology.create_connectivity(fdim, tdim)
+    facet_imap = msh.topology.index_map(fdim)
+    c_to_f = msh.topology.connectivity(tdim, fdim)
+    f_to_c = msh.topology.connectivity(fdim, tdim)
     # FIXME This can be done more efficiently
     interface_entities = []
     for facet in interface_facets:

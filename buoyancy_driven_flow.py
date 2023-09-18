@@ -352,23 +352,18 @@ entity_maps = {submesh_f: msh_to_sm_f,
                submesh_s: msh_to_sm_s}
 
 # Create integration entities for the interface integral.
-fluid_int_facets = 3
-facet_imap = msh.topology.index_map(fdim)
-msh.topology.create_connectivity(tdim, fdim)
-msh.topology.create_connectivity(fdim, tdim)
-c_to_f = msh.topology.connectivity(tdim, fdim)
-f_to_c = msh.topology.connectivity(fdim, tdim)
+interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 domain_f_cells = ct.indices[ct.values == volume_id["fluid"]]
 domain_s_cells = ct.indices[ct.values == volume_id["solid"]]
-interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
 obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
     compute_interface_integration_entities(
-        interface_facets, domain_f_cells, domain_s_cells, c_to_f, f_to_c,
-        facet_imap, msh_to_sm_f, msh_to_sm_s)
+        msh, interface_facets, domain_f_cells, domain_s_cells,
+        msh_to_sm_f, msh_to_sm_s)
 
 # Create integration entities for the interior facet integral
 fluid_int_facet_entities = compute_interior_facet_integration_entities(
     submesh_f, sm_f_to_msh)
+fluid_int_facets = 3
 facet_integration_entities = [
     (boundary_id["obstacle"], obstacle_facet_entities),
     (fluid_int_facets, fluid_int_facet_entities)]
