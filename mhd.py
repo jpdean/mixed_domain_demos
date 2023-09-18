@@ -244,12 +244,16 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
          [a_40, None, None, None, a_44]]
     L = [L_0, L_1, L_2, L_3, L_4]
 
+    # Set-up matrix and vectors
     if solver_type == SolverType.NAVIER_STOKES:
         A = fem.petsc.create_matrix_block(a)
     else:
         A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
         A.assemble()
+    b = fem.petsc.create_vector_block(L)
+    x = A.createVecRight()
 
+    # Set-up functions for visualisation (fluid problem)
     if scheme == Scheme.RW:
         u_vis = fem.Function(V)
     else:
@@ -263,6 +267,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     pbar_h = fem.Function(Qbar)
     pbar_h.name = "pbar"
 
+    # Set-up functions for visualisation (Maxwell problem)
     X_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
     B_h = B_0 + curl(A_h)
     # B_h = curl(A_h)
@@ -270,11 +275,7 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     B_vis = fem.Function(X_vis)
     B_vis.interpolate(B_expr)
 
-    u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
-        V, Q, Vbar)
-    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
-        Qbar.dofmap.index_map_bs
-
+    # Configure solver
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
     ksp.setType("preonly")
@@ -285,18 +286,20 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     opts["mat_mumps_icntl_14"] = 100
     ksp.setFromOptions()
 
-    b = fem.petsc.create_vector_block(L)
-    x = A.createVecRight()
-
     # Set up files for visualisation
     vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
                  ("pbar.bp", pbar_h), ("B.bp", B_vis)]]
 
+    # Time-stepping loop
     t = 0.0
     for vis_file in vis_files:
         vis_file.write(t)
+    u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(
+        V, Q, Vbar)
+    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * \
+        Qbar.dofmap.index_map_bs
     for n in range(num_time_steps):
         t += delta_t.value
         par_print(comm, f"t = {t}")
