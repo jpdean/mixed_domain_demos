@@ -303,7 +303,7 @@ W_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
 u_n = fem.Function(V)
 ubar_n = fem.Function(Vbar)
 # Fluid and solid temperature at previous time step
-T_n = fem.Function(W_f)
+T_f_n = fem.Function(W_f)
 T_s_n = fem.Function(W_s)
 
 # Buoyancy force (taking rho as reference density), see
@@ -318,7 +318,7 @@ if msh.topology.dim == 3:
 else:
     g = as_vector((0.0, g_y))
 # Buoyancy force
-f = - eps * rho * T_n * g
+f = - eps * rho * T_f_n * g
 
 # Time step
 delta_t = t_end / num_time_steps  # TODO Make constant
@@ -454,7 +454,7 @@ a_T_11 = inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"]) \
     - inner(dot(grad(w_s("-")), n_T("-")),
             T_s("-")) * dS_T(boundary_id["obstacle"]))
 
-L_T_0 = inner(rho * c_f * T_n / delta_t, w) * dx_T(volume_id["fluid"])
+L_T_0 = inner(rho * c_f * T_f_n / delta_t, w) * dx_T(volume_id["fluid"])
 
 # Apply Dirichlet BCs for the thermal problem
 for bc in dirichlet_bcs_T:
@@ -533,7 +533,7 @@ pbar_h.name = "pbar"
 vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
              for (file_name, func)
              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h), ("T.bp", T_n), ("T_s.bp", T_s_n)]]
+                 ("pbar.bp", pbar_h), ("T.bp", T_f_n), ("T_s.bp", T_s_n)]]
 
 t = 0.0
 t_last_write = 0.0
@@ -584,8 +584,8 @@ for n in range(num_time_steps):
 
     # Recover thermal solution
     offset_T = W_f.dofmap.index_map.size_local * W_f.dofmap.index_map_bs
-    T_n.x.array[:offset_T] = x_T.array_r[:offset_T]
-    T_n.x.scatter_forward()
+    T_f_n.x.array[:offset_T] = x_T.array_r[:offset_T]
+    T_f_n.x.scatter_forward()
     T_s_n.x.array[:(len(x_T.array_r) - offset_T)] = x_T.array_r[offset_T:]
     T_s_n.x.scatter_forward()
 
