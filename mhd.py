@@ -1,3 +1,17 @@
+# This demo solves the equations of magnetohydrodynamics for a incompressible
+# liquid metal flowing through a square channel with an applied transverse
+# magnetic field. The domain contains two regions: the fluid region and the
+# solid region consisting of the Hartmann walls (of finite
+# thickness and conductivity). The sidewalls are assumed to be perfectly
+# insulating. We use the HDG scheme given in "Hybridized discontinuous Galerkin
+# methods for incompressible flows on meshes with quadrilateral cells" by
+# J. P. Dean, S. Rhebergen, and G. N. Well. to solve
+# the incompressible Navier-Stokes equations. We solve Maxwell's equations
+# using a scheme similar to "A fully divergence-free finite element method
+# for magnetohydrodynamic equations" by Hiptmair et al. Our approach is fully
+# coupled and yields exactly divergence free velocity field and magnetic
+# induction.
+
 import hdg_navier_stokes
 from hdg_navier_stokes import SolverType, Scheme, TimeDependentExpression
 from mpi4py import MPI
@@ -493,6 +507,8 @@ def solve(solver_type, k, nu, num_time_steps,
     e_jump_u = normal_jump_error(fluid_sm, u_n)
     par_print(f"e_div_u = {e_div_u}")
     par_print(f"e_jump_u = {e_jump_u}")
+
+    par_print(x.norm())
 
 
 if __name__ == "__main__":
