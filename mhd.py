@@ -351,9 +351,6 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     par_print(comm, f"e_div_u = {e_div_u}")
     par_print(comm, f"e_jump_u = {e_jump_u}")
 
-    # TODO Remove
-    par_print(comm, x.norm())
-
 
 if __name__ == "__main__":
     # Simulation parameters
