@@ -22,7 +22,8 @@ from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
 from ufl import jump as jump_T
 import gmsh
 from utils import (convert_facet_tags, norm_L2, par_print,
-                   compute_interface_integration_entities)
+                   compute_interface_integration_entities,
+                   compute_interior_facet_integration_entities)
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -352,10 +353,6 @@ msh_to_sm_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
 entity_maps = {submesh_f: msh_to_sm_f,
                submesh_s: msh_to_sm_s}
 
-# Create integration measures
-dx_T = Measure("dx", domain=msh, subdomain_data=ct)
-ds_T = Measure("ds", domain=msh, subdomain_data=ft)
-
 # Create measure for integration. Assign the first (cell, local facet)
 # pair to the cell in omega_0, corresponding to the "+" restriction. Assign
 # the second pair to the omega_1 cell, corresponding to the "-" restriction.
@@ -376,27 +373,15 @@ obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
         facet_imap, msh_to_sm_f, msh_to_sm_s)
 
 # FIXME Do this more efficiently
-submesh_f.topology.create_entities(fdim)
-submesh_f.topology.create_connectivity(tdim, fdim)
-submesh_f.topology.create_connectivity(fdim, tdim)
-c_to_f_submesh_f = submesh_f.topology.connectivity(tdim, fdim)
-f_to_c_submesh_f = submesh_f.topology.connectivity(fdim, tdim)
-fluid_int_facet_entities = []
-for facet in range(submesh_f.topology.index_map(fdim).size_local):
-    cells = f_to_c_submesh_f.links(facet)
-    if len(cells) == 2:
-        # FIXME Don't use tolist
-        local_facet_plus = c_to_f_submesh_f.links(
-            cells[0]).tolist().index(facet)
-        local_facet_minus = c_to_f_submesh_f.links(
-            cells[1]).tolist().index(facet)
-
-        fluid_int_facet_entities.extend(
-            [sm_f_to_msh[cells[0]], local_facet_plus,
-             sm_f_to_msh[cells[1]], local_facet_minus])
+fluid_int_facet_entities = compute_interior_facet_integration_entities(
+    submesh_f, sm_f_to_msh)
 facet_integration_entities = [
     (boundary_id["obstacle"], obstacle_facet_entities),
     (fluid_int_facets, fluid_int_facet_entities)]
+
+# Create measures for thermal problem
+dx_T = Measure("dx", domain=msh, subdomain_data=ct)
+ds_T = Measure("ds", domain=msh, subdomain_data=ft)
 dS_T = Measure("dS", domain=msh,
                subdomain_data=facet_integration_entities)
 
