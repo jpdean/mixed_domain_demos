@@ -17,7 +17,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 import numpy as np
 from ufl import (TrialFunction, TestFunction, CellDiameter, FacetNormal,
-                 inner, grad, dx, avg, div, conditional,
+                 inner, grad, avg, div, conditional,
                  gt, dot, Measure, as_vector)
 from ufl import jump as jump_T
 import gmsh
@@ -366,7 +366,7 @@ obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
         interface_facets, domain_f_cells, domain_s_cells, c_to_f, f_to_c,
         facet_imap, msh_to_sm_f, msh_to_sm_s)
 
-# Create integration entities for the interior facet integrals
+# Create integration entities for the interior facet integral
 fluid_int_facet_entities = compute_interior_facet_integration_entities(
     submesh_f, sm_f_to_msh)
 facet_integration_entities = [
@@ -382,6 +382,7 @@ dS_T = Measure("dS", domain=msh,
 # Define some quantities used in the finite element forms
 h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
+# Marker for outflow boundaries
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 gamma_int = 32  # Penalty param for temperature on interface
 alpha = 32.0 * k**2  # Penalty param for DG temp solver
@@ -413,8 +414,10 @@ a_T_00 = inner(rho * c_f * T_f / delta_t, w_f) * dx_T(volume_id["fluid"]) + \
                        jump_T(w_f)) * dS_T(fluid_int_facets) +
                  inner(lmbda_T * dot(u_h, n_T) * T_f, w_f) * ds_T) + \
     kappa_f * (inner(grad(T_f), grad(w_f)) * dx_T(volume_id["fluid"]) -
-               inner(avg(grad(T_f)), jump_T(w_f, n_T)) * dS_T(fluid_int_facets) -
-               inner(jump_T(T_f, n_T), avg(grad(w_f))) * dS_T(fluid_int_facets) +
+               inner(avg(grad(T_f)),
+                     jump_T(w_f, n_T)) * dS_T(fluid_int_facets) -
+               inner(jump_T(T_f, n_T),
+                     avg(grad(w_f))) * dS_T(fluid_int_facets) +
                (alpha / avg(h_T)) * inner(
         jump_T(T_f, n_T), jump_T(w_f, n_T)) * dS_T(fluid_int_facets)) \
     + kappa_hm * gamma_int / avg(h_T) * inner(
@@ -501,7 +504,7 @@ ksp_T.getPC().setType("lu")
 ksp_T.getPC().setFactorSolverType("superlu_dist")
 x_T = A_T.createVecRight()
 
-# Set-up solver for fluid problem
+# Set-up solver for Navier-Stokes problem
 ksp = PETSc.KSP().create(msh.comm)
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -525,7 +528,7 @@ p_h.name = "p"
 pbar_h = fem.Function(Qbar)
 pbar_h.name = "pbar"
 
-# Set up files for visualisation
+# Set-up files for visualisation
 vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
              for (file_name, func)
              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
@@ -542,7 +545,7 @@ for n in range(num_time_steps):
     t += delta_t.value
     par_print(comm, f"t = {t}")
 
-    # Assemble Navier--Stokes problem
+    # Assemble Navier-Stokes problem
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
         fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
@@ -552,10 +555,10 @@ for n in range(num_time_steps):
         b_loc.set(0)
     fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
 
-    # Compute Navier--Stokes solution
+    # Compute Navier-Stokes solution
     ksp.solve(b, x)
 
-    # Recover Navier--Stokes solution
+    # Recover Navier-Stokes solution
     u_h.x.array[:u_offset] = x.array_r[:u_offset]
     u_h.x.scatter_forward()
     p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
