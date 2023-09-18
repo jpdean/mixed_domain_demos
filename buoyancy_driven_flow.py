@@ -352,12 +352,8 @@ msh_to_sm_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
 entity_maps = {submesh_f: msh_to_sm_f,
                submesh_s: msh_to_sm_s}
 
-# Create measure for integration. Assign the first (cell, local facet)
-# pair to the cell in omega_0, corresponding to the "+" restriction. Assign
-# the second pair to the omega_1 cell, corresponding to the "-" restriction.
+# Create integration entities for the interface integral.
 fluid_int_facets = 3
-# facet_integration_entities = {boundary_id["obstacle"]: [],
-#                               fluid_int_facets: []}
 facet_imap = msh.topology.index_map(fdim)
 msh.topology.create_connectivity(tdim, fdim)
 msh.topology.create_connectivity(fdim, tdim)
@@ -371,7 +367,7 @@ obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
         interface_facets, domain_f_cells, domain_s_cells, c_to_f, f_to_c,
         facet_imap, msh_to_sm_f, msh_to_sm_s)
 
-# FIXME Do this more efficiently
+# Create integration entities for the interior facet integrals
 fluid_int_facet_entities = compute_interior_facet_integration_entities(
     submesh_f, sm_f_to_msh)
 facet_integration_entities = [
@@ -384,14 +380,13 @@ ds_T = Measure("ds", domain=msh, subdomain_data=ft)
 dS_T = Measure("dS", domain=msh,
                subdomain_data=facet_integration_entities)
 
+# Define some quantities used in the finite element forms
 h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
 gamma_int = 32  # Penalty param for temperature on interface
 alpha = 32.0 * k**2  # Penalty param for DG temp solver
-
-# Fluid velocity at current time step
-u_h = u_n.copy()
+u_h = u_n.copy()  # Fluid velocity at current time step
 
 # Convert to Constants
 delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
@@ -403,11 +398,11 @@ rho_s = fem.Constant(submesh_s, PETSc.ScalarType(rho_s))
 c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
 c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
-# Jump in kappa at interface dealt with using approach in DiPietro
-# p. 150 sec 4.5
+# Define some quantities that are used to handle the discontinuity in
+# kappa at the interface (see DiPietro Sec 4.5 p. 150)
 # Kappa harmonic mean
 kappa_hm = 2 * kappa_f * kappa_s / (kappa_f + kappa_s)
-# Weights for average operator
+# Weights for weighted average operator
 kappa_w_f = kappa_s / (kappa_f + kappa_s)
 kappa_w_s = kappa_f / (kappa_f + kappa_s)
 
