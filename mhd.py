@@ -356,30 +356,30 @@ def solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct, ft,
     par_print(comm, f"e_div_u = {e_div_u}")
     par_print(comm, f"e_jump_u = {e_jump_u}")
 
+    # TODO Remove
     par_print(comm, x.norm())
 
 
 if __name__ == "__main__":
     # Simulation parameters
     solver_type = SolverType.NAVIER_STOKES
-    n_x = 12
-    n_y = 6
-    n_z = 6
-    n_s_y = 2
-    sigma_f = 2.5
-    sigma_s = 100
+    n_x = 12  # Number of elements in the x-direction
+    n_y = 6  # Number of elements in the y-direction
+    n_z = 6  # Number of elements in the z-direction in the fluid
+    n_s_y = 2  # Number of elements in the z-direction in the wall
+    sigma_f = 2.5  # Fluid conductivity
+    sigma_s = 100  # Solid conductivity
     mu = 0.4  # Permeability
-
-    k = 1
+    k = 1  # Polynomial degree
     cell_type = mesh.CellType.hexahedron
-    nu = 1.0e-3
+    nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 10
     t_end = 10
     delta_t = t_end / num_time_steps
     scheme = Scheme.DRW
-
     comm = MPI.COMM_WORLD
 
+    # Volume and boundary ids
     volumes = {"solid": 1,
                "fluid": 2}
     boundaries = {"solid_x_walls": 1,
@@ -390,9 +390,10 @@ if __name__ == "__main__":
                   "inlet": 6,
                   "outlet": 7}
 
+    # Create the mesh
     gmsh.initialize()
     if comm.rank == 0:
-        # TODO Pass options
+        # Define geometry
         gmsh.model.add("channel")
         order = 1
 
@@ -474,6 +475,7 @@ if __name__ == "__main__":
 
         gmsh.model.geo.synchronize()
 
+        # Physical groups
         gmsh.model.addPhysicalGroup(3, [1, 3], volumes["solid"])
         gmsh.model.addPhysicalGroup(3, [2], volumes["fluid"])
 
@@ -507,6 +509,7 @@ if __name__ == "__main__":
         gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
     gmsh.finalize()
 
+    # Fluid BCs
     def inlet(x): return np.vstack(
             (36 * x[1] * (1 - x[1]) * x[2] * (1 - x[2]),
              np.zeros_like(x[0]),
@@ -516,11 +519,11 @@ if __name__ == "__main__":
         (np.zeros_like(x[0]),
             np.zeros_like(x[0]),
             np.zeros_like(x[0])))
-
     u_bcs = {"inlet": (BCType.Dirichlet, inlet),
              "outlet": (BCType.Neumann, zero),
              "fluid_y_walls": (BCType.Dirichlet, zero),
              "fluid_z_walls": (BCType.Dirichlet, zero)}
+    # Electromagnetic BCs
     # # Homogeneous Dirichlet (conducting) on y walls,
     # # homogeneous Neumann (insulating) on z walls
     # A_bcs = {"solid_y_walls": (BCType.Dirichlet, zero)}
@@ -529,10 +532,12 @@ if __name__ == "__main__":
 
     boundary_conditions = {"u": u_bcs, "A": A_bcs}
 
+    # Initial condition
     def u_i_expr(x): return np.zeros_like(x[:3])
+
+    # Externally applied force on the fluid
     f = fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(3)])
 
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, ct, ft, volumes, boundaries,
-          boundary_conditions, f, u_i_expr, sigma_s, sigma_f,
-          mu)
+    solve(solver_type, k, nu, num_time_steps, delta_t, scheme, msh, ct,
+          ft, volumes, boundaries, boundary_conditions, f, u_i_expr, sigma_s,
+          sigma_f, mu)
