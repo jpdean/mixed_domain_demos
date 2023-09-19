@@ -14,7 +14,7 @@ from utils import norm_L2, compute_cell_boundary_integration_entities
 
 def u_e(x):
     "Function to represent the exact solution"
-    if type(x) == ufl.SpatialCoordinate:
+    if isinstance(x, ufl.SpatialCoordinate):
         module = ufl
     else:
         module = np
