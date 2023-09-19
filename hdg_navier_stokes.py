@@ -401,7 +401,7 @@ def run_square_problem():
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3  # Kinematic viscosity
-    num_time_steps = 32
+    num_time_steps = 16
     t_end = 1e4
     d = 2
 
@@ -916,6 +916,7 @@ def run_kovasznay_problem():
     # Reynold's number
     R_e = 1 / nu
 
+    # Exact velocity
     def u_e(x, module=ufl):
         u_x = 1 - module.exp(
             (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
@@ -930,15 +931,19 @@ def run_kovasznay_problem():
             assert module == np
             return np.vstack((u_x, u_y))
 
+    # Exact pressure
     def p_e(x, module=ufl):
         return (1 / 2) * (1 - module.exp(
             2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]))
 
+    # Boundary conditions
     boundary_conditions = {"boundary": (BCType.Dirichlet,
                                         lambda x: u_e(x, module=np))}
 
+    # Forcing term
     f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
 
+    # Initial condition
     def u_i(x): return np.zeros_like(x[:2])
 
     # Call solver
@@ -949,5 +954,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    # run_square_problem()
-    run_kovasznay_problem()
+    run_square_problem()
