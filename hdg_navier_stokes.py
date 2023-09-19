@@ -409,63 +409,6 @@ class Problem:
         pass
 
 
-# TODO Remove duplicate code
-class Kovasznay(Problem):
-    def create_mesh(self, h, cell_type):
-        comm = MPI.COMM_WORLD
-        n = round(1 / h)
-
-        point_0 = (0.0, -0.5)
-        point_1 = (1, 1.5)
-        msh = mesh.create_rectangle(
-            comm, (point_0, point_1), (n, 2 * n),
-            cell_type, mesh.GhostMode.none)
-
-        fdim = msh.topology.dim - 1
-        boundary_facets = mesh.locate_entities_boundary(
-            msh, fdim,
-            lambda x: np.isclose(x[0], point_0[0]) |
-            np.isclose(x[0], point_1[0]) |
-            np.isclose(x[1], point_0[1]) |
-            np.isclose(x[1], point_1[1]))
-        values = np.ones_like(boundary_facets, dtype=np.intc)
-        mt = mesh.meshtags(msh, fdim, boundary_facets, values)
-
-        boundaries = {"boundary": 1}
-        return msh, mt, boundaries
-
-    def u_e(self, x, module=ufl):
-        R_e = 1 / nu
-        u_x = 1 - module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
-            module.cos(2 * module.pi * x[1])
-        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / \
-            (2 * module.pi) * module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
-            module.sin(2 * module.pi * x[1])
-        if module == ufl:
-            return ufl.as_vector((u_x, u_y))
-        else:
-            assert module == np
-            return np.vstack((u_x, u_y))
-
-    def p_e(self, x, module=ufl):
-        R_e = 1 / nu
-        return (1 / 2) * (1 - module.exp(
-            2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]))
-
-    def boundary_conditions(self):
-        def u_bc(x): return self.u_e(x, module=np)
-        return {"boundary": (BCType.Dirichlet, u_bc)}
-
-    def f(self, msh):
-        return fem.Constant(msh, (PETSc.ScalarType(0.0),
-                                  PETSc.ScalarType(0.0)))
-
-    def u_i(self):
-        return lambda x: np.zeros_like(x[:2])
-
-
 class Wannier(Problem):
     def __init__(self, r_0=0.7, r_1=1.0, e=-0.15, v_0=1.0, v_1=0):
         super().__init__()
@@ -1091,6 +1034,71 @@ def run_taylor_green_problem():
           boundary_conditions, f, u_i, u_e, p_e)
 
 
+def run_kovasznay_problem():
+    # Simulation parameters
+    comm = MPI.COMM_WORLD
+    scheme = Scheme.DRW
+    solver_type = SolverType.NAVIER_STOKES
+    h = 1 / 8  # Maximum cell diameter
+    k = 3  # Polynomial degree
+    cell_type = mesh.CellType.quadrilateral
+    nu = 1 / 40  # Kinematic viscosity
+    num_time_steps = 16
+    t_end = 10
+
+    # Create mesh
+    n = round(1 / h)
+    point_0 = (0.0, -0.5)
+    point_1 = (1, 1.5)
+    msh = mesh.create_rectangle(
+        comm, (point_0, point_1), (n, 2 * n),
+        cell_type, mesh.GhostMode.none)
+    fdim = msh.topology.dim - 1
+    boundary_facets = mesh.locate_entities_boundary(
+        msh, fdim,
+        lambda x: np.isclose(x[0], point_0[0]) |
+        np.isclose(x[0], point_1[0]) |
+        np.isclose(x[1], point_0[1]) |
+        np.isclose(x[1], point_1[1]))
+    values = np.ones_like(boundary_facets, dtype=np.intc)
+    mt = mesh.meshtags(msh, fdim, boundary_facets, values)
+    boundaries = {"boundary": 1}
+
+    # Reynold's number
+    R_e = 1 / nu
+
+    def u_e(x, module=ufl):
+        u_x = 1 - module.exp(
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
+            module.cos(2 * module.pi * x[1])
+        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / \
+            (2 * module.pi) * module.exp(
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
+            module.sin(2 * module.pi * x[1])
+        if module == ufl:
+            return ufl.as_vector((u_x, u_y))
+        else:
+            assert module == np
+            return np.vstack((u_x, u_y))
+
+    def p_e(x, module=ufl):
+        return (1 / 2) * (1 - module.exp(
+            2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]))
+
+    boundary_conditions = {"boundary": (BCType.Dirichlet,
+                                        lambda x: u_e(x, module=np))}
+
+    f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
+
+    def u_i(x): return np.zeros_like(x[:2])
+
+    # Call solver
+    delta_t = t_end / num_time_steps
+    solve(solver_type, k, nu, num_time_steps,
+          delta_t, scheme, msh, mt, boundaries,
+          boundary_conditions, f, u_i, u_e, p_e)
+
+
 if __name__ == "__main__":
     # run_square_problem()
-    run_taylor_green_problem()
+    run_kovasznay_problem()
