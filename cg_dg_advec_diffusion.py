@@ -150,19 +150,13 @@ msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
 # Create integration entities for the interface integral
-fdim = tdim - 1
-msh.topology.create_connectivity(tdim, fdim)
-msh.topology.create_connectivity(fdim, tdim)
-facet_imap = msh.topology.index_map(fdim)
-c_to_f = msh.topology.connectivity(tdim, fdim)
-f_to_c = msh.topology.connectivity(fdim, tdim)
+interface_facets = ft.indices[ft.values == bound_ids["interface"]]
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
-interface_facets = ft.indices[ft.values == bound_ids["interface"]]
 interface_entities, msh_to_sm_0, msh_to_sm_1 = \
     compute_interface_integration_entities(
-        interface_facets, domain_0_cells, domain_1_cells, c_to_f,
-        f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
+        msh, interface_facets, domain_0_cells, domain_1_cells,
+        msh_to_sm_0, msh_to_sm_1)
 
 # Compute integration entities for boundary terms
 boundary_entites = compute_integration_domains(
@@ -284,7 +278,7 @@ L = [L_0, L_1]
 # is enforced weakly by the DG scheme.
 ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
 bound_facets_sm_1 = ft_sm_1.indices[ft_sm_1.values == bound_ids["boundary_1"]]
-bound_dofs = fem.locate_dofs_topological(V_1, fdim, bound_facets_sm_1)
+bound_dofs = fem.locate_dofs_topological(V_1, tdim - 1, bound_facets_sm_1)
 u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)

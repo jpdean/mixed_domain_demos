@@ -5,6 +5,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx import mesh
 import sys
+from dolfinx.cpp.mesh import cell_num_entities
 
 
 def par_print(comm, string):
@@ -172,8 +173,8 @@ class TimeDependentExpression():
 
 
 def compute_interface_integration_entities(
-        interface_facets, domain_0_cells, domain_1_cells, c_to_f, f_to_c,
-        facet_imap, domain_to_domain_0, domain_to_domain_1):
+        msh, interface_facets, domain_0_cells, domain_1_cells,
+        domain_to_domain_0, domain_to_domain_1):
     """
     This function computes the integration entities (as a list of pairs of
     (cell, local facet index) pairs) required to assemble mixed domain forms
@@ -201,6 +202,13 @@ def compute_interface_integration_entities(
     # pair to the cell in domain_0, corresponding to the "+" restriction.
     # Assign the second pair to the domain_1 cell, corresponding to the "-"
     # restriction.
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    msh.topology.create_connectivity(tdim, fdim)
+    msh.topology.create_connectivity(fdim, tdim)
+    facet_imap = msh.topology.index_map(fdim)
+    c_to_f = msh.topology.connectivity(tdim, fdim)
+    f_to_c = msh.topology.connectivity(fdim, tdim)
     # FIXME This can be done more efficiently
     interface_entities = []
     for facet in interface_facets:
@@ -269,3 +277,28 @@ def compute_interior_facet_integration_entities(msh, cell_map):
                 [cell_map[cells[0]], local_facet_plus,
                  cell_map[cells[1]], local_facet_minus])
     return integration_entities
+
+
+def compute_cell_boundary_integration_entities(msh):
+    """
+    Compute the integration entities for integrals around the
+    boundaries of all cells in msh.
+
+    Parameters:
+        msh: the mesh
+
+    Returns:
+        A list of facets to integrate over, identified by
+        (cell, local facet index) pairs
+    """
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    num_cell_facets = cell_num_entities(msh.topology.cell_type, fdim)
+    # FIXME Do this efficiently with numpy
+    cell_boundary_facets = []
+    # Loop over each cell in the mesh
+    for cell in range(msh.topology.index_map(tdim).size_local):
+        # Add each facet of the cell to the list
+        for local_facet in range(num_cell_facets):
+            cell_boundary_facets.extend([cell, local_facet])
+    return cell_boundary_facets

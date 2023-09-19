@@ -9,12 +9,12 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import norm_L2
+from utils import norm_L2, compute_cell_boundary_integration_entities
 
 
 def u_e(x):
     "Function to represent the exact solution"
-    if type(x) == ufl.SpatialCoordinate:
+    if isinstance(x, ufl.SpatialCoordinate):
         module = ufl
     else:
         module = np
@@ -58,17 +58,13 @@ u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # Create integration entities and define integration measures. We want
-# to integrate around each element boundary so we loop over cells and
-# add each facet of the cells as (cell, local facet) pairs
-# TODO Create without Python loop using numpy to improve performance
-all_facets = 0  # Tag
-facet_integration_entities = []
-for cell in range(msh.topology.index_map(tdim).size_local):
-    for local_facet in range(num_cell_facets):
-        facet_integration_entities.extend([cell, local_facet])
+# to integrate around each element boundary, so we call the following
+# convenience function:
+cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
 dx_c = ufl.Measure("dx", domain=msh)
+all_facets = 0  # Tag
 ds_c = ufl.Measure("ds",
-                   subdomain_data=[(all_facets, facet_integration_entities)],
+                   subdomain_data=[(all_facets, cell_boundary_facets)],
                    domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 

@@ -147,18 +147,13 @@ entity_maps = {submesh_0: msh_to_sm_0,
 
 # Compute integration entities for the interface integral
 fdim = tdim - 1
-msh.topology.create_connectivity(tdim, fdim)
-msh.topology.create_connectivity(fdim, tdim)
-facet_imap = msh.topology.index_map(fdim)
-c_to_f = msh.topology.connectivity(tdim, fdim)
-f_to_c = msh.topology.connectivity(fdim, tdim)
+interface_facets = ft.indices[ft.values == surf_ids["interface"]]
 domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
 domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
-interface_facets = ft.indices[ft.values == surf_ids["interface"]]
 interface_entities, msh_to_sm_0, msh_to_sm_1 = \
     compute_interface_integration_entities(
-        interface_facets, domain_0_cells, domain_1_cells, c_to_f,
-        f_to_c, facet_imap, msh_to_sm_0, msh_to_sm_1)
+        msh, interface_facets, domain_0_cells, domain_1_cells,
+        msh_to_sm_0, msh_to_sm_1)
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
