@@ -7,9 +7,13 @@ import ufl
 from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
-from utils import (norm_L2, create_random_mesh,
-                   compute_cell_boundary_integration_entities)
+from utils import (
+    norm_L2,
+    create_random_mesh,
+    compute_cell_boundary_facets,
+)
 from utils import par_print
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 
 # Exact solution
@@ -37,16 +41,16 @@ comm = MPI.COMM_WORLD
 rank = comm.rank
 
 # Number of elements in each direction
-n = 16
+n = 8
 
 # Create the mesh
 # msh = mesh.create_unit_square(
 #     comm, n, n, ghost_mode=mesh.GhostMode.none,
 #     cell_type=mesh.CellType.quadrilateral)
-msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
-# msh = mesh.create_unit_cube(
-#     comm, n, n, n, ghost_mode=mesh.GhostMode.none,
-#     cell_type=mesh.CellType.hexahedron)
+# msh = create_random_mesh(((0.0, 0.0), (1.0, 1.0)), (n, n), mesh.GhostMode.none)
+msh = mesh.create_unit_cube(
+    comm, n, n, n, ghost_mode=mesh.GhostMode.none, cell_type=mesh.CellType.hexahedron
+)
 
 # We need to create a broken Lagrange space defined over the facets of the
 # mesh. To do so, we require a sub-mesh of the all facets. We begin by
@@ -65,8 +69,8 @@ facet_mesh, facet_mesh_to_mesh = mesh.create_submesh(msh, fdim, facets)[0:2]
 
 # Define function spaces
 k = 3  # Polynomial order
-V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
-Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
+V = fem.functionspace(msh, ("Discontinuous Lagrange", k))
+Vbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
 
 # Trial and test functions
 # Cell space
@@ -81,11 +85,12 @@ dx_c = ufl.Measure("dx", domain=msh)
 # We need to define an integration measure to integrate around the
 # boundary of each cell. The integration entities can be computed
 # using the following convenience function.
-cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
+cell_boundary_facets = compute_cell_boundary_facets(msh)
 cell_boundaries = 1  # A tag
 # Create the measure
-ds_c = ufl.Measure("ds", subdomain_data=[
-                   (cell_boundaries, cell_boundary_facets)], domain=msh)
+ds_c = ufl.Measure(
+    "ds", subdomain_data=[(cell_boundaries, cell_boundary_facets)], domain=msh
+)
 # Create a cell integral measure over the facet mesh
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
@@ -103,27 +108,33 @@ gamma = 16.0 * k**2 / h
 
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-a_00 = fem.form(inner(c * grad(u), grad(v)) * dx_c -
-                (inner(c * u, dot(grad(v), n)) * ds_c(cell_boundaries) +
-                 inner(c * v, dot(grad(u), n)) * ds_c(cell_boundaries)) +
-                gamma * inner(c * u, v) * ds_c(cell_boundaries))
+a_00 = fem.form(
+    inner(c * grad(u), grad(v)) * dx_c
+    - (
+        inner(c * u, dot(grad(v), n)) * ds_c(cell_boundaries)
+        + inner(c * v, dot(grad(u), n)) * ds_c(cell_boundaries)
+    )
+    + gamma * inner(c * u, v) * ds_c(cell_boundaries)
+)
 a_10 = fem.form(
     inner(dot(grad(u), n) - gamma * u, c * vbar) * ds_c(cell_boundaries),
-    entity_maps=entity_maps)
+    entity_maps=entity_maps,
+)
 a_01 = fem.form(
     inner(dot(grad(v), n) - gamma * v, c * ubar) * ds_c(cell_boundaries),
-    entity_maps=entity_maps)
-a_11 = fem.form(gamma * inner(c * ubar, vbar) * ds_c(cell_boundaries),
-                entity_maps=entity_maps)
+    entity_maps=entity_maps,
+)
+a_11 = fem.form(
+    gamma * inner(c * ubar, vbar) * ds_c(cell_boundaries), entity_maps=entity_maps
+)
 
-f = - div(c * grad(u_e(x)))
+f = -div(c * grad(u_e(x)))
 
 L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
 # Define block structure
-a = [[a_00, a_01],
-     [a_10, a_11]]
+a = [[a_00, a_01], [a_10, a_11]]
 L = [L_0, L_1]
 
 # Apply Dirichlet boundary conditions
@@ -134,13 +145,14 @@ msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 # facet_mesh
 facet_mesh_boundary_facets = mesh_to_facet_mesh[msh_boundary_facets]
 # Get the dofs and apply the bondary condition
+facet_mesh.topology.create_connectivity(fdim, fdim)
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dofs, Vbar)
 
 # Assemble the matrix and vector
-A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
+A = assemble_matrix_block(a, bcs=[bc])
 A.assemble()
-b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
+b = assemble_vector_block(L, a, bcs=[bc])
 
 # Setup the solver
 ksp = PETSc.KSP().create(msh.comm)
@@ -157,7 +169,7 @@ ksp.solve(b, x)
 u, ubar = fem.Function(V), fem.Function(Vbar)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
-ubar.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+ubar.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
 u.x.scatter_forward()
 ubar.x.scatter_forward()
 
