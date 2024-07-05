@@ -24,6 +24,7 @@ import gmsh
 from utils import (convert_facet_tags, norm_L2, par_print,
                    compute_interface_integration_entities,
                    compute_interior_facet_integration_entities)
+from dolfinx.fem.petsc import create_matrix_block, create_vector_block, assemble_matrix_block, assemble_vector_block
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -288,9 +289,9 @@ msh, ct, ft, volume_id, boundary_id = generate_mesh(
 # Create sub-meshes of fluid and solid domains
 tdim = msh.topology.dim
 submesh_f, sm_f_to_msh = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == volume_id["fluid"]])[:2]
+    msh, tdim, ct.find(volume_id["fluid"]))[:2]
 submesh_s, sm_s_to_msh = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == volume_id["solid"]])[:2]
+    msh, tdim, ct.find(volume_id["solid"]))[:2]
 
 # Create function spaces for Navier-Stokes problem
 scheme = hdg_navier_stokes.Scheme.DRW
@@ -354,9 +355,9 @@ entity_maps = {submesh_f: msh_to_sm_f,
                submesh_s: msh_to_sm_s}
 
 # Create integration entities for the interface integral
-interface_facets = ft.indices[ft.values == boundary_id["obstacle"]]
-domain_f_cells = ct.indices[ct.values == volume_id["fluid"]]
-domain_s_cells = ct.indices[ct.values == volume_id["solid"]]
+interface_facets = ft.find(boundary_id["obstacle"])
+domain_f_cells = ct.find(volume_id["fluid"])
+domain_s_cells = ct.find(volume_id["solid"])
 obstacle_facet_entities, msh_to_sm_f, msh_to_sm_s = \
     compute_interface_integration_entities(
         msh, interface_facets, domain_f_cells, domain_s_cells,
@@ -483,16 +484,16 @@ a_T = [[a_T_00, a_T_01],
 L_T = [L_T_0, L_T_1]
 
 # Assemble matrix and vector for thermal problem
-A_T = fem.petsc.create_matrix_block(a_T)
-b_T = fem.petsc.create_vector_block(L_T)
+A_T = create_matrix_block(a_T)
+b_T = create_vector_block(L_T)
 
 # Set-up matrix and vectors for fluid problem
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
-    A = fem.petsc.create_matrix_block(a)
+    A = create_matrix_block(a)
 else:
-    A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+    A = assemble_matrix_block(a, bcs=bcs)
     A.assemble()
-b = fem.petsc.create_vector_block(L)
+b = create_vector_block(L)
 x = A.createVecRight()
 
 # Set-up solver for thermal problem
@@ -518,8 +519,8 @@ ksp.setFromOptions()
 if scheme == hdg_navier_stokes.Scheme.RW:
     u_vis = fem.Function(V)
 else:
-    V_vis = fem.VectorFunctionSpace(
-        submesh_f, ("Discontinuous Lagrange", k + 1))
+    V_vis = fem.functionspace(
+        submesh_f, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
     u_vis = fem.Function(V_vis)
 u_vis.name = "u"
 p_h = fem.Function(Q)
@@ -547,12 +548,12 @@ for n in range(num_time_steps):
     # Assemble Navier-Stokes problem
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
-        fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+        assemble_matrix_block(A, a, bcs=bcs)
         A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
-    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+    assemble_vector_block(b, L, a, bcs=bcs)
 
     # Compute Navier-Stokes solution
     ksp.solve(b, x)
@@ -571,12 +572,12 @@ for n in range(num_time_steps):
 
     # Assemble thermal problem
     A_T.zeroEntries()
-    fem.petsc.assemble_matrix_block(A_T, a_T)
+    assemble_matrix_block(A_T, a_T)
     A_T.assemble()
 
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
-    fem.petsc.assemble_vector_block(b_T, L_T, a_T)
+    assemble_vector_block(b_T, L_T, a_T)
 
     # Solver thermal problem
     ksp_T.solve(b_T, x_T)
