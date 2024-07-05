@@ -9,6 +9,7 @@ from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 
 # Marker for the domain boundary
@@ -38,8 +39,8 @@ submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces on the mesh and sub-mesh
 k = 3  # Polynomial degree
-V = fem.FunctionSpace(msh, ("Lagrange", k))
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
+V = fem.functionspace(msh, ("Lagrange", k))
+W = fem.functionspace(submesh, ("Lagrange", k))
 
 # Trial and test functions
 u = ufl.TrialFunction(V)
@@ -84,9 +85,9 @@ a = [[a_00, a_01],
 L = [L_0, L_1]
 
 # Assemble matrices
-A = fem.petsc.assemble_matrix_block(a)
+A = assemble_matrix_block(a)
 A.assemble()
-b = fem.petsc.assemble_vector_block(L, a)
+b = assemble_vector_block(L, a)
 
 # Solve
 ksp = PETSc.KSP().create(msh.comm)
