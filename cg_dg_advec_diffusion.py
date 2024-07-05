@@ -29,6 +29,7 @@ from utils import (norm_L2, convert_facet_tags,
                    compute_interior_facet_integration_entities)
 from dolfinx.cpp.fem import compute_integration_domains
 import gmsh
+from dolfinx.fem.petsc import assemble_matrix_block, create_vector_block, assemble_vector_block
 
 
 def u_e(x, module=np):
@@ -128,13 +129,13 @@ msh, ct, ft = create_mesh(comm, h)
 # different function spaces over each part of the domain
 tdim = msh.topology.dim
 submesh_0, sm_0_to_msh = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == vol_ids["omega_0"]])[:2]
+    msh, tdim, ct.find(vol_ids["omega_0"]))[:2]
 submesh_1, sm_1_to_msh = mesh.create_submesh(
-    msh, tdim, ct.indices[ct.values == vol_ids["omega_1"]])[:2]
+    msh, tdim, ct.find(vol_ids["omega_1"]))[:2]
 
 # Define function spaces on each submesh
-V_0 = fem.FunctionSpace(submesh_0, ("Discontinuous Lagrange", k_0))
-V_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k_1))
+V_0 = fem.functionspace(submesh_0, ("Discontinuous Lagrange", k_0))
+V_1 = fem.functionspace(submesh_1, ("Lagrange", k_1))
 
 # Test and trial functions
 u_0, v_0 = ufl.TrialFunction(V_0), ufl.TestFunction(V_0)
@@ -150,17 +151,18 @@ msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 
 # Create integration entities for the interface integral
-interface_facets = ft.indices[ft.values == bound_ids["interface"]]
-domain_0_cells = ct.indices[ct.values == vol_ids["omega_0"]]
-domain_1_cells = ct.indices[ct.values == vol_ids["omega_1"]]
+interface_facets = ft.find(bound_ids["interface"])
+domain_0_cells = ct.find(vol_ids["omega_0"])
+domain_1_cells = ct.find(vol_ids["omega_1"])
 interface_entities, msh_to_sm_0, msh_to_sm_1 = \
     compute_interface_integration_entities(
         msh, interface_facets, domain_0_cells, domain_1_cells,
         msh_to_sm_0, msh_to_sm_1)
 
 # Compute integration entities for boundary terms
-boundary_entites = compute_integration_domains(
-    fem.IntegralType.exterior_facet, ft._cpp_object)
+# boundary_entites = compute_integration_domains(
+#     fem.IntegralType.exterior_facet, ft._cpp_object)
+boundary_entites = [(bound_ids["boundary_0"], compute_integration_domains(fem.IntegralType.exterior_facet, msh.topology, ft.find(bound_ids["boundary_0"]), ft.dim))]
 
 # Compute integration entities for the interior facet integrals
 # over omega_0. These are needed for the DG scheme
@@ -277,7 +279,8 @@ L = [L_0, L_1]
 # NOTE: We don't do this for V_0 since the Dirichlet boundary condition
 # is enforced weakly by the DG scheme.
 ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
-bound_facets_sm_1 = ft_sm_1.indices[ft_sm_1.values == bound_ids["boundary_1"]]
+bound_facets_sm_1 = ft_sm_1.find(bound_ids["boundary_1"])
+submesh_1.topology.create_connectivity(tdim - 1, tdim)
 bound_dofs = fem.locate_dofs_topological(V_1, tdim - 1, bound_facets_sm_1)
 u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
@@ -285,9 +288,9 @@ bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
 bcs = [bc_1]
 
 # Assemble the system of equations
-A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+A = assemble_matrix_block(a, bcs=bcs)
 A.assemble()
-b = fem.petsc.create_vector_block(L)
+b = create_vector_block(L)
 
 # Set up solver
 ksp = PETSc.KSP().create(msh.comm)
@@ -309,7 +312,7 @@ for n in range(num_time_steps):
 
     with b.localForm() as b_loc:
         b_loc.set(0.0)
-    fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+    assemble_vector_block(b, L, a, bcs=bcs)
 
     # Compute solution
     ksp.solve(b, x)
