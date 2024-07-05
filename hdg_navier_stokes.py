@@ -19,10 +19,11 @@ from petsc4py import PETSc
 from dolfinx.cpp.fem import compute_integration_domains
 from utils import (norm_L2, domain_average, normal_jump_error,
                    TimeDependentExpression, par_print,
-                   compute_cell_boundary_integration_entities)
+                   compute_cell_boundary_facets)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block, create_matrix_block, create_vector_block
 
 
 class SolverType(Enum):
@@ -62,14 +63,14 @@ def create_facet_mesh(msh):
 def create_function_spaces(msh, facet_mesh, scheme, k):
     # Create function spaces
     if scheme == Scheme.RW:
-        V = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k))
-        Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k - 1))
+        V = fem.functionspace(msh, ("Discontinuous Lagrange", k, (msh.geometry.dim,)))
+        Q = fem.functionspace(msh, ("Discontinuous Lagrange", k - 1))
     else:
-        V = fem.FunctionSpace(msh, ("Discontinuous Raviart-Thomas", k + 1))
-        Q = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
-    Vbar = fem.VectorFunctionSpace(
-        facet_mesh, ("Discontinuous Lagrange", k))
-    Qbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
+        V = fem.functionspace(msh, ("Discontinuous Raviart-Thomas", k + 1))
+        Q = fem.functionspace(msh, ("Discontinuous Lagrange", k))
+    Vbar = fem.functionspace(
+        facet_mesh, ("Discontinuous Lagrange", k, (msh.geometry.dim,)))
+    Qbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
 
     return V, Q, Vbar, Qbar
 
@@ -82,15 +83,15 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
     # We wish to integrate around the boundary of each cell, so we
     # get a list of cell boundary facets as follows:
-    cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
+    cell_boundary_facets = compute_cell_boundary_facets(msh)
     cell_boundaries_tag = 0
     # Add cell boundaries to the list of integration entities
     facet_integration_entities = [(cell_boundaries_tag, cell_boundary_facets)]
     # We also need to integrate over portions of the boundary (e.g. to
     # apply boundary conditions). We can add the required integration
     # entities as follows:
-    facet_integration_entities += compute_integration_domains(
-        fem.IntegralType.exterior_facet, mt._cpp_object)
+    facet_integration_entities += [(tag, compute_integration_domains(
+        fem.IntegralType.exterior_facet, msh.topology, mt.find(tag), mt.dim)) for tag in boundaries.values()]
 
     # Create integration measures
     dx_c = ufl.Measure("dx", domain=msh)
@@ -189,6 +190,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     bcs = []
     # FIXME Can now access the bc_func through the bc
     bc_funcs = []
+    facet_mesh.topology.create_connectivity(fdim, fdim)
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
         bc_type, bc_expr = bc
@@ -268,9 +270,9 @@ def solve(solver_type, k, nu, num_time_steps,
 
     # Set up matrix
     if solver_type == SolverType.NAVIER_STOKES:
-        A = fem.petsc.create_matrix_block(a)
+        A = create_matrix_block(a)
     else:
-        A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
+        A = assemble_matrix_block(a, bcs=bcs)
         A.assemble()
 
     # Create vectors for RHS and solution
@@ -297,7 +299,7 @@ def solve(solver_type, k, nu, num_time_steps,
         # we create a discontinuous Lagrange space to interpolate the
         # solution into for visualisation. This allows artifact-free
         # visualisation of the solution
-        V_vis = fem.VectorFunctionSpace(msh, ("Discontinuous Lagrange", k + 1))
+        V_vis = fem.functionspace(msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -332,13 +334,13 @@ def solve(solver_type, k, nu, num_time_steps,
         # Assemble LHS
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
-            fem.petsc.assemble_matrix_block(A, a, bcs=bcs)
+            assemble_matrix_block(A, a, bcs=bcs)
             A.assemble()
 
         # Assemble RHS
         with b.localForm() as b_loc:
             b_loc.set(0)
-        fem.petsc.assemble_vector_block(b, L, a, bcs=bcs)
+        assemble_vector_block(b, L, a, bcs=bcs)
 
         # Compute solution
         ksp.solve(b, x)
@@ -409,7 +411,7 @@ def run_square_problem():
     n = round(1 / h)
     if d == 2:
         msh = mesh.create_unit_square(
-            comm, n, n, cell_type, mesh.GhostMode.none)
+            comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none)
 
         def boundary_marker(x):
             return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
