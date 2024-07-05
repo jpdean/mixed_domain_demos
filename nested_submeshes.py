@@ -13,6 +13,7 @@ from petsc4py import PETSc
 import gmsh
 from dolfinx.io import gmshio
 from dolfinx.mesh import meshtags, exterior_facet_indices
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 
 def create_mesh(comm, h):
@@ -91,7 +92,7 @@ with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1, "BP4") as f:
 
 # Create a function space over submesh_0 and define trial and test
 # functions
-V_sm_0 = fem.FunctionSpace(submesh_0, ("Lagrange", k))
+V_sm_0 = fem.functionspace(submesh_0, ("Lagrange", k))
 u_sm_0, v_sm_0 = ufl.TrialFunction(V_sm_0), ufl.TestFunction(V_sm_0)
 
 # Create a function to represent the forcing term
@@ -117,9 +118,9 @@ L_sm_0 = fem.form(inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0,
                   entity_maps=entity_maps_sm_0)
 
 # Assemble matrix and vector
-A_sm_0 = fem.petsc.assemble_matrix(a_sm_0)
+A_sm_0 = assemble_matrix(a_sm_0)
 A_sm_0.assemble()
-b_sm_0 = fem.petsc.assemble_vector(L_sm_0)
+b_sm_0 = assemble_vector(L_sm_0)
 b_sm_0.ghostUpdate(addv=PETSc.InsertMode.ADD,
                    mode=PETSc.ScatterMode.REVERSE)
 
@@ -141,7 +142,7 @@ with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0, "BP4") as f:
     f.write(0.0)
 
 # Create function spaces over the mesh and define trial and test functions
-V_msh = fem.FunctionSpace(msh, ("Lagrange", k))
+V_msh = fem.functionspace(msh, ("Lagrange", k))
 u_msh, v_msh = ufl.TrialFunction(V_msh), ufl.TestFunction(V_msh)
 
 # Create Dirichlet boundary condition
@@ -173,9 +174,9 @@ L_msh = fem.form(inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1),
                  entity_maps=entity_maps_msh)
 
 # Assemble matrix and vector
-A_msh = fem.petsc.assemble_matrix(a_msh, bcs=[bc])
+A_msh = assemble_matrix(a_msh, bcs=[bc])
 A_msh.assemble()
-b_msh = fem.petsc.assemble_vector(L_msh)
+b_msh = assemble_vector(L_msh)
 fem.petsc.apply_lifting(b_msh, [a_msh], bcs=[[bc]])
 b_msh.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 fem.petsc.set_bc(b_msh, [bc])
