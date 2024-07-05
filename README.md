@@ -1,14 +1,16 @@
 # Mixed domain demos
-This repository contains examples of how mixed domain problems can be solved in FEniCSx.
+This repository contains examples of how mixed-domain problems can be solved in FEniCSx.
 
-NOTE: Mixed domain functionality in FEniCSx is under active development and is **not** ready for production use.
+NOTE: Mixed-domain functionality in FEniCSx is under active development and is **not** ready for production use.
 
 # Running the demos
-To run the demos, the following branches are required:
+The mixed-domain features will be in the next FEniCSx release (v0.9).
+
+The demos can be run now by installing the main development branches of each of the FEniCSx components:
 - basix: [main](https://github.com/FEniCS/basix)
 - UFL: [main](https://github.com/FEniCS/ufl)
-- FFCx: [jpdean/meshview](https://github.com/FEniCS/ffcx/tree/jpdean/meshview)
-- dolfinx: [jpdean/mixed_domain](https://github.com/FEniCS/dolfinx/tree/jpdean/mixed_domain)
+- FFCx: [main](https://github.com/FEniCS/ffcx)
+- dolfinx: [main](https://github.com/FEniCS/dolfinx)
 
-A docker image with these branches installed can be run by doing:
-`docker run -ti jpdean/mixed_domain`
+Alternatively, you can use docker:
+`docker run -ti dolfinx/dolfinx:nightly`
