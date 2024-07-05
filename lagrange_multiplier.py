@@ -303,8 +303,7 @@ for facet in gamma_i_facets:
     if facet < facet_imap.size_local:
         # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
-        # FIXME Use where
-        local_facet = c_to_f.links(cell).tolist().index(facet)
+        local_facet = np.where(c_to_f.links(cell) == facet)[0][0]
         facet_integration_entities.extend([cell, local_facet])
 ds = ufl.Measure("ds",
                  subdomain_data=[(bound_ids["gamma_i"],
