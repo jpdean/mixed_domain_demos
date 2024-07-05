@@ -9,7 +9,8 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import norm_L2, compute_cell_boundary_integration_entities
+from utils import norm_L2, compute_cell_boundary_facets
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 
 def u_e(x):
@@ -50,8 +51,8 @@ facet_mesh, facet_mesh_to_msh = mesh.create_submesh(msh, fdim, facets)[0:2]
 
 # Create functions spaces
 k = 3  # Polynomial degree
-V = fem.FunctionSpace(msh, ("Discontinuous Lagrange", k))
-Vbar = fem.FunctionSpace(facet_mesh, ("Discontinuous Lagrange", k))
+V = fem.functionspace(msh, ("Discontinuous Lagrange", k))
+Vbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
 
 # Create trial and test functions
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
@@ -60,7 +61,7 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 # Create integration entities and define integration measures. We want
 # to integrate around each element boundary, so we call the following
 # convenience function:
-cell_boundary_facets = compute_cell_boundary_integration_entities(msh)
+cell_boundary_facets = compute_cell_boundary_facets(msh)
 dx_c = ufl.Measure("dx", domain=msh)
 all_facets = 0  # Tag
 ds_c = ufl.Measure("ds",
@@ -131,6 +132,7 @@ msh_boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary)
 # facet_mesh corresponding to msh_boundary_facets
 facet_mesh_boundary_facets = msh_to_facet_mesh[msh_boundary_facets]
 # We can now use these facets to locate the desired DOFs
+facet_mesh.topology.create_connectivity(fdim, fdim)
 dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 # Finally, we interpolate the boundary condition
 u_bc = fem.Function(Vbar)
@@ -138,9 +140,9 @@ u_bc.interpolate(u_e)
 bc = fem.dirichletbc(u_bc, dofs)
 
 # Assemble system of equations
-A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
+A = assemble_matrix_block(a, bcs=[bc])
 A.assemble()
-b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
+b = assemble_vector_block(L, a, bcs=[bc])
 
 # Setup solver
 ksp = PETSc.KSP().create(msh.comm)
