@@ -43,7 +43,7 @@ def normal_jump_error(msh, v):
 
 
 # FIXME This should be a C++ helper function
-# TODO Simplify and document
+# TODO Simplify, make scalable, and document
 def convert_facet_tags(msh, submesh, cell_map, facet_tag):
     msh_facets = facet_tag.indices
 
@@ -67,7 +67,7 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
                 local_facet = msh_c_to_f.links(cell).tolist().index(facet)
                 # FIXME Don't hardcode cell type
                 assert local_facet >= 0  # and local_facet <= 2
-                submesh_cell = cell_map.index(cell)
+                submesh_cell = np.where(cell_map == cell)[0][0]
                 submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
                 submesh_facets.append(submesh_facet)
                 submesh_values.append(facet_tag.values[i])
