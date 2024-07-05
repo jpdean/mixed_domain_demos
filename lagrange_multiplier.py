@@ -13,6 +13,7 @@ from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
+from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 
 def u_e(x):
@@ -260,24 +261,24 @@ bound_ids = {"gamma": 2,  # Boundary
 
 # Create trial and test functions for primary unknown
 msh, ct, ft = create_mesh(h, d)
-V = fem.FunctionSpace(msh, ("Lagrange", k))
+V = fem.functionspace(msh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create Dirichlet boundary condition
 tdim = msh.topology.dim
 fdim = tdim - 1
 msh.topology.create_entities(fdim)
-dirichlet_facets = ft.indices[ft.values == bound_ids["gamma"]]
+dirichlet_facets = ft.find(bound_ids["gamma"])
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
 # Create sub-mesh for Lagrange multiplier. We locate the facets on the
 # interface (gamma_1) pass them to create_submesh
-gamma_i_facets = ft.indices[ft.values == bound_ids["gamma_i"]]
+gamma_i_facets = ft.find(bound_ids["gamma_i"])
 submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
 
 # Create function space for the Lagrange multiplier
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
+W = fem.functionspace(submesh, ("Lagrange", k))
 lmbda, eta = ufl.TrialFunction(W), ufl.TestFunction(W)
 
 # We take msh to be the integration domain mesh, so we must provide a map
@@ -302,6 +303,7 @@ for facet in gamma_i_facets:
     if facet < facet_imap.size_local:
         # Get a cell connected to the facet
         cell = f_to_c.links(facet)[0]
+        # FIXME Use where
         local_facet = c_to_f.links(cell).tolist().index(facet)
         facet_integration_entities.extend([cell, local_facet])
 ds = ufl.Measure("ds",
@@ -331,11 +333,11 @@ a = [[a_00, a_01],
 L = [L_0, L_1]
 
 # Assemble matrix
-A = fem.petsc.assemble_matrix_block(a, bcs=[bc])
+A = assemble_matrix_block(a, bcs=[bc])
 A.assemble()
 
 # Assemble vector
-b = fem.petsc.assemble_vector_block(L, a, bcs=[bc])
+b = assemble_vector_block(L, a, bcs=[bc])
 
 # Configure solver
 ksp = PETSc.KSP().create(msh.comm)
