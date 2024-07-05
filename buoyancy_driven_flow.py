@@ -299,8 +299,8 @@ V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
     submesh_f, facet_mesh_f, scheme, k)
 
 # Function spaces for fluid and solid temperature
-W_f = fem.FunctionSpace(submesh_f, ("Discontinuous Lagrange", k))
-W_s = fem.FunctionSpace(submesh_s, ("Lagrange", k))
+W_f = fem.functionspace(submesh_f, ("Discontinuous Lagrange", k))
+W_s = fem.functionspace(submesh_s, ("Lagrange", k))
 
 # Cell and facet velocities at previous time step
 u_n = fem.Function(V)
@@ -528,7 +528,7 @@ pbar_h = fem.Function(Qbar)
 pbar_h.name = "pbar"
 
 # Set-up files for visualisation
-vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
              for (file_name, func)
              in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
                  ("pbar.bp", pbar_h), ("T.bp", T_f_n), ("T_s.bp", T_s_n)]]

@@ -69,5 +69,5 @@ e_L2 = np.sqrt(msh.comm.allreduce(fem.assemble_scalar(
 assert np.isclose(e_L2, 0.0)
 
 # Write to file
-with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
+with io.VTXWriter(msh.comm, "ubar.bp", ubar, "BP4") as f:
     f.write(0.0)

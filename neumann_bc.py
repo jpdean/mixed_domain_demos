@@ -79,7 +79,7 @@ ksp.solve(b, u.vector)
 u.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
     f.write(0.0)
 
 # Compute the error

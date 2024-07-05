@@ -80,13 +80,13 @@ submesh_1, sm_1_to_sm_0 = mesh.create_submesh(
 
 # Create a functions space on submesh_1 and interpolate a function
 k = 2  # Polynomial degree
-V_sm_1 = fem.FunctionSpace(submesh_1, ("Lagrange", k))
+V_sm_1 = fem.functionspace(submesh_1, ("Lagrange", k))
 u_sm_1 = fem.Function(V_sm_1)
 u_sm_1.name = "u_sm_1"
 u_sm_1.interpolate(lambda x: x[1]**2)
 
 # Write the function to file
-with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1) as f:
+with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1, "BP4") as f:
     f.write(0.0)
 
 # Create a function space over submesh_0 and define trial and test
@@ -137,7 +137,7 @@ ksp.solve(b_sm_0, u_sm_0.vector)
 u_sm_0.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0) as f:
+with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0, "BP4") as f:
     f.write(0.0)
 
 # Create function spaces over the mesh and define trial and test functions
@@ -193,5 +193,5 @@ ksp.solve(b_msh, u_msh.vector)
 u_msh.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(comm, "u_msh.bp", u_msh) as f:
+with io.VTXWriter(comm, "u_msh.bp", u_msh, "BP4") as f:
     f.write(0.0)

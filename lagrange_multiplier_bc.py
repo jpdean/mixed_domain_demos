@@ -109,9 +109,9 @@ lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
     f.write(0.0)
-with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
+with io.VTXWriter(msh.comm, "lmbda.bp", lmbda, "BP4") as f:
     f.write(0.0)
 
 # Compute L^2-norm of error

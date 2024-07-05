@@ -309,7 +309,7 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h.name = "pbar"
 
     # Set up files for visualisation
-    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object])
+    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
                  for (file_name, func)
                  in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
                  ("pbar.bp", pbar_h)]]

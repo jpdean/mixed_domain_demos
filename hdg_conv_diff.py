@@ -163,9 +163,9 @@ u.x.scatter_forward()
 ubar.x.scatter_forward()
 
 # Write solution to file
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
     f.write(0.0)
-with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
+with io.VTXWriter(msh.comm, "ubar.bp", ubar, "BP4") as f:
     f.write(0.0)
 
 # Compute the error

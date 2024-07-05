@@ -296,8 +296,8 @@ ksp.setType("preonly")
 ksp.getPC().setType("lu")
 
 # Setup files for visualisation
-u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object])
-u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object])
+u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object], "BP4")
+u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object], "BP4")
 
 # Time stepping loop
 t = 0.0

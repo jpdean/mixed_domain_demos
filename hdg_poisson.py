@@ -9,7 +9,6 @@ import numpy as np
 from petsc4py import PETSc
 from utils import (
     norm_L2,
-    create_random_mesh,
     compute_cell_boundary_facets,
 )
 from utils import par_print
@@ -174,9 +173,9 @@ u.x.scatter_forward()
 ubar.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
     f.write(0.0)
-with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
+with io.VTXWriter(msh.comm, "ubar.bp", ubar, "BP4") as f:
     f.write(0.0)
 
 # Compute errors
