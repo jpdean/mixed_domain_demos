@@ -11,6 +11,7 @@ from ufl import grad, inner, div, dot
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 
 def boundary_marker(x):
@@ -32,8 +33,8 @@ submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces
 k = 3  # Polynomial degree
-V = fem.FunctionSpace(msh, ("Lagrange", k))
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
+V = fem.functionspace(msh, ("Lagrange", k))
+W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create integration measure and entity maps
@@ -61,9 +62,9 @@ a = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 L = fem.form(inner(f, v) * ufl.dx + inner(g, v) * ds, entity_maps=entity_maps)
 
 # Assemble matrix and vector
-A = fem.petsc.assemble_matrix(a)
+A = assemble_matrix(a)
 A.assemble()
-b = fem.petsc.assemble_vector(L)
+b = assemble_vector(L)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
 # Create solver
