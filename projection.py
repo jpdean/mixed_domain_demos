@@ -7,6 +7,7 @@ from mpi4py import MPI
 import numpy as np
 import ufl
 from petsc4py import PETSc
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 # Create a mesh
 comm = MPI.COMM_WORLD
@@ -14,7 +15,7 @@ n = 8
 msh = mesh.create_unit_square(comm, n, n)
 
 # Create a function space for the mesh function and interpolate
-V = fem.FunctionSpace(msh, ("Lagrange", 1))
+V = fem.functionspace(msh, ("Lagrange", 1))
 u = fem.Function(V)
 u.interpolate(lambda x: np.sin(2 * np.pi * x[0]))
 
@@ -36,7 +37,7 @@ msh_to_sm[sm_to_msh] = np.arange(len(sm_to_msh))
 entity_maps = {submsh: msh_to_sm}
 
 # Create function space on the boundary
-Vbar = fem.FunctionSpace(submsh, ("Lagrange", 1))
+Vbar = fem.functionspace(submsh, ("Lagrange", 1))
 ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # Define forms for the projection
@@ -45,9 +46,9 @@ a = fem.form(ufl.inner(ubar, vbar) * ds, entity_maps=entity_maps)
 L = fem.form(ufl.inner(u, vbar) * ds, entity_maps=entity_maps)
 
 # Assemble matrix and vector
-A = fem.petsc.assemble_matrix(a)
+A = assemble_matrix(a)
 A.assemble()
-b = fem.petsc.assemble_vector(L)
+b = assemble_vector(L)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
 # Setup solver
