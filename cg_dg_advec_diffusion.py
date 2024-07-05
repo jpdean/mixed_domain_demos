@@ -160,8 +160,6 @@ interface_entities, msh_to_sm_0, msh_to_sm_1 = \
         msh_to_sm_0, msh_to_sm_1)
 
 # Compute integration entities for boundary terms
-# boundary_entites = compute_integration_domains(
-#     fem.IntegralType.exterior_facet, ft._cpp_object)
 boundary_entites = [(bound_ids["boundary_0"], compute_integration_domains(fem.IntegralType.exterior_facet, msh.topology, ft.find(bound_ids["boundary_0"]), ft.dim))]
 
 # Compute integration entities for the interior facet integrals
