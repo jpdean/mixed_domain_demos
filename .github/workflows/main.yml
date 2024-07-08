@@ -31,6 +31,7 @@ jobs:
 
       - name: Ruff
         run: |
+          python3 -m pip install ruff
           ruff check .
           ruff format --check .
 
