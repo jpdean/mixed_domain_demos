@@ -16,10 +16,10 @@ from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 def boundary_marker(x):
     "A function to mark the domain boundary"
-    return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
-                                       np.isclose(x[0], 1.0)),
-                         np.logical_or(np.isclose(x[1], 0.0),
-                                       np.isclose(x[1], 1.0)))
+    return np.logical_or(
+        np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0)),
+        np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0)),
+    )
 
 
 # Create a mesh and a sub-mesh of the boundary

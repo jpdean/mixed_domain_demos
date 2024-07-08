@@ -14,10 +14,10 @@ from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 # Marker for the domain boundary
 def boundary_marker(x):
-    return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
-                                       np.isclose(x[0], l_x)),
-                         np.logical_or(np.isclose(x[1], 0.0),
-                                       np.isclose(x[1], l_y)))
+    return np.logical_or(
+        np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], l_x)),
+        np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], l_y)),
+    )
 
 
 # Create mesh
@@ -26,15 +26,15 @@ l_y = 1.0
 n_x = 16
 n_y = 8
 msh = mesh.create_rectangle(
-    comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
+    comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y)
+)
 
 # Create sub-mesh of the boundary to define function space for the Lagrange
 # multipiler
 tdim = msh.topology.dim
 fdim = tdim - 1
 num_facets = msh.topology.create_entities(fdim)
-boundary_facets = mesh.locate_entities_boundary(
-    msh, fdim, boundary_marker)
+boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
 submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces on the mesh and sub-mesh
@@ -73,15 +73,14 @@ entity_maps = {submesh: mesh_to_submesh}
 
 # Define forms
 a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
-a_01 = fem.form(- inner(lmbda, v) * ds, entity_maps=entity_maps)
-a_10 = fem.form(- inner(u, mu) * ds, entity_maps=entity_maps)
+a_01 = fem.form(-inner(lmbda, v) * ds, entity_maps=entity_maps)
+a_10 = fem.form(-inner(u, mu) * ds, entity_maps=entity_maps)
 a_11 = None
 L_0 = fem.form(inner(f, v) * ufl.dx)
-L_1 = fem.form(- inner(u_d, mu) * ds, entity_maps=entity_maps)
+L_1 = fem.form(-inner(u_d, mu) * ds, entity_maps=entity_maps)
 
 # Define block structure
-a = [[a_00, a_01],
-     [a_10, a_11]]
+a = [[a_00, a_01], [a_10, a_11]]
 L = [L_0, L_1]
 
 # Assemble matrices
@@ -105,7 +104,7 @@ u, lmbda = fem.Function(V), fem.Function(W)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
 u.x.scatter_forward()
-lmbda.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+lmbda.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
 lmbda.x.scatter_forward()
 
 # Write to file

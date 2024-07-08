@@ -17,13 +17,22 @@ from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.fem import compute_integration_domains
-from utils import (norm_L2, domain_average, normal_jump_error,
-                   TimeDependentExpression, par_print,
-                   compute_cell_boundary_facets)
+from utils import (
+    norm_L2,
+    domain_average,
+    normal_jump_error,
+    TimeDependentExpression,
+    par_print,
+    compute_cell_boundary_facets,
+)
 from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
-from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block, create_matrix_block, create_vector_block
+from dolfinx.fem.petsc import (
+    assemble_matrix_block,
+    assemble_vector_block,
+    create_matrix_block,
+)
 
 
 class SolverType(Enum):
@@ -54,8 +63,7 @@ def create_facet_mesh(msh):
 
     # NOTE Despite all facets being present in the submesh, the entity
     # map isn't necessarily the identity in parallel
-    facet_mesh, facet_mesh_to_msh = mesh.create_submesh(
-        msh, fdim, facets)[0:2]
+    facet_mesh, facet_mesh_to_msh = mesh.create_submesh(msh, fdim, facets)[0:2]
 
     return facet_mesh, facet_mesh_to_msh
 
@@ -69,15 +77,32 @@ def create_function_spaces(msh, facet_mesh, scheme, k):
         V = fem.functionspace(msh, ("Discontinuous Raviart-Thomas", k + 1))
         Q = fem.functionspace(msh, ("Discontinuous Lagrange", k))
     Vbar = fem.functionspace(
-        facet_mesh, ("Discontinuous Lagrange", k, (msh.geometry.dim,)))
+        facet_mesh, ("Discontinuous Lagrange", k, (msh.geometry.dim,))
+    )
     Qbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
 
     return V, Q, Vbar, Qbar
 
 
-def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
-                 facet_mesh_to_msh, solver_type, boundary_conditions,
-                 boundaries, mt, f, facet_mesh, u_n, ubar_n):
+def create_forms(
+    V,
+    Q,
+    Vbar,
+    Qbar,
+    msh,
+    k,
+    delta_t,
+    nu,
+    facet_mesh_to_msh,
+    solver_type,
+    boundary_conditions,
+    boundaries,
+    mt,
+    f,
+    facet_mesh,
+    u_n,
+    ubar_n,
+):
     tdim = msh.topology.dim
     fdim = tdim - 1
 
@@ -90,17 +115,27 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     # We also need to integrate over portions of the boundary (e.g. to
     # apply boundary conditions). We can add the required integration
     # entities as follows:
-    facet_integration_entities += [(tag, compute_integration_domains(
-        fem.IntegralType.exterior_facet, msh.topology, mt.find(tag), mt.dim)) for tag in boundaries.values()]
+    facet_integration_entities += [
+        (
+            tag,
+            compute_integration_domains(
+                fem.IntegralType.exterior_facet, msh.topology, mt.find(tag), mt.dim
+            ),
+        )
+        for tag in boundaries.values()
+    ]
 
     # Create integration measures
     dx_c = ufl.Measure("dx", domain=msh)
     # FIXME This is being estimated wrong for DRW. NOTE k**2 works on
     # affine meshes
-    quad_deg = (k + 1)**2
+    quad_deg = (k + 1) ** 2
     ds_c = ufl.Measure(
-        "ds", subdomain_data=facet_integration_entities, domain=msh,
-        metadata={"quadrature_degree": quad_deg})
+        "ds",
+        subdomain_data=facet_integration_entities,
+        domain=msh,
+        metadata={"quadrature_degree": quad_deg},
+    )
     dx_f = ufl.Measure("dx", domain=facet_mesh)
 
     # We write the mixed domain forms as integrals over msh. Hence, we must
@@ -135,56 +170,60 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
     # Diffusive terms
-    a_00 = inner(u / delta_t, v) * dx_c \
-        + nu * inner(grad(u), grad(v)) * dx_c \
-        - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries_tag) \
-        + nu * gamma * inner(outer(u, n),
-                             outer(v, n)) * ds_c(cell_boundaries_tag) \
+    a_00 = (
+        inner(u / delta_t, v) * dx_c
+        + nu * inner(grad(u), grad(v)) * dx_c
+        - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries_tag)
+        + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries_tag)
         - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries_tag)
-    a_01 = fem.form(- inner(p * ufl.Identity(msh.topology.dim),
-                    grad(v)) * dx_c)
-    a_02 = - nu * gamma * inner(
-        outer(ubar, n), outer(v, n)) * ds_c(cell_boundaries_tag) \
-        + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries_tag)
-    a_03 = fem.form(inner(pbar * ufl.Identity(msh.topology.dim),
-                          outer(v, n)) * ds_c(cell_boundaries_tag),
-                    entity_maps=entity_maps)
-    a_10 = fem.form(inner(u, grad(q)) * dx_c -
-                    inner(dot(u, n), q) * ds_c(cell_boundaries_tag))
-    a_20 = - nu * inner(grad(u), outer(vbar, n)) * ds_c(cell_boundaries_tag) \
-        + nu * gamma * inner(outer(u, n), outer(vbar, n)
-                             ) * ds_c(cell_boundaries_tag)
-    a_30 = fem.form(inner(dot(u, n), qbar) *
-                    ds_c(cell_boundaries_tag), entity_maps=entity_maps)
+    )
+    a_01 = fem.form(-inner(p * ufl.Identity(msh.topology.dim), grad(v)) * dx_c)
+    a_02 = -nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(
+        cell_boundaries_tag
+    ) + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries_tag)
+    a_03 = fem.form(
+        inner(pbar * ufl.Identity(msh.topology.dim), outer(v, n))
+        * ds_c(cell_boundaries_tag),
+        entity_maps=entity_maps,
+    )
+    a_10 = fem.form(
+        inner(u, grad(q)) * dx_c - inner(dot(u, n), q) * ds_c(cell_boundaries_tag)
+    )
+    a_20 = -nu * inner(grad(u), outer(vbar, n)) * ds_c(
+        cell_boundaries_tag
+    ) + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
+    a_30 = fem.form(
+        inner(dot(u, n), qbar) * ds_c(cell_boundaries_tag), entity_maps=entity_maps
+    )
     a_23 = fem.form(
-        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) *
-        ds_c(cell_boundaries_tag),
-        entity_maps=entity_maps)
+        inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(cell_boundaries_tag),
+        entity_maps=entity_maps,
+    )
     # On the Dirichlet boundary, the contribution from this term will be
     # added to the RHS in apply_lifting
-    a_32 = fem.form(- inner(dot(ubar, n), qbar) * ds_c,
-                    entity_maps=entity_maps)
-    a_22 = - nu * gamma * \
-        inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
+    a_32 = fem.form(-inner(dot(ubar, n), qbar) * ds_c, entity_maps=entity_maps)
+    a_22 = (
+        -nu * gamma * inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
+    )
 
     # Advective terms
     if solver_type == SolverType.NAVIER_STOKES:
-        a_00 += - inner(outer(u, u_n), grad(v)) * dx_c \
-            + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries_tag) \
-            - inner(outer(u, lmbda * u_n),
-                    outer(v, n)) * ds_c(cell_boundaries_tag)
-        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * \
-            ds_c(cell_boundaries_tag)
-        a_20 += inner(outer(u, u_n),
-                      outer(vbar, n)) * ds_c(cell_boundaries_tag) \
-            - inner(outer(u, lmbda * u_n), outer(vbar, n)) * \
-            ds_c(cell_boundaries_tag)
-        a_22 += inner(outer(ubar, lmbda * u_n),
-                      outer(vbar, n)) * ds_c(cell_boundaries_tag)
+        a_00 += (
+            -inner(outer(u, u_n), grad(v)) * dx_c
+            + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
+            - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
+        )
+        a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
+        a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(
+            cell_boundaries_tag
+        ) - inner(outer(u, lmbda * u_n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
+        a_22 += inner(outer(ubar, lmbda * u_n), outer(vbar, n)) * ds_c(
+            cell_boundaries_tag
+        )
 
-    L_2 = inner(fem.Constant(msh, [PETSc.ScalarType(0.0)
-                                   for i in range(tdim)]),
-                vbar) * ds_c(cell_boundaries_tag)
+    L_2 = inner(
+        fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar
+    ) * ds_c(cell_boundaries_tag)
 
     # Apply boundary conditions
     bcs = []
@@ -205,8 +244,7 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
             assert bc_type == BCType.Neumann
             L_2 += inner(bc_func, vbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
-                a_22 += - inner((1 - lmbda) * dot(ubar_n, n) *
-                                ubar, vbar) * ds_c(id)
+                a_22 += -inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
     # Compile LHS forms
     a_00 = fem.form(a_00)
@@ -218,14 +256,15 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
     L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
     L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
     L_2 = fem.form(L_2, entity_maps=entity_maps)
-    L_3 = fem.form(inner(fem.Constant(
-        facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
+    L_3 = fem.form(inner(fem.Constant(facet_mesh, PETSc.ScalarType(0.0)), qbar) * dx_f)
 
     # Define block structure
-    a = [[a_00, a_01, a_02, a_03],
-         [a_10, None, None, None],
-         [a_20, None, a_22, a_23],
-         [a_30, None, a_32, None]]
+    a = [
+        [a_00, a_01, a_02, a_03],
+        [a_10, None, None, None],
+        [a_20, None, a_22, a_23],
+        [a_30, None, a_32, None],
+    ]
     L = [L_0, L_1, L_2, L_3]
 
     return a, L, bcs, bc_funcs
@@ -233,18 +272,27 @@ def create_forms(V, Q, Vbar, Qbar, msh, k, delta_t, nu,
 
 def compute_offsets(V, Q, Vbar):
     u_offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    p_offset = u_offset + \
-        Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
-    ubar_offset = \
-        p_offset + Vbar.dofmap.index_map.size_local * \
-        Vbar.dofmap.index_map_bs
+    p_offset = u_offset + Q.dofmap.index_map.size_local * Q.dofmap.index_map_bs
+    ubar_offset = p_offset + Vbar.dofmap.index_map.size_local * Vbar.dofmap.index_map_bs
     return u_offset, p_offset, ubar_offset
 
 
-def solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i_expr, u_e=None,
-          p_e=None):
+def solve(
+    solver_type,
+    k,
+    nu,
+    num_time_steps,
+    delta_t,
+    scheme,
+    msh,
+    mt,
+    boundaries,
+    boundary_conditions,
+    f,
+    u_i_expr,
+    u_e=None,
+    p_e=None,
+):
     comm = msh.comm
 
     # Create a mesh containing the facets of the mesh
@@ -264,9 +312,24 @@ def solve(solver_type, k, nu, num_time_steps,
 
     # Create finite element forms
     a, L, bcs, bc_funcs = create_forms(
-        V, Q, Vbar, Qbar, msh, k, delta_t, nu,
-        entity_map, solver_type, boundary_conditions,
-        boundaries, mt, f, facet_mesh, u_n, ubar_n)
+        V,
+        Q,
+        Vbar,
+        Qbar,
+        msh,
+        k,
+        delta_t,
+        nu,
+        entity_map,
+        solver_type,
+        boundary_conditions,
+        boundaries,
+        mt,
+        f,
+        facet_mesh,
+        u_n,
+        ubar_n,
+    )
 
     # Set up matrix
     if solver_type == SolverType.NAVIER_STOKES:
@@ -299,7 +362,9 @@ def solve(solver_type, k, nu, num_time_steps,
         # we create a discontinuous Lagrange space to interpolate the
         # solution into for visualisation. This allows artifact-free
         # visualisation of the solution
-        V_vis = fem.functionspace(msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
+        V_vis = fem.functionspace(
+            msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,))
+        )
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -311,10 +376,15 @@ def solve(solver_type, k, nu, num_time_steps,
     pbar_h.name = "pbar"
 
     # Set up files for visualisation
-    vis_files = [io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
-                 for (file_name, func)
-                 in [("u.bp", u_vis), ("p.bp", p_h), ("ubar.bp", ubar_n),
-                 ("pbar.bp", pbar_h)]]
+    vis_files = [
+        io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
+        for (file_name, func) in [
+            ("u.bp", u_vis),
+            ("p.bp", p_h),
+            ("ubar.bp", ubar_n),
+            ("pbar.bp", pbar_h),
+        ]
+    ]
 
     # Time stepping loop
     t = 0.0
@@ -348,13 +418,11 @@ def solve(solver_type, k, nu, num_time_steps,
         # Recover solution
         u_n.x.array[:u_offset] = x.array_r[:u_offset]
         u_n.x.scatter_forward()
-        p_h.x.array[:p_offset - u_offset] = x.array_r[u_offset:p_offset]
+        p_h.x.array[: p_offset - u_offset] = x.array_r[u_offset:p_offset]
         p_h.x.scatter_forward()
-        ubar_n.x.array[:ubar_offset -
-                       p_offset] = x.array_r[p_offset:ubar_offset]
+        ubar_n.x.array[: ubar_offset - p_offset] = x.array_r[p_offset:ubar_offset]
         ubar_n.x.scatter_forward()
-        pbar_h.x.array[:(len(x.array_r) - ubar_offset)
-                       ] = x.array_r[ubar_offset:]
+        pbar_h.x.array[: (len(x.array_r) - ubar_offset)] = x.array_r[ubar_offset:]
         pbar_h.x.scatter_forward()
 
         # Interpolate solution for visualisation
@@ -387,8 +455,7 @@ def solve(solver_type, k, nu, num_time_steps,
         e_p = norm_L2(msh.comm, (p_h - p_h_avg) - (p_e(x) - p_e_avg))
         pbar_h_avg = domain_average(facet_mesh, pbar_h)
         pbar_e_avg = domain_average(facet_mesh, p_e(xbar))
-        e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) -
-                         (p_e(xbar) - pbar_e_avg))
+        e_pbar = norm_L2(msh.comm, (pbar_h - pbar_h_avg) - (p_e(xbar) - pbar_e_avg))
 
         par_print(comm, f"e_p = {e_p}")
         par_print(comm, f"e_pbar = {e_pbar}")
@@ -411,42 +478,53 @@ def run_square_problem():
     n = round(1 / h)
     if d == 2:
         msh = mesh.create_unit_square(
-            comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none)
+            comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none
+        )
 
         def boundary_marker(x):
-            return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
-                np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+            return (
+                np.isclose(x[0], 0.0)
+                | np.isclose(x[0], 1.0)
+                | np.isclose(x[1], 0.0)
+                | np.isclose(x[1], 1.0)
+            )
     else:
-        msh = mesh.create_unit_cube(
-            comm, n, n, n, cell_type, mesh.GhostMode.none)
+        msh = mesh.create_unit_cube(comm, n, n, n, cell_type, mesh.GhostMode.none)
 
         def boundary_marker(x):
-            return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | \
-                np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0) | \
-                np.isclose(x[2], 0.0) | np.isclose(x[2], 1.0)
+            return (
+                np.isclose(x[0], 0.0)
+                | np.isclose(x[0], 1.0)
+                | np.isclose(x[1], 0.0)
+                | np.isclose(x[1], 1.0)
+                | np.isclose(x[2], 0.0)
+                | np.isclose(x[2], 1.0)
+            )
 
     # Create meshtags for boundary
     fdim = msh.topology.dim - 1
-    boundary_facets = mesh.locate_entities_boundary(
-        msh, fdim, boundary_marker)
+    boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
     perm = np.argsort(boundary_facets)
     values = np.ones_like(boundary_facets, dtype=np.intc)
-    mt = mesh.meshtags(
-        msh, fdim, boundary_facets[perm], values[perm])
+    mt = mesh.meshtags(msh, fdim, boundary_facets[perm], values[perm])
     boundaries = {"boundary": 1}
 
     # Exact velocity
     def u_e(x, module=ufl):
         if d == 2:
-            u = (module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
-                 module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]))
+            u = (
+                module.sin(module.pi * x[0]) * module.sin(module.pi * x[1]),
+                module.cos(module.pi * x[0]) * module.cos(module.pi * x[1]),
+            )
         else:
-            u = (module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
-                 - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
-                 module.sin(module.pi * x[1]) * module.cos(module.pi * x[2])
-                 - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
-                 module.sin(module.pi * x[2]) * module.cos(module.pi * x[0])
-                 - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]))
+            u = (
+                module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
+                - module.sin(module.pi * x[0]) * module.cos(module.pi * x[2]),
+                module.sin(module.pi * x[1]) * module.cos(module.pi * x[2])
+                - module.sin(module.pi * x[1]) * module.cos(module.pi * x[0]),
+                module.sin(module.pi * x[2]) * module.cos(module.pi * x[0])
+                - module.sin(module.pi * x[2]) * module.cos(module.pi * x[1]),
+            )
         if module == ufl:
             return ufl.as_vector(u)
         else:
@@ -458,18 +536,20 @@ def run_square_problem():
         if d == 2:
             return module.sin(module.pi * x[0]) * module.cos(module.pi * x[1])
         else:
-            return module.sin(module.pi * x[0]) \
-                * module.cos(module.pi * x[1]) * module.sin(module.pi * x[2])
+            return (
+                module.sin(module.pi * x[0])
+                * module.cos(module.pi * x[1])
+                * module.sin(module.pi * x[2])
+            )
 
     # Right-hand side
     x = ufl.SpatialCoordinate(msh)
-    f = - nu * div(grad(u_e(x))) + grad(p_e(x))
+    f = -nu * div(grad(u_e(x))) + grad(p_e(x))
     if solver_type == SolverType.NAVIER_STOKES:
         f += div(outer(u_e(x), u_e(x)))
 
     # Boundary conditions
-    boundary_conditions = {"boundary": (BCType.Dirichlet,
-                                        lambda x: u_e(x, module=np))}
+    boundary_conditions = {"boundary": (BCType.Dirichlet, lambda x: u_e(x, module=np))}
 
     # Initial condition
     def u_i(x):
@@ -477,10 +557,22 @@ def run_square_problem():
 
     # Call solver
     delta_t = t_end / num_time_steps
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i, u_e,
-          p_e)
+    solve(
+        solver_type,
+        k,
+        nu,
+        num_time_steps,
+        delta_t,
+        scheme,
+        msh,
+        mt,
+        boundaries,
+        boundary_conditions,
+        f,
+        u_i,
+        u_e,
+        p_e,
+    )
 
 
 def run_gaussian_bump():
@@ -497,7 +589,7 @@ def run_gaussian_bump():
 
     # Create mesh
     def gaussian(x, a, sigma, mu):
-        return a * np.exp(- 1 / 2 * ((x - mu) / sigma)**2)
+        return a * np.exp(-1 / 2 * ((x - mu) / sigma) ** 2)
 
     # Create the mesh
     gmsh.initialize()
@@ -514,19 +606,17 @@ def run_gaussian_bump():
         # Point tags
         bottom_points = [
             gmsh.model.geo.addPoint(x, gaussian(x, a, sigma, mu), 0.0, h)
-            for x in np.linspace(0.0, w, num_bottom_points)]
+            for x in np.linspace(0.0, w, num_bottom_points)
+        ]
         top_left_point = gmsh.model.geo.addPoint(0, 1, 0, h)
         top_right_point = gmsh.model.geo.addPoint(w, 1, 0, h)
 
         # Line tags
         lines = []
         lines.append(gmsh.model.geo.addSpline(bottom_points))
-        lines.append(gmsh.model.geo.addLine(bottom_points[-1],
-                                            top_right_point))
-        lines.append(gmsh.model.geo.addLine(top_right_point,
-                                            top_left_point))
-        lines.append(gmsh.model.geo.addLine(top_left_point,
-                                            bottom_points[0]))
+        lines.append(gmsh.model.geo.addLine(bottom_points[-1], top_right_point))
+        lines.append(gmsh.model.geo.addLine(top_right_point, top_left_point))
+        lines.append(gmsh.model.geo.addLine(top_left_point, bottom_points[0]))
 
         gmsh.model.geo.addCurveLoop(lines, 1)
 
@@ -562,30 +652,27 @@ def run_gaussian_bump():
         gmsh.model.mesh.setOrder(order)
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
     msh, _, mt = gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
+        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
+    )
     gmsh.finalize()
-    boundaries = {"left": 4,
-                  "right": 2,
-                  "bottom": 1,
-                  "top": 3}
+    boundaries = {"left": 4, "right": 2, "bottom": 1, "top": 3}
 
     # Boundary conditions
-    def inlet(x): return np.vstack(
-        (np.ones_like(x[0]),
-            np.zeros_like(x[0])))
+    def inlet(x):
+        return np.vstack((np.ones_like(x[0]), np.zeros_like(x[0])))
 
-    def zero(x): return np.vstack(
-        (np.zeros_like(x[0]),
-            np.zeros_like(x[0])))
+    def zero(x):
+        return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0])))
 
-    boundary_conditions = {"left": (BCType.Dirichlet, inlet),
-                           "right": (BCType.Neumann, zero),
-                           "bottom": (BCType.Dirichlet, zero),
-                           "top": (BCType.Dirichlet, zero)}
+    boundary_conditions = {
+        "left": (BCType.Dirichlet, inlet),
+        "right": (BCType.Neumann, zero),
+        "bottom": (BCType.Dirichlet, zero),
+        "top": (BCType.Dirichlet, zero),
+    }
 
     # Right-hand side
-    f = fem.Constant(msh, (PETSc.ScalarType(0.0),
-                           PETSc.ScalarType(0.0)))
+    f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
 
     # Initial condition
     def u_i(x):
@@ -593,9 +680,20 @@ def run_gaussian_bump():
 
     # Call solver
     delta_t = t_end / num_time_steps
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i)
+    solve(
+        solver_type,
+        k,
+        nu,
+        num_time_steps,
+        delta_t,
+        scheme,
+        msh,
+        mt,
+        boundaries,
+        boundary_conditions,
+        f,
+        u_i,
+    )
 
 
 def run_cylinder_problem():
@@ -613,10 +711,7 @@ def run_cylinder_problem():
 
     # Volume and boundary ids
     volume_id = {"fluid": 1}
-    boundary_id = {"inlet": 2,
-                   "outlet": 3,
-                   "wall": 4,
-                   "obstacle": 5}
+    boundary_id = {"inlet": 2, "outlet": 3, "wall": 4, "obstacle": 5}
 
     # Create mesh
     gmsh.initialize()
@@ -639,137 +734,126 @@ def run_cylinder_problem():
             factory.addPoint(0.0, 0.0, 0.0, h),
             factory.addPoint(length, 0.0, 0.0, h),
             factory.addPoint(length, height, 0.0, h),
-            factory.addPoint(0.0, height, 0.0, h)
+            factory.addPoint(0.0, height, 0.0, h),
         ]
 
-        thetas = [np.pi / 4, 3 * np.pi / 4, 5 * np.pi / 4,
-                  7 * np.pi / 4, 9 * np.pi / 4]
-        circle_points = [factory.addPoint(c[0], c[1], 0.0)] + \
-            [factory.addPoint(c[0] + r * np.cos(theta),
-                              c[1] + r * np.sin(theta), 0.0)
-                for theta in thetas]
+        thetas = [np.pi / 4, 3 * np.pi / 4, 5 * np.pi / 4, 7 * np.pi / 4, 9 * np.pi / 4]
+        circle_points = [factory.addPoint(c[0], c[1], 0.0)] + [
+            factory.addPoint(c[0] + r * np.cos(theta), c[1] + r * np.sin(theta), 0.0)
+            for theta in thetas
+        ]
 
         square_points = [
-            factory.addPoint(c[0] + r_s * np.cos(theta),
-                             c[1] + r_s * np.sin(theta), 0.0)
-            for theta in thetas]
+            factory.addPoint(
+                c[0] + r_s * np.cos(theta), c[1] + r_s * np.sin(theta), 0.0
+            )
+            for theta in thetas
+        ]
 
         rectangle_lines = [
             factory.addLine(rectangle_points[0], rectangle_points[1]),
             factory.addLine(rectangle_points[1], rectangle_points[2]),
             factory.addLine(rectangle_points[2], rectangle_points[3]),
-            factory.addLine(rectangle_points[3], rectangle_points[0])
+            factory.addLine(rectangle_points[3], rectangle_points[0]),
         ]
 
         circle_lines = [
-            factory.addCircleArc(
-                circle_points[1], circle_points[0], circle_points[2]),
-            factory.addCircleArc(
-                circle_points[2], circle_points[0], circle_points[3]),
-            factory.addCircleArc(
-                circle_points[3], circle_points[0], circle_points[4]),
-            factory.addCircleArc(
-                circle_points[4], circle_points[0], circle_points[1])
+            factory.addCircleArc(circle_points[1], circle_points[0], circle_points[2]),
+            factory.addCircleArc(circle_points[2], circle_points[0], circle_points[3]),
+            factory.addCircleArc(circle_points[3], circle_points[0], circle_points[4]),
+            factory.addCircleArc(circle_points[4], circle_points[0], circle_points[1]),
         ]
 
         square_lines = [
             factory.addLine(square_points[0], square_points[1]),
             factory.addLine(square_points[1], square_points[2]),
             factory.addLine(square_points[2], square_points[3]),
-            factory.addLine(square_points[3], square_points[0])]
+            factory.addLine(square_points[3], square_points[0]),
+        ]
 
         bl_diag_lines = [
-            factory.addLine(circle_points[i + 1], square_points[i])
-            for i in range(4)]
+            factory.addLine(circle_points[i + 1], square_points[i]) for i in range(4)
+        ]
 
         boundary_layer_lines = [
-            [square_lines[0], - bl_diag_lines[1],
-                - circle_lines[0], bl_diag_lines[0]],
-            [square_lines[1], - bl_diag_lines[2],
-                - circle_lines[1], bl_diag_lines[1]],
-            [square_lines[2], - bl_diag_lines[3],
-                - circle_lines[2], bl_diag_lines[2]],
-            [square_lines[3], - bl_diag_lines[0],
-                - circle_lines[3], bl_diag_lines[3]]
+            [square_lines[0], -bl_diag_lines[1], -circle_lines[0], bl_diag_lines[0]],
+            [square_lines[1], -bl_diag_lines[2], -circle_lines[1], bl_diag_lines[1]],
+            [square_lines[2], -bl_diag_lines[3], -circle_lines[2], bl_diag_lines[2]],
+            [square_lines[3], -bl_diag_lines[0], -circle_lines[3], bl_diag_lines[3]],
         ]
 
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
         factory.addCurveLoop(circle_lines)
         square_curve = factory.addCurveLoop(square_lines)
         boundary_layer_curves = [
-            factory.addCurveLoop(bll) for bll in boundary_layer_lines]
+            factory.addCurveLoop(bll) for bll in boundary_layer_lines
+        ]
 
-        outer_surface = factory.addPlaneSurface(
-            [rectangle_curve, square_curve])
+        outer_surface = factory.addPlaneSurface([rectangle_curve, square_curve])
         boundary_layer_surfaces = [
-            factory.addPlaneSurface([blc])
-            for blc in boundary_layer_curves]
+            factory.addPlaneSurface([blc]) for blc in boundary_layer_curves
+        ]
 
         num_bl_eles = round(0.5 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][0], num_bl_eles)
+                boundary_layer_lines[i][0], num_bl_eles
+            )
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][1], num_bl_eles,
-                coef=progression_coeff)
+                boundary_layer_lines[i][1], num_bl_eles, coef=progression_coeff
+            )
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][2], num_bl_eles)
+                boundary_layer_lines[i][2], num_bl_eles
+            )
             gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][3], num_bl_eles,
-                coef=progression_coeff)
-            gmsh.model.geo.mesh.setTransfiniteSurface(
-                boundary_layer_surfaces[i])
+                boundary_layer_lines[i][3], num_bl_eles, coef=progression_coeff
+            )
+            gmsh.model.geo.mesh.setTransfiniteSurface(boundary_layer_surfaces[i])
 
         if d == 3:
             if cell_type == mesh.CellType.tetrahedron:
                 recombine = False
             else:
                 recombine = True
-            extrude_surfs = [(2, surf) for surf in [
-                outer_surface] + boundary_layer_surfaces]
-            gmsh.model.geo.extrude(
-                extrude_surfs, 0, 0, 0.41, [8], recombine=recombine)
+            extrude_surfs = [
+                (2, surf) for surf in [outer_surface] + boundary_layer_surfaces
+            ]
+            gmsh.model.geo.extrude(extrude_surfs, 0, 0, 0.41, [8], recombine=recombine)
 
         gmsh.model.geo.synchronize()
 
         # Add physical groups
         if d == 2:
             gmsh.model.addPhysicalGroup(
-                2, [outer_surface] + boundary_layer_surfaces,
-                volume_id["fluid"])
+                2, [outer_surface] + boundary_layer_surfaces, volume_id["fluid"]
+            )
 
             gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[0], rectangle_lines[2]],
-                boundary_id["wall"])
-            gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[1]], boundary_id["outlet"])
-            gmsh.model.addPhysicalGroup(
-                1, [rectangle_lines[3]], boundary_id["inlet"])
-            gmsh.model.addPhysicalGroup(
-                1, circle_lines, boundary_id["obstacle"])
+                1, [rectangle_lines[0], rectangle_lines[2]], boundary_id["wall"]
+            )
+            gmsh.model.addPhysicalGroup(1, [rectangle_lines[1]], boundary_id["outlet"])
+            gmsh.model.addPhysicalGroup(1, [rectangle_lines[3]], boundary_id["inlet"])
+            gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
         else:
             # FIXME Mark without hardcoding
-            gmsh.model.addPhysicalGroup(
-                3, [1, 2, 3, 4, 5], volume_id["fluid"])
+            gmsh.model.addPhysicalGroup(3, [1, 2, 3, 4, 5], volume_id["fluid"])
+
+            gmsh.model.addPhysicalGroup(2, [41], boundary_id["inlet"])
+
+            gmsh.model.addPhysicalGroup(2, [33], boundary_id["outlet"])
 
             gmsh.model.addPhysicalGroup(
-                2, [41], boundary_id["inlet"])
+                2, [1, 2, 3, 4, 5, 29, 37, 58, 80, 102, 124, 146], boundary_id["wall"]
+            )
 
-            gmsh.model.addPhysicalGroup(
-                2, [33], boundary_id["outlet"])
-
-            gmsh.model.addPhysicalGroup(
-                2, [1, 2, 3, 4, 5, 29, 37, 58, 80, 102, 124, 146],
-                boundary_id["wall"])
-
-            gmsh.model.addPhysicalGroup(
-                2, [75, 97, 119, 141],
-                boundary_id["obstacle"])
+            gmsh.model.addPhysicalGroup(2, [75, 97, 119, 141], boundary_id["obstacle"])
 
         # gmsh.option.setNumber("Mesh.Smoothing", 5)
-        if cell_type == mesh.CellType.quadrilateral \
-                or cell_type == mesh.CellType.hexahedron:
+        if (
+            cell_type == mesh.CellType.quadrilateral
+            or cell_type == mesh.CellType.hexahedron
+        ):
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
             # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
@@ -778,47 +862,67 @@ def run_cylinder_problem():
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
     msh, _, mt = gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
+        gmsh.model, comm, 0, gdim=d, partitioner=partitioner
+    )
     gmsh.finalize()
 
     # Boundary conditions
     if d == 2:
-        def inlet(x): return np.vstack(
-            ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2,
-                np.zeros_like(x[0])))
 
-        def zero(x): return np.vstack(
-            (np.zeros_like(x[0]),
-                np.zeros_like(x[0])))
+        def inlet(x):
+            return np.vstack(
+                ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0]))
+            )
+
+        def zero(x):
+            return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0])))
     else:
         H = 0.41
 
-        def inlet(x): return np.vstack(
-            (16 * 0.45 * x[1] * x[2] * (H - x[1]) * (H - x[2]) / H**4,
-                np.zeros_like(x[0]),
-                np.zeros_like(x[0])))
+        def inlet(x):
+            return np.vstack(
+                (
+                    16 * 0.45 * x[1] * x[2] * (H - x[1]) * (H - x[2]) / H**4,
+                    np.zeros_like(x[0]),
+                    np.zeros_like(x[0]),
+                )
+            )
 
-        def zero(x): return np.vstack(
-            (np.zeros_like(x[0]),
-                np.zeros_like(x[0]),
-                np.zeros_like(x[0])))
+        def zero(x):
+            return np.vstack(
+                (np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0]))
+            )
 
-    boundary_conditions = {"inlet": (BCType.Dirichlet, inlet),
-                           "outlet": (BCType.Neumann, zero),
-                           "wall": (BCType.Dirichlet, zero),
-                           "obstacle": (BCType.Dirichlet, zero)}
+    boundary_conditions = {
+        "inlet": (BCType.Dirichlet, inlet),
+        "outlet": (BCType.Neumann, zero),
+        "wall": (BCType.Dirichlet, zero),
+        "obstacle": (BCType.Dirichlet, zero),
+    }
 
     # Forcing term
     f = fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(d)])
 
     # Initial condition
-    def u_i(x): return np.zeros_like(x[:d])
+    def u_i(x):
+        return np.zeros_like(x[:d])
 
     # Call solver
     delta_t = t_end / num_time_steps
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundary_id,
-          boundary_conditions, f, u_i)
+    solve(
+        solver_type,
+        k,
+        nu,
+        num_time_steps,
+        delta_t,
+        scheme,
+        msh,
+        mt,
+        boundary_id,
+        boundary_conditions,
+        f,
+        u_i,
+    )
 
 
 def run_taylor_green_problem():
@@ -836,53 +940,73 @@ def run_taylor_green_problem():
 
     # Create mesh
     n = round(1 / h)
-    point_0 = (- np.pi / 2, - np.pi / 2)
+    point_0 = (-np.pi / 2, -np.pi / 2)
     point_1 = (np.pi / 2, np.pi / 2)
     msh = mesh.create_rectangle(
-        comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none)
+        comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none
+    )
 
     fdim = msh.topology.dim - 1
     boundary_facets = mesh.locate_entities_boundary(
-        msh, fdim,
-        lambda x: np.isclose(x[0], point_0[0]) |
-        np.isclose(x[0], point_1[0]) |
-        np.isclose(x[1], point_0[1]) |
-        np.isclose(x[1], point_1[1]))
+        msh,
+        fdim,
+        lambda x: np.isclose(x[0], point_0[0])
+        | np.isclose(x[0], point_1[0])
+        | np.isclose(x[1], point_0[1])
+        | np.isclose(x[1], point_1[1]),
+    )
     values = np.ones_like(boundary_facets, dtype=np.intc)
     mt = mesh.meshtags(msh, fdim, boundary_facets, values)
     boundaries = {"boundary": 1}
 
     # Exact solution
     def u_expr(x, t, module):
-        return (- module.cos(x[0]) * module.sin(x[1]) *
-                module.exp(- 2 * t / Re),
-                module.sin(x[0]) * module.cos(x[1]) *
-                module.exp(- 2 * t / Re))
+        return (
+            -module.cos(x[0]) * module.sin(x[1]) * module.exp(-2 * t / Re),
+            module.sin(x[0]) * module.cos(x[1]) * module.exp(-2 * t / Re),
+        )
 
     def u_e(x, module=ufl):
         return ufl.as_vector(u_expr(x, t_end, ufl))
 
     def p_e(x):
-        return - 1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(
-            - 4 * t_end / Re)
+        return (
+            -1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(-4 * t_end / Re)
+        )
 
     # Boundary conditions
-    boundary_conditions = {"boundary":
-                           (BCType.Dirichlet,
-                            TimeDependentExpression(
-                                lambda x, t: np.vstack(u_expr(x, t, np))))}
+    boundary_conditions = {
+        "boundary": (
+            BCType.Dirichlet,
+            TimeDependentExpression(lambda x, t: np.vstack(u_expr(x, t, np))),
+        )
+    }
 
     # Initial condition
-    def u_i(x): return u_expr(x, t=0, module=np)
+    def u_i(x):
+        return u_expr(x, t=0, module=np)
 
     # Forcing term
     f = ufl.as_vector((0.0, 0.0))
 
     # Call solver
     delta_t = t_end / num_time_steps
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i, u_e, p_e)
+    solve(
+        solver_type,
+        k,
+        nu,
+        num_time_steps,
+        delta_t,
+        scheme,
+        msh,
+        mt,
+        boundaries,
+        boundary_conditions,
+        f,
+        u_i,
+        u_e,
+        p_e,
+    )
 
 
 def run_kovasznay_problem():
@@ -902,15 +1026,17 @@ def run_kovasznay_problem():
     point_0 = (0.0, -0.5)
     point_1 = (1, 1.5)
     msh = mesh.create_rectangle(
-        comm, (point_0, point_1), (n, 2 * n),
-        cell_type, mesh.GhostMode.none)
+        comm, (point_0, point_1), (n, 2 * n), cell_type, mesh.GhostMode.none
+    )
     fdim = msh.topology.dim - 1
     boundary_facets = mesh.locate_entities_boundary(
-        msh, fdim,
-        lambda x: np.isclose(x[0], point_0[0]) |
-        np.isclose(x[0], point_1[0]) |
-        np.isclose(x[1], point_0[1]) |
-        np.isclose(x[1], point_1[1]))
+        msh,
+        fdim,
+        lambda x: np.isclose(x[0], point_0[0])
+        | np.isclose(x[0], point_1[0])
+        | np.isclose(x[1], point_0[1])
+        | np.isclose(x[1], point_1[1]),
+    )
     values = np.ones_like(boundary_facets, dtype=np.intc)
     mt = mesh.meshtags(msh, fdim, boundary_facets, values)
     boundaries = {"boundary": 1}
@@ -921,12 +1047,14 @@ def run_kovasznay_problem():
     # Exact velocity
     def u_e(x, module=ufl):
         u_x = 1 - module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
-            module.cos(2 * module.pi * x[1])
-        u_y = (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) / \
-            (2 * module.pi) * module.exp(
-            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]) * \
-            module.sin(2 * module.pi * x[1])
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]
+        ) * module.cos(2 * module.pi * x[1])
+        u_y = (
+            (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2))
+            / (2 * module.pi)
+            * module.exp((R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0])
+            * module.sin(2 * module.pi * x[1])
+        )
         if module == ufl:
             return ufl.as_vector((u_x, u_y))
         else:
@@ -935,24 +1063,41 @@ def run_kovasznay_problem():
 
     # Exact pressure
     def p_e(x, module=ufl):
-        return (1 / 2) * (1 - module.exp(
-            2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]))
+        return (1 / 2) * (
+            1
+            - module.exp(
+                2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]
+            )
+        )
 
     # Boundary conditions
-    boundary_conditions = {"boundary": (BCType.Dirichlet,
-                                        lambda x: u_e(x, module=np))}
+    boundary_conditions = {"boundary": (BCType.Dirichlet, lambda x: u_e(x, module=np))}
 
     # Forcing term
     f = fem.Constant(msh, (PETSc.ScalarType(0.0), PETSc.ScalarType(0.0)))
 
     # Initial condition
-    def u_i(x): return np.zeros_like(x[:2])
+    def u_i(x):
+        return np.zeros_like(x[:2])
 
     # Call solver
     delta_t = t_end / num_time_steps
-    solve(solver_type, k, nu, num_time_steps,
-          delta_t, scheme, msh, mt, boundaries,
-          boundary_conditions, f, u_i, u_e, p_e)
+    solve(
+        solver_type,
+        k,
+        nu,
+        num_time_steps,
+        delta_t,
+        scheme,
+        msh,
+        mt,
+        boundaries,
+        boundary_conditions,
+        f,
+        u_i,
+        u_e,
+        p_e,
+    )
 
 
 if __name__ == "__main__":

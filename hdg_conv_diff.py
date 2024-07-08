@@ -20,8 +20,7 @@ def u_e(x):
     else:
         module = np
 
-    return module.sin(3.0 * module.pi * x[0]) * \
-        module.cos(2.0 * module.pi * x[1])
+    return module.sin(3.0 * module.pi * x[0]) * module.cos(2.0 * module.pi * x[1])
 
 
 def boundary(x):
@@ -64,9 +63,9 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 cell_boundary_facets = compute_cell_boundary_facets(msh)
 dx_c = ufl.Measure("dx", domain=msh)
 all_facets = 0  # Tag
-ds_c = ufl.Measure("ds",
-                   subdomain_data=[(all_facets, cell_boundary_facets)],
-                   domain=msh)
+ds_c = ufl.Measure(
+    "ds", subdomain_data=[(all_facets, cell_boundary_facets)], domain=msh
+)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 # Create entity maps. We take msh to be the integration domain, so the
@@ -85,29 +84,39 @@ kappa = fem.Constant(msh, PETSc.ScalarType(1e-3))
 gamma = 16.0 * k**2 / h
 
 # Diffusive terms
-a_00 = inner(kappa * grad(u), grad(v)) * dx_c \
-    - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets) \
-    - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets) \
+a_00 = (
+    inner(kappa * grad(u), grad(v)) * dx_c
+    - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets)
+    - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets)
     + gamma * inner(kappa * u, v) * ds_c(all_facets)
-a_01 = inner(kappa * ubar, dot(grad(v), n)) * ds_c(all_facets) \
-    - gamma * inner(kappa * ubar, v) * ds_c(all_facets)
-a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) \
-    - gamma * inner(kappa * u, vbar) * ds_c(all_facets)
+)
+a_01 = inner(kappa * ubar, dot(grad(v), n)) * ds_c(all_facets) - gamma * inner(
+    kappa * ubar, v
+) * ds_c(all_facets)
+a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) - gamma * inner(
+    kappa * u, vbar
+) * ds_c(all_facets)
 a_11 = gamma * inner(kappa * ubar, vbar) * ds_c(all_facets)
 
 # Advection terms
 x = ufl.SpatialCoordinate(msh)
 w = ufl.as_vector(
-    (ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
-     ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1])))
+    (
+        ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+        ufl.cos(ufl.pi * x[0]) * ufl.cos(ufl.pi * x[1]),
+    )
+)
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 0, 1)
-a_00 += - inner(w * u, grad(v)) * dx_c \
-    + inner(dot(w * u, n), v) * ds_c(all_facets) \
+a_00 += (
+    -inner(w * u, grad(v)) * dx_c
+    + inner(dot(w * u, n), v) * ds_c(all_facets)
     - inner(lmbda * dot(w * u, n), v) * ds_c(all_facets)
+)
 a_01 += inner(lmbda * dot(w * ubar, n), v) * ds_c(all_facets)
-a_10 += - inner(dot(w * u, n), vbar) * ds_c(all_facets) \
-    + inner(lmbda * dot(w * u, n), vbar) * ds_c(all_facets)
-a_11 += - inner(lmbda * dot(w * ubar, n), vbar) * ds_c(all_facets)
+a_10 += -inner(dot(w * u, n), vbar) * ds_c(all_facets) + inner(
+    lmbda * dot(w * u, n), vbar
+) * ds_c(all_facets)
+a_11 += -inner(lmbda * dot(w * ubar, n), vbar) * ds_c(all_facets)
 
 # Compile forms
 a_00 = fem.form(a_00)
@@ -121,8 +130,7 @@ L_0 = fem.form(inner(f, v) * dx_c)
 L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
 
 # Define block structure
-a = [[a_00, a_01],
-     [a_10, a_11]]
+a = [[a_00, a_01], [a_10, a_11]]
 L = [L_0, L_1]
 
 # Define the boundary condition. We begin by locating the facets on the
@@ -160,7 +168,7 @@ u = fem.Function(V)
 ubar = fem.Function(Vbar)
 offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 u.x.array[:offset] = x.array_r[:offset]
-ubar.x.array[:(len(x.array_r) - offset)] = x.array_r[offset:]
+ubar.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
 u.x.scatter_forward()
 ubar.x.scatter_forward()
 
