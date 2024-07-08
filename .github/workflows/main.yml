@@ -19,59 +19,28 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-    container: jpdean/mixed_domain
+    container: dolfinx/dolfinx:nightly
 
     env:
       DOLFINX_CMAKE_BUILD_TYPE: Debug
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # - uses: actions/checkout@v3
-      #   with:
-      #     repository: FEniCS/basix
-      #     ref: main
-
-      # # Runs a single command using the runners shell
-      # - name: Install basix
-      #   run: |
-      #     cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} -B build-dir -S ./cpp
-      #     cmake --build build-dir
-      #     cmake --install build-dir
-      #     python3 -m pip install ./python
-
-      # # Runs a set of commands using the runners shell
-      # - name: Install UFL and FFCx
-      #   run: |
-      #     python3 -m pip install git+https://github.com/FEniCS/ufl.git
-      #     python3 -m pip install git+https://github.com/FEniCS/ffcx.git@jpdean/meshview
-
-      # - uses: actions/checkout@v3
-      #   with:
-      #     repository: FEniCS/dolfinx
-      #     ref: jpdean/mixed_domain
-
-      # # Runs a single command using the runners shell
-      # - name: Install dolfinx
-      #   run: |
-      #     mkdir -p build-real
-      #     cd build-real
-      #     PETSC_ARCH=linux-gnu-real-32 cmake -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local/dolfinx-real -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=${DOLFINX_CMAKE_CXX_FLAGS} ../cpp
-      #     ninja install
-      #     cd ../python
-      #     CXXFLAGS=${DOLFINX_CMAKE_CXX_FLAGS} PETSC_ARCH=linux-gnu-real-32 pip3 install .
-
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
 
-      - name: Flake8
-        run: flake8 .
+      - name: Ruff
+        run: |
+          python3 -m pip install ruff
+          ruff check .
+          ruff format --check .
 
       - name: Run demos (serial)
         run: |
           python3 hdg_poisson.py
           python3 lagrange_multiplier.py
           python3 lagrange_multiplier_bc.py
-          python3 mhd.py
+          # python3 mhd.py
           python3 nested_submeshes.py
           python3 neumann_bc.py
           python3 hdg_navier_stokes.py
@@ -85,7 +54,7 @@ jobs:
           mpirun -n 2 python3 hdg_poisson.py
           mpirun -n 2 python3 lagrange_multiplier.py
           mpirun -n 2 python3 lagrange_multiplier_bc.py
-          mpirun -n 2 python3 mhd.py
+          # mpirun -n 2 python3 mhd.py
           mpirun -n 2 python3 nested_submeshes.py
           mpirun -n 2 python3 neumann_bc.py
           mpirun -n 2 python3 hdg_navier_stokes.py

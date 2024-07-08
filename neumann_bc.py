@@ -11,14 +11,15 @@ from ufl import grad, inner, div, dot
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 
 def boundary_marker(x):
     "A function to mark the domain boundary"
-    return np.logical_or(np.logical_or(np.isclose(x[0], 0.0),
-                                       np.isclose(x[0], 1.0)),
-                         np.logical_or(np.isclose(x[1], 0.0),
-                                       np.isclose(x[1], 1.0)))
+    return np.logical_or(
+        np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0)),
+        np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0)),
+    )
 
 
 # Create a mesh and a sub-mesh of the boundary
@@ -32,8 +33,8 @@ submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces
 k = 3  # Polynomial degree
-V = fem.FunctionSpace(msh, ("Lagrange", k))
-W = fem.FunctionSpace(submesh, ("Lagrange", k))
+V = fem.functionspace(msh, ("Lagrange", k))
+W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create integration measure and entity maps
@@ -61,9 +62,9 @@ a = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
 L = fem.form(inner(f, v) * ufl.dx + inner(g, v) * ds, entity_maps=entity_maps)
 
 # Assemble matrix and vector
-A = fem.petsc.assemble_matrix(a)
+A = assemble_matrix(a)
 A.assemble()
-b = fem.petsc.assemble_vector(L)
+b = assemble_vector(L)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
 # Create solver
@@ -79,7 +80,7 @@ ksp.solve(b, u.vector)
 u.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u) as f:
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
     f.write(0.0)
 
 # Compute the error
