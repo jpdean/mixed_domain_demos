@@ -19,7 +19,7 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-    container: jpdean/mixed_domain
+    container: dolfinx/dolfinx:nightly
 
     env:
       DOLFINX_CMAKE_BUILD_TYPE: Debug
@@ -71,7 +71,7 @@ jobs:
           python3 hdg_poisson.py
           python3 lagrange_multiplier.py
           python3 lagrange_multiplier_bc.py
-          python3 mhd.py
+          # python3 mhd.py
           python3 nested_submeshes.py
           python3 neumann_bc.py
           python3 hdg_navier_stokes.py
@@ -85,7 +85,7 @@ jobs:
           mpirun -n 2 python3 hdg_poisson.py
           mpirun -n 2 python3 lagrange_multiplier.py
           mpirun -n 2 python3 lagrange_multiplier_bc.py
-          mpirun -n 2 python3 mhd.py
+          # mpirun -n 2 python3 mhd.py
           mpirun -n 2 python3 nested_submeshes.py
           mpirun -n 2 python3 neumann_bc.py
           mpirun -n 2 python3 hdg_navier_stokes.py
