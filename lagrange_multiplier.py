@@ -37,25 +37,27 @@ else:
     assert d == 3
     msh, ct, ft, vol_ids, bound_ids = create_box_with_sphere_msh(comm, h)
 
-V = fem.functionspace(msh, ("Lagrange", k))
-u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-
-# Create Dirichlet boundary condition
+# Create sub-mesh for Lagrange multiplier. We locate the facets on the
+# interface (gamma_1) pass them to create_submesh
 tdim = msh.topology.dim
 fdim = tdim - 1
+gamma_i_facets = ft.find(bound_ids["gamma_i"])
+submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
+
+# Create functions spaces
+V = fem.functionspace(msh, ("Lagrange", k))
+W = fem.functionspace(submesh, ("Lagrange", k))
+X = ufl.MixedFunctionSpace(V, W)
+
+# Trial and test functions
+u, lmbda = ufl.TrialFunctions(X)
+v, eta = ufl.TestFunctions(X)
+
+# Create Dirichlet boundary condition
 msh.topology.create_entities(fdim)
 dirichlet_facets = ft.find(bound_ids["gamma"])
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
-
-# Create sub-mesh for Lagrange multiplier. We locate the facets on the
-# interface (gamma_1) pass them to create_submesh
-gamma_i_facets = ft.find(bound_ids["gamma_i"])
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
-
-# Create function space for the Lagrange multiplier
-W = fem.functionspace(submesh, ("Lagrange", k))
-lmbda, eta = ufl.TrialFunction(W), ufl.TestFunction(W)
 
 # We take msh to be the integration domain mesh, so we must provide a map
 # from facets in msh to cells in submesh. This is simply the "inverse" of
@@ -87,23 +89,22 @@ ds = ufl.Measure(
     domain=msh,
 )
 
-# Define forms
-a_00 = fem.form(inner(grad(u), grad(v)) * ufl.dx)
-a_01 = fem.form(inner(lmbda, v) * ds(bound_ids["gamma_i"]), entity_maps=entity_maps)
-a_10 = fem.form(inner(u, eta) * ds(bound_ids["gamma_i"]), entity_maps=entity_maps)
+
+a = (
+    inner(grad(u), grad(v)) * ufl.dx
+    + inner(lmbda, v) * ds(bound_ids["gamma_i"])
+    + inner(u, eta) * ds(bound_ids["gamma_i"])
+)
 
 x_msh = ufl.SpatialCoordinate(msh)
-f = -div(grad(u_e(x_msh)))
-# f = fem.Constant(msh, PETSc.ScalarType(2.0))
-L_0 = fem.form(inner(f, v) * ufl.dx)
-
 x_sm = ufl.SpatialCoordinate(submesh)
-L_1 = fem.form(inner(u_e(x_sm), eta) * ufl.dx)
-# L_1 = fem.form(inner(0.25 + 0.3 * ufl.sin(ufl.pi * x_sm[0]), eta) * ufl.dx)
+f = -div(grad(u_e(x_msh)))
+
+L = inner(f, v) * ufl.dx + inner(u_e(x_sm), eta) * ufl.dx
 
 # Define block structure
-a = [[a_00, a_01], [a_10, None]]
-L = [L_0, L_1]
+a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
+L = fem.form(ufl.extract_blocks(L))
 
 # Assemble matrix
 A = assemble_matrix_block(a, bcs=[bc])
