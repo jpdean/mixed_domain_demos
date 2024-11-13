@@ -11,7 +11,7 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
-from utils import norm_L2
+from utils import norm_L2, one_sided_int_entities
 from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
 
@@ -70,25 +70,12 @@ entity_maps = {submesh: msh_to_submesh}
 
 # Create integration measure for the interface terms. We specify the facets
 # on gamma_i, which are identified as (cell, local facet index) pairs
-facet_integration_entities = []
-msh.topology.create_connectivity(tdim, fdim)
-msh.topology.create_connectivity(fdim, tdim)
-c_to_f = msh.topology.connectivity(tdim, fdim)
-f_to_c = msh.topology.connectivity(fdim, tdim)
-# Loop through all interface facets
-for facet in gamma_i_facets:
-    # Check if this facet is owned
-    if facet < facet_imap.size_local:
-        # Get a cell connected to the facet
-        cell = f_to_c.links(facet)[0]
-        local_facet = np.where(c_to_f.links(cell) == facet)[0][0]
-        facet_integration_entities.extend([cell, local_facet])
+facet_integration_entities = one_sided_int_entities(msh, gamma_i_facets)
 ds = ufl.Measure(
     "ds",
     subdomain_data=[(bound_ids["gamma_i"], facet_integration_entities)],
     domain=msh,
 )
-
 
 a = (
     inner(grad(u), grad(v)) * ufl.dx

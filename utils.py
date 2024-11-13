@@ -319,3 +319,24 @@ def compute_cell_boundary_facets(msh):
     return np.vstack(
         (np.repeat(np.arange(n_c), n_f), np.tile(np.arange(n_f), n_c))
     ).T.flatten()
+
+
+def one_sided_int_entities(msh, facets):
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    facet_imap = msh.topology.index_map(fdim)
+    facet_integration_entities = []
+    msh.topology.create_connectivity(tdim, fdim)
+    msh.topology.create_connectivity(fdim, tdim)
+    c_to_f = msh.topology.connectivity(tdim, fdim)
+    f_to_c = msh.topology.connectivity(fdim, tdim)
+    # Loop through all interface facets
+    for facet in facets:
+        # Check if this facet is owned
+        if facet < facet_imap.size_local:
+            # Get a cell connected to the facet
+            cell = f_to_c.links(facet)[0]
+            local_facet = np.where(c_to_f.links(cell) == facet)[0][0]
+            facet_integration_entities.extend([cell, local_facet])
+
+    return facet_integration_entities
