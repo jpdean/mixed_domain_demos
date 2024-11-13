@@ -321,7 +321,20 @@ def compute_cell_boundary_facets(msh):
     ).T.flatten()
 
 
+# TODO Optimise
 def one_sided_int_entities(msh, facets):
+    """
+    Give a list of facets, this function returns the corresponding
+    (cell, local facet index) pairs. For facets with two connected cells,
+    the first cell in the facet to cell connectivity is taken.
+
+    Parameters:
+        msh: The mesh
+        facets: The facets
+
+    Returns:
+        A list of (cell, local facet index) pairs corresponding to the input facets
+    """
     tdim = msh.topology.dim
     fdim = tdim - 1
     facet_imap = msh.topology.index_map(fdim)
@@ -334,7 +347,7 @@ def one_sided_int_entities(msh, facets):
     for facet in facets:
         # Check if this facet is owned
         if facet < facet_imap.size_local:
-            # Get a cell connected to the facet
+            # Get a cell connected to the facet and extract the local facet index
             cell = f_to_c.links(facet)[0]
             local_facet = np.where(c_to_f.links(cell) == facet)[0][0]
             facet_integration_entities.extend([cell, local_facet])
