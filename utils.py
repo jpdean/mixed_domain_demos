@@ -188,8 +188,6 @@ class TimeDependentExpression:
 def compute_interface_integration_entities(
     msh,
     interface_facets,
-    domain_0_cells,
-    domain_1_cells,
     domain_to_domain_0,
     domain_to_domain_1,
 ):
@@ -234,10 +232,14 @@ def compute_interface_integration_entities(
         if facet < facet_imap.size_local:
             cells = f_to_c.links(facet)
             assert len(cells) == 2
-            cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
-            cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
-            assert cell_plus in domain_0_cells
-            assert cell_minus in domain_1_cells
+            if domain_to_domain_0[cells[0]] > 0:
+                cell_plus = cells[0]
+                cell_minus = cells[1]
+            else:
+                cell_plus = cells[1]
+                cell_minus = cells[0]
+            assert(domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0)
+            assert(domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0)
 
             # FIXME Don't use tolist
             local_facet_plus = c_to_f.links(cell_plus).tolist().index(facet)
