@@ -205,3 +205,44 @@ def create_box_with_sphere_msh(comm, h):
     )
     gmsh.finalize()
     return msh, ct, ft, vol_ids, bound_ids
+
+
+def create_dome_mesh(comm, h):
+    # TODO Tag surfaces
+    # Create some geometry with gmsh
+    gmsh.initialize()
+    model = gmsh.model()
+    model_name = "Hemisphere"
+    if comm.rank == 0:
+        # Generate a mesh
+        model.add(model_name)
+        model.setCurrent(model_name)
+
+        sphere = model.occ.addSphere(0, 0, 0, 1)
+        box_0 = model.occ.addBox(-1, -1, 0, 2, 2, 1)
+        box_1 = model.occ.addBox(-1, -1, -0.75, 2, 2, -1)
+        cylinder = model.occ.addCylinder(0, 0, 0, 0, 0, -1, 0.25)
+        cut = model.occ.cut([(3, sphere)], [(3, box_0), (3, box_1), (3, cylinder)])
+        model.occ.synchronize()
+
+        # Add physical groups
+        boundary = model.getBoundary(cut[0], oriented=False)
+        boundary_ids = [b[1] for b in boundary]
+        model.addPhysicalGroup(2, boundary_ids, tag=1)
+        model.setPhysicalName(2, 1, "Sphere surface")
+
+        volume_entities = [model[1] for model in model.getEntities(3)]
+        model.addPhysicalGroup(3, volume_entities, tag=2)
+        model.setPhysicalName(3, 2, "Sphere volume")
+
+        # # Assign a mesh size to all the points:
+        gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
+
+        # Generate the mesh
+        model.mesh.generate(3)
+        # Use second-order geometry
+        model.mesh.setOrder(2)
+
+    msh = io.gmshio.model_to_mesh(model, comm, 0)[0]
+    msh.name = model_name
+    return msh
