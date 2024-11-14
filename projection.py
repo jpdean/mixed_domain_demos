@@ -21,22 +21,22 @@ u.interpolate(lambda x: np.sin(2 * np.pi * x[0]))
 
 # Create a sub-mesh of the boundary
 tdim = msh.topology.dim
+fdim = tdim - 1
 facets = mesh.locate_entities_boundary(
     msh,
-    tdim - 1,
+    fdim,
     lambda x: np.isclose(x[0], 0.0)
     | np.isclose(x[0], 1.0)
     | np.isclose(x[1], 0.0)
     | np.isclose(x[1], 1.0),
 )
-submsh, sm_to_msh = mesh.create_submesh(msh, tdim - 1, facets)[:2]
+submsh, sm_to_msh = mesh.create_submesh(msh, fdim, facets)[:2]
 
 # We take msh to be the integration domain and thus need to provide
 # a map from the facets in msh to the cells in submesh. This is the
 # "inverse" of sm_to_msh.
 num_facets = (
-    msh.topology.index_map(tdim - 1).size_local
-    + msh.topology.index_map(tdim - 1).num_ghosts
+    msh.topology.index_map(fdim).size_local + msh.topology.index_map(fdim).num_ghosts
 )
 msh_to_sm = np.full(num_facets, -1)
 msh_to_sm[sm_to_msh] = np.arange(len(sm_to_msh))
@@ -66,7 +66,7 @@ ksp.getPC().setFactorSolverType("mumps")
 
 # Compute projection
 ubar = fem.Function(Vbar)
-ksp.solve(b, ubar.vector)
+ksp.solve(b, ubar.x.petsc_vec)
 ubar.x.scatter_forward()
 
 # Compute error and check it's zero to machine precision
