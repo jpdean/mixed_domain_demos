@@ -11,94 +11,13 @@ from ufl import inner, grad, dot, avg, div
 import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, compute_interface_integration_entities
-import gmsh
 from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from meshing import create_square_with_circle
 
 
 def u_e(x, module=np):
     "A function to represent the exact solution"
     return module.exp(-((x[0] - 0.5) ** 2 + (x[1] - 0.5) ** 2) / (2 * 0.05**2)) + x[0]
-
-
-def create_mesh(h, c=0.5, r=0.25):
-    """
-    Create a mesh of a square domain. The mesh conforms with the boundary of a
-    circle inscribed inside the domain with centre c and radius r.
-
-    Parameters:
-        h: maximum cell diameter
-        c: centre of the inscribed circle
-        r: radius of the circle
-
-    Returns:
-        A mesh, cell tags, and facet tags
-    """
-    gmsh.initialize()
-    if comm.rank == 0:
-        gmsh.model.add("square_with_circle")
-
-        factory = gmsh.model.geo
-
-        # Corners of the square
-        square_points = [
-            factory.addPoint(0.0, 0.0, 0.0, h),
-            factory.addPoint(1.0, 0.0, 0.0, h),
-            factory.addPoint(1.0, 1.0, 0.0, h),
-            factory.addPoint(0.0, 1.0, 0.0, h),
-        ]
-
-        # The centre of the circle and four points lying on its boundary.
-        circle_points = [
-            factory.addPoint(c, c, 0.0, h),
-            factory.addPoint(c + r, c, 0.0, h),
-            factory.addPoint(c, c + r, 0.0, h),
-            factory.addPoint(c - r, c, 0.0, h),
-            factory.addPoint(c, c - r, 0.0, h),
-        ]
-
-        # The boundary of the square
-        square_lines = [
-            factory.addLine(square_points[0], square_points[1]),
-            factory.addLine(square_points[1], square_points[2]),
-            factory.addLine(square_points[2], square_points[3]),
-            factory.addLine(square_points[3], square_points[0]),
-        ]
-
-        # The boundary of the circle
-        circle_lines = [
-            factory.addCircleArc(circle_points[1], circle_points[0], circle_points[2]),
-            factory.addCircleArc(circle_points[2], circle_points[0], circle_points[3]),
-            factory.addCircleArc(circle_points[3], circle_points[0], circle_points[4]),
-            factory.addCircleArc(circle_points[4], circle_points[0], circle_points[1]),
-        ]
-
-        # Create curves
-        square_curve = factory.addCurveLoop(square_lines)
-        circle_curve = factory.addCurveLoop(circle_lines)
-
-        # Create surfaces
-        square_surface = factory.addPlaneSurface([square_curve, circle_curve])
-        circle_surface = factory.addPlaneSurface([circle_curve])
-
-        factory.synchronize()
-
-        # Tag physical groups
-        gmsh.model.addPhysicalGroup(2, [square_surface], vol_ids["omega_0"])
-        gmsh.model.addPhysicalGroup(2, [circle_surface], vol_ids["omega_1"])
-        gmsh.model.addPhysicalGroup(1, square_lines, surf_ids["boundary"])
-        gmsh.model.addPhysicalGroup(1, circle_lines, surf_ids["interface"])
-
-        gmsh.model.mesh.generate(2)
-
-        # gmsh.fltk.run()
-
-    # Create dolfinx mesh
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    msh, ct, ft = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
-    )
-    gmsh.finalize()
-    return msh, ct, ft
 
 
 # Set some parameters
@@ -107,12 +26,8 @@ h = 0.05  # Maximum cell diameter
 k_0 = 1  # Polynomial degree in omega_0
 k_1 = 3  # Polynomial degree in omega_1
 
-# Tags for volumes and surfaces
-vol_ids = {"omega_0": 1, "omega_1": 2}
-surf_ids = {"boundary": 3, "interface": 4}
-
 # Create mesh and sub-meshes
-msh, ct, ft = create_mesh(h)
+msh, ct, ft, vol_ids, surf_ids = create_square_with_circle(comm, h)
 tdim = msh.topology.dim
 submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_0"]))[:2]
 submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1"]))[:2]
