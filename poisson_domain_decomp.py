@@ -76,20 +76,20 @@ x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
 
-def jump_i(v):
-    return v[0]("+") - v[1]("-")
+def jump_i(v, n):
+    return v[0]("+") * n("+") + v[1]("-") * n("-")
 
 
-def grad_avg_i(v, n):
-    return 1 / 2 * (dot(grad(v[0]("+")), n("+")) + dot(grad(v[1]("-")), n("-")))
+def grad_avg_i(v):
+    return 1 / 2 * (grad(v[0]("+")) + grad(v[1]("-")))
 
 
 a = (
     inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
     + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
-    - inner(c * grad_avg_i(u, n), jump_i(v)) * dS(surf_ids["interface"])
-    - inner(c * jump_i(u), grad_avg_i(v, n)) * dS(surf_ids["interface"])
-    + gamma / avg(h) * inner(c * jump_i(u), jump_i(v)) * dS(surf_ids["interface"])
+    - inner(c * grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
+    - inner(c * jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
+    + gamma / avg(h) * inner(c * jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
 )
 
 # Compile LHS forms
