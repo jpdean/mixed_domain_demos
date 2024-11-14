@@ -79,7 +79,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 
 # Solve
 u = fem.Function(V)
-ksp.solve(b, u.vector)
+ksp.solve(b, u.x.petsc_vec)
 u.x.scatter_forward()
 
 # Write to file
