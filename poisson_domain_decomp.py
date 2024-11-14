@@ -35,10 +35,11 @@ submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Lagrange", k_0))
 V_1 = fem.functionspace(submesh_1, ("Lagrange", k_1))
+W = ufl.MixedFunctionSpace(V_0, V_1)
 
 # Test and trial functions
-u_0, u_1 = ufl.TrialFunction(V_0), ufl.TrialFunction(V_1)
-v_0, v_1 = ufl.TestFunction(V_0), ufl.TestFunction(V_1)
+u = ufl.TrialFunctions(W)
+v = ufl.TestFunctions(W)
 
 # We use msh as the integration domain, so we require maps from cells
 # in msh to cells in submesh_0 and submesh_1. These can be created
@@ -74,71 +75,32 @@ n = ufl.FacetNormal(msh)
 x = ufl.SpatialCoordinate(msh)
 c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
-# Define left-hand side forms
-domain_0, domain_1 = "+", "-"
 
-a_00 = (
-    inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"])
-    + gamma
-    / avg(h)
-    * inner(c * u_0(domain_0), v_0(domain_0))
-    * dS(surf_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)), v_0(domain_0))
-    * dS(surf_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)), u_0(domain_0))
-    * dS(surf_ids["interface"])
+def jump_i(v):
+    return v[0]("+") - v[1]("-")
+
+
+def grad_avg_i(v, n):
+    return 1 / 2 * (dot(grad(v[0]("+")), n("+")) + dot(grad(v[1]("-")), n("-")))
+
+
+a = (
+    inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
+    - inner(c * grad_avg_i(u, n), jump_i(v)) * dS(surf_ids["interface"])
+    - inner(c * jump_i(u), grad_avg_i(v, n)) * dS(surf_ids["interface"])
+    + gamma / avg(h) * inner(c * jump_i(u), jump_i(v)) * dS(surf_ids["interface"])
 )
 
-a_01 = (
-    -gamma
-    / avg(h)
-    * inner(c * u_1(domain_1), v_0(domain_0))
-    * dS(surf_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)), v_0(domain_0))
-    * dS(surf_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(v_0(domain_0)), n(domain_0)), u_1(domain_1))
-    * dS(surf_ids["interface"])
-)
-
-a_10 = (
-    -gamma
-    / avg(h)
-    * inner(c * u_0(domain_0), v_1(domain_1))
-    * dS(surf_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(u_0(domain_0)), n(domain_0)), v_1(domain_1))
-    * dS(surf_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)), u_0(domain_0))
-    * dS(surf_ids["interface"])
-)
-
-a_11 = (
-    inner(c * grad(u_1), grad(v_1)) * dx(vol_ids["omega_1"])
-    + gamma
-    / avg(h)
-    * inner(c * u_1(domain_1), v_1(domain_1))
-    * dS(surf_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(u_1(domain_1)), n(domain_1)), v_1(domain_1))
-    * dS(surf_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(v_1(domain_1)), n(domain_1)), u_1(domain_1))
-    * dS(surf_ids["interface"])
-)
-
-# Compile LHS forms and set block structure
-a_00 = fem.form(a_00, entity_maps=entity_maps)
-a_01 = fem.form(a_01, entity_maps=entity_maps)
-a_10 = fem.form(a_10, entity_maps=entity_maps)
-a_11 = fem.form(a_11, entity_maps=entity_maps)
-a = [[a_00, a_01], [a_10, a_11]]
+# Compile LHS forms
+a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Define right-hand side forms
 f = -div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
-L_0 = inner(f, v_0) * dx(vol_ids["omega_0"])
-L_1 = inner(f, v_1) * dx(vol_ids["omega_1"])
+L = inner(f, v[0]) * dx(vol_ids["omega_0"]) + inner(f, v[1]) * dx(vol_ids["omega_1"])
 
 # Compile RHS forms and set block structure
-L_0 = fem.form(L_0, entity_maps=entity_maps)
-L_1 = fem.form(L_1, entity_maps=entity_maps)
-L = [L_0, L_1]
+L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
 
 # Apply boundary conditions. We require the DOFs of V_0 on the domain
 # boundary. These can be identified via that facets of submesh_0 that
