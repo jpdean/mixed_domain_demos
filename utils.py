@@ -241,9 +241,9 @@ def compute_interface_integration_entities(
             assert(domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0)
             assert(domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0)
 
-            # FIXME Don't use tolist
-            local_facet_plus = c_to_f.links(cell_plus).tolist().index(facet)
-            local_facet_minus = c_to_f.links(cell_minus).tolist().index(facet)
+            local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
+            local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
+
             interface_entities.extend(
                 [cell_plus, local_facet_plus, cell_minus, local_facet_minus]
             )
