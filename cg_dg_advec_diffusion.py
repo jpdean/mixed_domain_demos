@@ -30,7 +30,6 @@ from utils import (
     interface_int_entities,
     compute_interior_facet_integration_entities,
 )
-from dolfinx.cpp.fem import compute_integration_domains
 import gmsh
 from dolfinx.fem.petsc import (
     assemble_matrix_block,
@@ -163,14 +162,14 @@ interface_facets = ft.find(bound_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
 interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
-    msh, interface_facets, domain_0_cells, domain_1_cells, msh_to_sm_0, msh_to_sm_1
+    msh, interface_facets, msh_to_sm_0, msh_to_sm_1
 )
 
 # Compute integration entities for boundary terms
 boundary_entites = [
     (
         bound_ids["boundary_0"],
-        compute_integration_domains(
+        fem.compute_integration_domains(
             fem.IntegralType.exterior_facet,
             msh.topology,
             ft.find(bound_ids["boundary_0"]),
