@@ -88,7 +88,7 @@ interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
 )
 
 # Compute integration entities for boundary terms
-boundary_entites = [
+boundary_entities = [
     (
         bound_ids["boundary_0"],
         fem.compute_integration_domains(
@@ -108,7 +108,7 @@ omega_0_int_entities = interior_facet_int_entities(
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
-ds = ufl.Measure("ds", domain=msh, subdomain_data=boundary_entites)
+ds = ufl.Measure("ds", domain=msh, subdomain_data=boundary_entities)
 dS = ufl.Measure(
     "dS",
     domain=msh,
