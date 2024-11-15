@@ -185,7 +185,7 @@ class TimeDependentExpression:
         return self.expression(x, self.t)
 
 
-def compute_interface_integration_entities(
+def interface_int_entities(
     msh,
     interface_facets,
     domain_to_domain_0,
