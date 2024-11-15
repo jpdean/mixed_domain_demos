@@ -309,7 +309,7 @@ def interior_facet_int_entities(msh, cell_map):
     return integration_entities
 
 
-def compute_cell_boundary_facets(msh):
+def compute_cell_boundary_int_entities(msh):
     """Compute the integration entities for integrals around the
     boundaries of all cells in msh.
 

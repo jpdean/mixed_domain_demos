@@ -9,7 +9,7 @@ from ufl import inner, grad, dot, div
 import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import norm_L2, compute_cell_boundary_facets
+from utils import norm_L2, compute_cell_boundary_int_entities
 from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 
@@ -64,7 +64,7 @@ v, vbar = ufl.TestFunctions(W)
 # Create integration entities and define integration measures. We want
 # to integrate around each element boundary, so we call the following
 # convenience function:
-cell_boundary_facets = compute_cell_boundary_facets(msh)
+cell_boundary_facets = compute_cell_boundary_int_entities(msh)
 dx_c = ufl.Measure("dx", domain=msh)
 cell_boundaries = 0  # Tag
 ds_c = ufl.Measure(
@@ -114,7 +114,6 @@ a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 # RHS
 f = dot(w, grad(u_e(x))) - div(kappa * grad(u_e(x)))
 
-# TODO Remove zero
 L = inner(f, v) * dx_c + inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f
 L = fem.form(ufl.extract_blocks(L))
 
