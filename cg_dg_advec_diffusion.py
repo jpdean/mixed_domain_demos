@@ -64,10 +64,11 @@ submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Discontinuous Lagrange", k_0))
 V_1 = fem.functionspace(submesh_1, ("Lagrange", k_1))
+W = ufl.MixedFunctionSpace(V_0, V_1)
 
 # Test and trial functions
-u_0, v_0 = ufl.TrialFunction(V_0), ufl.TestFunction(V_0)
-u_1, v_1 = ufl.TrialFunction(V_1), ufl.TestFunction(V_1)
+u = ufl.TrialFunctions(W)
+v = ufl.TestFunctions(W)
 
 # We use msh as the integration domain, so we require maps from
 # cells in msh to cells in submesh_0 and submesh_1
@@ -133,66 +134,61 @@ u_1_n = fem.Function(V_1)
 w = ufl.as_vector((0.5 - x[1], 0.0))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
-# Forms for the left-had side
-a_00 = (
-    inner(u_0 / delta_t, v_0) * dx(vol_ids["omega_0"])
-    - inner(w * u_0, grad(v_0)) * dx(vol_ids["omega_0"])
+# DG scheme in Omega_0
+a = (
+    inner(u[0] / delta_t, v[0]) * dx(vol_ids["omega_0"])
+    - inner(w * u[0], grad(v[0])) * dx(vol_ids["omega_0"])
     + inner(
-        lmbda("+") * dot(w("+"), n("+")) * u_0("+")
-        - lmbda("-") * dot(w("-"), n("-")) * u_0("-"),
-        jump(v_0),
+        lmbda("+") * dot(w("+"), n("+")) * u[0]("+")
+        - lmbda("-") * dot(w("-"), n("-")) * u[0]("-"),
+        jump(v[0]),
     )
     * dS(bound_ids["omega_0_int_facets"])
-    + inner(lmbda * dot(w, n) * u_0, v_0) * ds(bound_ids["boundary_0"])
-    + +inner(c * grad(u_0), grad(v_0)) * dx(vol_ids["omega_0"])
-    - inner(c * avg(grad(u_0)), jump(v_0, n)) * dS(bound_ids["omega_0_int_facets"])
-    - inner(c * jump(u_0, n), avg(grad(v_0))) * dS(bound_ids["omega_0_int_facets"])
+    + inner(lmbda * dot(w, n) * u[0], v[0]) * ds(bound_ids["boundary_0"])
+    + inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    - inner(c * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
+    - inner(c * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
     + (gamma_dg / avg(h))
-    * inner(c * jump(u_0, n), jump(v_0, n))
+    * inner(c * jump(u[0], n), jump(v[0], n))
     * dS(bound_ids["omega_0_int_facets"])
-    - inner(c * grad(u_0), v_0 * n) * ds(bound_ids["boundary_0"])
-    - inner(c * grad(v_0), u_0 * n) * ds(bound_ids["boundary_0"])
-    + (gamma_dg / h) * inner(c * u_0, v_0) * ds(bound_ids["boundary_0"])
-    + gamma_int / avg(h) * inner(c * u_0("+"), v_0("+")) * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")), v_0("+"))
+    - inner(c * grad(u[0]), v[0] * n) * ds(bound_ids["boundary_0"])
+    - inner(c * grad(v[0]), u[0] * n) * ds(bound_ids["boundary_0"])
+    + (gamma_dg / h) * inner(c * u[0], v[0]) * ds(bound_ids["boundary_0"])
+)
+
+# CG scheme in Omega_1
+a += (
+    inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"])
+    + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
+    + gamma_int / avg(h) * inner(c * u[1]("-"), v[1]("-")) * dS(bound_ids["interface"])
+    - inner(c * 1 / 2 * dot(grad(u[1]("-")), n("-")), v[1]("-"))
     * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")), u_0("+"))
+    - inner(c * 1 / 2 * dot(grad(v[1]("-")), n("-")), u[1]("-"))
     * dS(bound_ids["interface"])
 )
 
-a_01 = (
-    -gamma_int / avg(h) * inner(c * u_1("-"), v_0("+")) * dS(bound_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")), v_0("+"))
-    * dS(bound_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(v_0("+")), n("+")), u_1("-"))
-    * dS(bound_ids["interface"])
-)
 
-a_10 = (
-    -gamma_int / avg(h) * inner(c * u_0("+"), v_1("-")) * dS(bound_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(u_0("+")), n("+")), v_1("-"))
-    * dS(bound_ids["interface"])
-    + inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")), u_0("+"))
-    * dS(bound_ids["interface"])
-)
+# Coupling terms on the interface
+def jump_i(v, n):
+    return v[0]("+") * n("+") + v[1]("-") * n("-")
 
-a_11 = (
-    inner(u_1 / delta_t, v_1) * dx(vol_ids["omega_1"])
-    + inner(c * grad(u_1), grad(v_1)) * dx(vol_ids["omega_1"])
-    + gamma_int / avg(h) * inner(c * u_1("-"), v_1("-")) * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(u_1("-")), n("-")), v_1("-"))
-    * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(v_1("-")), n("-")), u_1("-"))
+
+def grad_avg_i(v):
+    return 1 / 2 * (grad(v[0]("+")) + grad(v[1]("-")))
+
+
+a += (
+    -inner(c * grad_avg_i(u), jump_i(v, n)) * dS(bound_ids["interface"])
+    - inner(c * jump_i(u, n), grad_avg_i(v)) * dS(bound_ids["interface"])
+    + gamma_int
+    / avg(h)
+    * inner(c * jump_i(u, n), jump_i(v, n))
     * dS(bound_ids["interface"])
 )
 
 # Compile LHS forms
 entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
-a_00 = fem.form(a_00, entity_maps=entity_maps)
-a_01 = fem.form(a_01, entity_maps=entity_maps)
-a_10 = fem.form(a_10, entity_maps=entity_maps)
-a_11 = fem.form(a_11, entity_maps=entity_maps)
-a = [[a_00, a_01], [a_10, a_11]]
+a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Forms for the righ-hand side
 f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
@@ -203,21 +199,18 @@ f_1 = -div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
 
-L_0 = (
-    inner(f_0, v_0) * dx(vol_ids["omega_0"])
-    - inner((1 - lmbda) * dot(w, n) * u_D, v_0) * ds(bound_ids["boundary_0"])
-    + inner(u_0_n / delta_t, v_0) * dx(vol_ids["omega_0"])
-    - inner(c * u_D * n, grad(v_0)) * ds(bound_ids["boundary_0"])
-    + gamma_dg / h * inner(c * u_D, v_0) * ds(bound_ids["boundary_0"])
-)
-L_1 = inner(f_1, v_1) * dx(vol_ids["omega_1"]) + inner(u_1_n / delta_t, v_1) * dx(
-    vol_ids["omega_1"]
+L = (
+    inner(f_0, v[0]) * dx(vol_ids["omega_0"])
+    - inner((1 - lmbda) * dot(w, n) * u_D, v[0]) * ds(bound_ids["boundary_0"])
+    + inner(u_0_n / delta_t, v[0]) * dx(vol_ids["omega_0"])
+    - inner(c * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
+    + gamma_dg / h * inner(c * u_D, v[0]) * ds(bound_ids["boundary_0"])
+    + inner(f_1, v[1]) * dx(vol_ids["omega_1"])
+    + inner(u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
 
 # Compile RHS forms
-L_0 = fem.form(L_0, entity_maps=entity_maps)
-L_1 = fem.form(L_1, entity_maps=entity_maps)
-L = [L_0, L_1]
+L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
 
 # Apply boundary condition. Since the boundary condition is applied on
 # V_1, we must convert the facet tags to submesh_1 in order to locate
