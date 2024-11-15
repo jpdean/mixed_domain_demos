@@ -30,7 +30,6 @@ from utils import (
     interface_int_entities,
     compute_interior_facet_integration_entities,
 )
-import gmsh
 from dolfinx.fem.petsc import (
     assemble_matrix_block,
     create_vector_block,
@@ -132,7 +131,6 @@ u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
 
 w = ufl.as_vector((0.5 - x[1], 0.0))
-# w = ufl.as_vector((1e-12, 0.0))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
 # Forms for the left-had side
