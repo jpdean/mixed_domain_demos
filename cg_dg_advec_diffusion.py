@@ -28,7 +28,7 @@ from utils import (
     norm_L2,
     convert_facet_tags,
     interface_int_entities,
-    compute_interior_facet_integration_entities,
+    interior_facet_int_entities,
 )
 from dolfinx.fem.petsc import (
     assemble_matrix_block,
@@ -102,7 +102,7 @@ boundary_entites = [
 
 # Compute integration entities for the interior facet integrals
 # over omega_0. These are needed for the DG scheme
-omega_0_int_entities = compute_interior_facet_integration_entities(
+omega_0_int_entities = interior_facet_int_entities(
     submesh_0, sm_0_to_msh
 )
 

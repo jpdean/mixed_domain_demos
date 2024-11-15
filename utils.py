@@ -271,7 +271,7 @@ def interface_int_entities(
     return interface_entities, domain_to_domain_0, domain_to_domain_1
 
 
-def compute_interior_facet_integration_entities(msh, cell_map):
+def interior_facet_int_entities(msh, cell_map):
     """
     Compute the integration entities for interior facet integrals.
 
