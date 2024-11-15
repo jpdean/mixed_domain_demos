@@ -10,7 +10,7 @@ import ufl
 from ufl import inner, grad, dot, avg, div
 import numpy as np
 from petsc4py import PETSc
-from utils import norm_L2, convert_facet_tags, compute_interface_integration_entities
+from utils import norm_L2, convert_facet_tags, interface_int_entities
 from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 from meshing import create_square_with_circle
 
@@ -58,7 +58,7 @@ interface_facets = ft.find(surf_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
 
-interface_entities, msh_to_sm_0, msh_to_sm_1 = compute_interface_integration_entities(
+interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
     msh, interface_facets, msh_to_sm_0, msh_to_sm_1
 )
 

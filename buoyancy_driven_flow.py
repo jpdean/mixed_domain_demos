@@ -37,7 +37,7 @@ from utils import (
     convert_facet_tags,
     norm_L2,
     par_print,
-    compute_interface_integration_entities,
+    interface_int_entities,
     compute_interior_facet_integration_entities,
 )
 from dolfinx.fem.petsc import (
@@ -393,7 +393,7 @@ domain_s_cells = ct.find(volume_id["solid"])
     obstacle_facet_entities,
     msh_to_sm_f,
     msh_to_sm_s,
-) = compute_interface_integration_entities(
+) = interface_int_entities(
     msh, interface_facets, domain_f_cells, domain_s_cells, msh_to_sm_f, msh_to_sm_s
 )
 

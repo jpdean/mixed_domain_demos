@@ -27,7 +27,7 @@ from petsc4py import PETSc
 from utils import (
     norm_L2,
     convert_facet_tags,
-    compute_interface_integration_entities,
+    interface_int_entities,
     compute_interior_facet_integration_entities,
 )
 from dolfinx.cpp.fem import compute_integration_domains
@@ -162,7 +162,7 @@ msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
 interface_facets = ft.find(bound_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
-interface_entities, msh_to_sm_0, msh_to_sm_1 = compute_interface_integration_entities(
+interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
     msh, interface_facets, domain_0_cells, domain_1_cells, msh_to_sm_0, msh_to_sm_1
 )
 
