@@ -22,7 +22,7 @@ def u_e(x, module=np):
 
 # Set some parameters
 comm = MPI.COMM_WORLD
-h = 0.0025  # Maximum cell diameter
+h = 0.05  # Maximum cell diameter
 k_0 = 1  # Polynomial degree in omega_0
 k_1 = 3  # Polynomial degree in omega_1
 
@@ -58,13 +58,9 @@ interface_facets = ft.find(surf_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
 
-import time
-start = time.time()
 interface_entities, msh_to_sm_0, msh_to_sm_1 = compute_interface_integration_entities(
     msh, interface_facets, msh_to_sm_0, msh_to_sm_1
 )
-end = time.time()
-print(f"time = {end - start}")
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
