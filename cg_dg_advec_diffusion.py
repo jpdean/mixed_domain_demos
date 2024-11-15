@@ -157,15 +157,9 @@ a = (
 )
 
 # CG scheme in Omega_1
-a += (
-    inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"])
-    + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
-    + gamma_int / avg(h) * inner(c * u[1]("-"), v[1]("-")) * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(u[1]("-")), n("-")), v[1]("-"))
-    * dS(bound_ids["interface"])
-    - inner(c * 1 / 2 * dot(grad(v[1]("-")), n("-")), u[1]("-"))
-    * dS(bound_ids["interface"])
-)
+a += inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
+    c * grad(u[1]), grad(v[1])
+) * dx(vol_ids["omega_1"])
 
 
 # Coupling terms on the interface
