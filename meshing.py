@@ -331,3 +331,82 @@ def create_square_with_circle(comm, h, c=0.5, r=0.25):
     )
     gmsh.finalize()
     return msh, ct, ft, vol_ids, surf_ids
+
+
+def create_divided_square(comm, h):
+    "Create a mesh of the unit square divided into two regions"
+    # Volume and boundary ids
+    vol_ids = {"omega_0": 1, "omega_1": 2}
+    bound_ids = {
+        "boundary_0": 3,
+        "boundary_1": 4,
+        "interface": 5,  # Interface of omega_0
+        "omega_0_int_facets": 6,  # Interior facets of omega_0
+    }
+
+    gmsh.initialize()
+    if comm.rank == 0:
+        gmsh.model.add("model")
+        factory = gmsh.model.geo
+
+        # Create points at each corner of the square, and add
+        # additional points at the midpoint of the vertical sides
+        # of the square
+        points = [
+            factory.addPoint(0.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 0.0, 0.0, h),
+            factory.addPoint(1.0, 0.5, 0.0, h),
+            factory.addPoint(0.0, 0.5, 0.0, h),
+            factory.addPoint(0.0, 1.0, 0.0, h),
+            factory.addPoint(1.0, 1.0, 0.0, h),
+        ]
+
+        # Lines bounding omega_0
+        omega_0_lines = [
+            factory.addLine(points[0], points[1]),
+            factory.addLine(points[1], points[2]),
+            factory.addLine(points[2], points[3]),
+            factory.addLine(points[3], points[0]),
+        ]
+
+        # Lines bounding omega_1
+        omega_1_lines = [
+            omega_0_lines[2],
+            factory.addLine(points[3], points[4]),
+            factory.addLine(points[4], points[5]),
+            factory.addLine(points[5], points[2]),
+        ]
+
+        # Create curves and surfaces
+        omega_0_curve = factory.addCurveLoop(omega_0_lines)
+        omega_1_curve = factory.addCurveLoop(omega_1_lines)
+        omega_0_surface = factory.addPlaneSurface([omega_0_curve])
+        omega_1_surface = factory.addPlaneSurface([omega_1_curve])
+
+        factory.synchronize()
+
+        # Add physical groups
+        gmsh.model.addPhysicalGroup(2, [omega_0_surface], vol_ids["omega_0"])
+        gmsh.model.addPhysicalGroup(2, [omega_1_surface], vol_ids["omega_1"])
+        gmsh.model.addPhysicalGroup(
+            1,
+            [omega_0_lines[0], omega_0_lines[1], omega_0_lines[3]],
+            bound_ids["boundary_0"],
+        )
+        gmsh.model.addPhysicalGroup(
+            1,
+            [omega_1_lines[1], omega_1_lines[2], omega_1_lines[3]],
+            bound_ids["boundary_1"],
+        )
+        gmsh.model.addPhysicalGroup(1, [omega_0_lines[2]], bound_ids["interface"])
+
+        # Generate mesh
+        gmsh.model.mesh.generate(2)
+        # gmsh.fltk.run()
+
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+    msh, ct, ft = io.gmshio.model_to_mesh(
+        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
+    )
+    gmsh.finalize()
+    return msh, ct, ft, vol_ids, bound_ids
