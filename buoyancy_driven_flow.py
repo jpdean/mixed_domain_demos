@@ -38,7 +38,7 @@ from utils import (
     norm_L2,
     par_print,
     interface_int_entities,
-    compute_interior_facet_integration_entities,
+    interior_facet_int_entities,
 )
 from dolfinx.fem.petsc import (
     create_matrix_block,
@@ -398,7 +398,7 @@ domain_s_cells = ct.find(volume_id["solid"])
 )
 
 # Create integration entities for the interior facet integral
-fluid_int_facet_entities = compute_interior_facet_integration_entities(
+fluid_int_facet_entities = interior_facet_int_entities(
     submesh_f, sm_f_to_msh
 )
 fluid_int_facets = 3
