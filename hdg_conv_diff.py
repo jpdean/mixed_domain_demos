@@ -25,9 +25,12 @@ def u_e(x):
 
 def boundary(x):
     "A function to mark the domain boundary"
-    lr = np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
-    tb = np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-    return lr | tb
+    return (
+        np.isclose(x[0], 0.0)
+        | np.isclose(x[0], 1.0)
+        | np.isclose(x[1], 0.0)
+        | np.isclose(x[1], 1.0)
+    )
 
 
 # Create a mesh
@@ -52,19 +55,20 @@ facet_mesh, facet_mesh_to_msh = mesh.create_submesh(msh, fdim, facets)[0:2]
 k = 3  # Polynomial degree
 V = fem.functionspace(msh, ("Discontinuous Lagrange", k))
 Vbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
+W = ufl.MixedFunctionSpace(V, Vbar)
 
 # Create trial and test functions
-u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
+u, ubar = ufl.TrialFunctions(W)
+v, vbar = ufl.TestFunctions(W)
 
 # Create integration entities and define integration measures. We want
 # to integrate around each element boundary, so we call the following
 # convenience function:
 cell_boundary_facets = compute_cell_boundary_facets(msh)
 dx_c = ufl.Measure("dx", domain=msh)
-all_facets = 0  # Tag
+cell_boundaries = 0  # Tag
 ds_c = ufl.Measure(
-    "ds", subdomain_data=[(all_facets, cell_boundary_facets)], domain=msh
+    "ds", subdomain_data=[(cell_boundaries, cell_boundary_facets)], domain=msh
 )
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
@@ -84,19 +88,12 @@ kappa = fem.Constant(msh, PETSc.ScalarType(1e-3))
 gamma = 16.0 * k**2 / h
 
 # Diffusive terms
-a_00 = (
+a = (
     inner(kappa * grad(u), grad(v)) * dx_c
-    - inner(kappa * dot(grad(u), n), v) * ds_c(all_facets)
-    - inner(kappa * u, dot(grad(v), n)) * ds_c(all_facets)
-    + gamma * inner(kappa * u, v) * ds_c(all_facets)
+    - inner(kappa * (u - ubar), dot(grad(v), n)) * ds_c(cell_boundaries)
+    - inner(dot(grad(u), n), kappa * (v - vbar)) * ds_c(cell_boundaries)
+    + gamma * inner(kappa * (u - ubar), v - vbar) * ds_c(cell_boundaries)
 )
-a_01 = inner(kappa * ubar, dot(grad(v), n)) * ds_c(all_facets) - gamma * inner(
-    kappa * ubar, v
-) * ds_c(all_facets)
-a_10 = inner(kappa * dot(grad(u), n), vbar) * ds_c(all_facets) - gamma * inner(
-    kappa * u, vbar
-) * ds_c(all_facets)
-a_11 = gamma * inner(kappa * ubar, vbar) * ds_c(all_facets)
 
 # Advection terms
 x = ufl.SpatialCoordinate(msh)
@@ -107,31 +104,19 @@ w = ufl.as_vector(
     )
 )
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 0, 1)
-a_00 += (
-    -inner(w * u, grad(v)) * dx_c
-    + inner(dot(w * u, n), v) * ds_c(all_facets)
-    - inner(lmbda * dot(w * u, n), v) * ds_c(all_facets)
-)
-a_01 += inner(lmbda * dot(w * ubar, n), v) * ds_c(all_facets)
-a_10 += -inner(dot(w * u, n), vbar) * ds_c(all_facets) + inner(
-    lmbda * dot(w * u, n), vbar
-) * ds_c(all_facets)
-a_11 += -inner(lmbda * dot(w * ubar, n), vbar) * ds_c(all_facets)
+a += -inner(w * u, grad(v)) * dx_c + inner(
+    dot(w * (u - lmbda * (u - ubar)), n), v - vbar
+) * ds_c(cell_boundaries)
 
-# Compile forms
-a_00 = fem.form(a_00)
-a_01 = fem.form(a_01, entity_maps=entity_maps)
-a_10 = fem.form(a_10, entity_maps=entity_maps)
-a_11 = fem.form(a_11, entity_maps=entity_maps)
+# Compile form
+a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
+# RHS
 f = dot(w, grad(u_e(x))) - div(kappa * grad(u_e(x)))
 
-L_0 = fem.form(inner(f, v) * dx_c)
-L_1 = fem.form(inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f)
-
-# Define block structure
-a = [[a_00, a_01], [a_10, a_11]]
-L = [L_0, L_1]
+# TODO Remove zero
+L = inner(f, v) * dx_c + inner(fem.Constant(facet_mesh, 0.0), vbar) * dx_f
+L = fem.form(ufl.extract_blocks(L))
 
 # Define the boundary condition. We begin by locating the facets on the
 # domain boundary
