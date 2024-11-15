@@ -238,8 +238,14 @@ def compute_interface_integration_entities(
             else:
                 cell_plus = cells[1]
                 cell_minus = cells[0]
-            assert(domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0)
-            assert(domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0)
+            assert (
+                domain_to_domain_0[cell_plus] >= 0
+                and domain_to_domain_0[cell_minus] < 0
+            )
+            assert (
+                domain_to_domain_1[cell_minus] >= 0
+                and domain_to_domain_1[cell_plus] < 0
+            )
 
             local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
             local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
