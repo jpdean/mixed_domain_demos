@@ -295,8 +295,8 @@ def compute_interior_facet_integration_entities(msh, cell_map):
         cells = f_to_c.links(facet)
         if len(cells) == 2:
             # FIXME Don't use tolist
-            local_facet_plus = c_to_f.links(cells[0]).tolist().index(facet)
-            local_facet_minus = c_to_f.links(cells[1]).tolist().index(facet)
+            local_facet_plus = np.where(c_to_f.links(cells[0]) == facet)[0][0]
+            local_facet_minus = np.where(c_to_f.links(cells[1]) == facet)[0][0]
 
             integration_entities.extend(
                 [
