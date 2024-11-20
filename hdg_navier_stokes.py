@@ -16,14 +16,13 @@ import ufl
 from ufl import inner, grad, dot, div, outer
 import numpy as np
 from petsc4py import PETSc
-from dolfinx.cpp.fem import compute_integration_domains
 from utils import (
     norm_L2,
     domain_average,
     normal_jump_error,
     TimeDependentExpression,
     par_print,
-    compute_cell_boundary_facets,
+    compute_cell_boundary_int_entities,
 )
 from enum import Enum
 import gmsh
@@ -108,7 +107,7 @@ def create_forms(
 
     # We wish to integrate around the boundary of each cell, so we
     # get a list of cell boundary facets as follows:
-    cell_boundary_facets = compute_cell_boundary_facets(msh)
+    cell_boundary_facets = compute_cell_boundary_int_entities(msh)
     cell_boundaries_tag = 0
     # Add cell boundaries to the list of integration entities
     facet_integration_entities = [(cell_boundaries_tag, cell_boundary_facets)]
@@ -118,7 +117,7 @@ def create_forms(
     facet_integration_entities += [
         (
             tag,
-            compute_integration_domains(
+            fem.compute_integration_domains(
                 fem.IntegralType.exterior_facet, msh.topology, mt.find(tag), mt.dim
             ),
         )
