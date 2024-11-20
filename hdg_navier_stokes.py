@@ -147,14 +147,10 @@ def create_forms(
     entity_maps = {facet_mesh: msh_to_facet_mesh}
 
     # Define trial and test functitons
-    # Cell velocity
-    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-    # Cell pressure
-    p, q = ufl.TrialFunction(Q), ufl.TestFunction(Q)
-    # Facet velocity
-    ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
-    # Facet pressure
-    pbar, qbar = ufl.TrialFunction(Qbar), ufl.TestFunction(Qbar)
+    W = ufl.MixedFunctionSpace(V, Q, Vbar, Qbar)
+
+    u, p, ubar, pbar = ufl.TrialFunctions(W)
+    v, q, vbar, qbar = ufl.TestFunctions(W)
 
     h = ufl.CellDiameter(msh)  # TODO Fix for high-order geom!
     n = ufl.FacetNormal(msh)
@@ -468,7 +464,7 @@ def run_square_problem():
     h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-3  # Kinematic viscosity
+    nu = 1.0e-6  # Kinematic viscosity
     num_time_steps = 16
     t_end = 1e4
     d = 2
