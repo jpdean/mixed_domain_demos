@@ -121,7 +121,7 @@ def create_forms(
         (
             tag,
             fem.compute_integration_domains(
-                fem.IntegralType.exterior_facet, msh.topology, mt.find(tag), mt.dim
+                fem.IntegralType.exterior_facet, msh.topology, mt.find(tag)
             ),
         )
         for tag in boundaries.values()
@@ -364,8 +364,9 @@ def solve(
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     opts = PETSc.Options()
-    opts["mat_mumps_icntl_6"] = 2
-    opts["mat_mumps_icntl_14"] = 100
+    opts["mat_mumps_icntl_14"] = 80  # Increase MUMPS working memory
+    opts["mat_mumps_icntl_24"] = 1  # Option to support solving a singular matrix (pressure nullspace)
+    opts["mat_mumps_icntl_25"] = 0  # Option to support solving a singular matrix (pressure nullspace)
     ksp.setFromOptions()
 
     # Prepare functions for visualisation
