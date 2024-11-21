@@ -274,6 +274,7 @@ def create_forms(
             assert bc_type == BCType.Neumann
             # FIXME Sign?
             L += -inner(bc_expr, vbar) * ds_c(id)
+            # a += inner(dot(ubar, n), qbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a += inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
@@ -478,9 +479,9 @@ def solve(
 def run_square_problem():
     # Simulation parameters
     comm = MPI.COMM_WORLD
-    scheme = Scheme.RW
+    scheme = Scheme.DRW
     solver_type = SolverType.STOKES
-    h = 1 / 32  # Maximum cell diameter
+    h = 1 / 64  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.triangle
     nu = 1.0e-3  # Kinematic viscosity
@@ -567,8 +568,8 @@ def run_square_problem():
     # Boundary conditions
     boundary_conditions = {
         "dirichlet": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
-        "neumann": (BCType.Neumann, g),
-        # "neumann": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
+        # "neumann": (BCType.Neumann, g),
+        "neumann": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
     }
 
     # Initial condition
