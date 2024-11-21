@@ -129,8 +129,7 @@ def create_forms(
 
     # Create integration measures
     dx_c = ufl.Measure("dx", domain=msh)
-    # FIXME This is being estimated wrong for DRW. NOTE k**2 works on
-    # affine meshes
+    # FIXME This is being estimated wrong for DRW. Compute correctly!
     quad_deg = (k + 1) ** 2
     ds_c = ufl.Measure(
         "ds",
@@ -484,7 +483,7 @@ def run_square_problem():
     solver_type = SolverType.STOKES
     h = 1 / 64  # Maximum cell diameter
     k = 3  # Polynomial degree
-    cell_type = mesh.CellType.triangle
+    cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 1
     t_end = 1e16
