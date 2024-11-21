@@ -138,7 +138,6 @@ def create_forms(
         domain=msh,
         metadata={"quadrature_degree": quad_deg},
     )
-    dx_f = ufl.Measure("dx", domain=facet_mesh)
 
     # We write the mixed domain forms as integrals over msh. Hence, we must
     # provide a map from facets in msh to cells in facet_mesh. This is the
@@ -275,7 +274,6 @@ def create_forms(
             assert bc_type == BCType.Neumann
             # FIXME Sign?
             L += -inner(bc_expr, vbar) * ds_c(id)
-            a += -inner(dot(ubar, n), qbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a += inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
@@ -480,12 +478,12 @@ def solve(
 def run_square_problem():
     # Simulation parameters
     comm = MPI.COMM_WORLD
-    scheme = Scheme.DRW
+    scheme = Scheme.RW
     solver_type = SolverType.STOKES
-    h = 1 / 8  # Maximum cell diameter
+    h = 1 / 32  # Maximum cell diameter
     k = 3  # Polynomial degree
-    cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-6  # Kinematic viscosity
+    cell_type = mesh.CellType.triangle
+    nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 1
     t_end = 1e16
     d = 2
@@ -556,21 +554,21 @@ def run_square_problem():
 
     # Right-hand side
     x = ufl.SpatialCoordinate(msh)
-    f = -nu * div(grad(u_e(x))) + grad(p_e(x))
     sigma = p_e(x) * ufl.Identity(msh.topology.dim) - nu * grad(u_e(x))
-    n = ufl.FacetNormal(msh)
     if solver_type == SolverType.NAVIER_STOKES:
-        f += div(outer(u_e(x), u_e(x)))
         sigma += outer(u_e(x), u_e(x))
+    f = div(sigma)
 
+    n = ufl.FacetNormal(msh)
     g = dot(sigma, n)
-    if solver_type == SolverType.NAVIER_STOKES:
-        g += -ufl.conditional(ufl.gt(dot(u_e(x), n), 0), dot(u_e(x), n), 0) * u_e(x)
+    # if solver_type == SolverType.NAVIER_STOKES:
+    #     g += -ufl.conditional(ufl.gt(dot(u_e(x), n), 0), dot(u_e(x), n), 0) * u_e(x)
 
     # Boundary conditions
     boundary_conditions = {
         "dirichlet": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
         "neumann": (BCType.Neumann, g),
+        # "neumann": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
     }
 
     # Initial condition
