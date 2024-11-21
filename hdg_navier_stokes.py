@@ -238,12 +238,14 @@ def create_forms(
     #         cell_boundaries_tag
     #     )
 
-    L_2 = inner(
+    L = inner(f + u_n / delta_t, v) * dx_c
+    L += inner(
         fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar
     ) * ds_c(cell_boundaries_tag)
-    L_3 = inner(fem.Constant(facet_mesh, PETSc.ScalarType(0.0)), qbar) * ds_c(
+    L += inner(fem.Constant(facet_mesh, PETSc.ScalarType(0.0)), qbar) * ds_c(
         cell_boundaries_tag
     )
+    L += inner(fem.Constant(msh, 0.0), q) * dx_c
 
     # Apply boundary conditions
     bcs = []
@@ -260,24 +262,16 @@ def create_forms(
             facets = msh_to_facet_mesh[mt.indices[mt.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
-            L_3 += inner(dot(bc_func, n), qbar) * ds_c(id)
+            L += inner(dot(bc_func, n), qbar) * ds_c(id)
         else:
             assert bc_type == BCType.Neumann
-            L_2 += inner(bc_func, vbar) * ds_c(id)
+            L += inner(bc_func, vbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a += -inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
     # Compile LHS forms
     a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
-
-    # Compile RHS forms
-    L_0 = fem.form(inner(f + u_n / delta_t, v) * dx_c)
-    L_1 = fem.form(inner(fem.Constant(msh, 0.0), q) * dx_c)
-    L_2 = fem.form(L_2, entity_maps=entity_maps)
-    L_3 = fem.form(L_3, entity_maps=entity_maps)
-
-    # Define block structure
-    L = [L_0, L_1, L_2, L_3]
+    L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
 
     return a, L, bcs, bc_funcs
 
