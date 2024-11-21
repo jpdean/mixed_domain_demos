@@ -361,3 +361,13 @@ def one_sided_int_entities(msh, facets):
             facet_integration_entities.extend([cell, local_facet])
 
     return facet_integration_entities
+
+
+def markers_to_meshtags(msh, tags, markers, dim):
+    entities = [mesh.locate_entities_boundary(msh, dim, marker) for marker in markers]
+    values = [np.full_like(entities, tag) for (tag, entities) in zip(tags, entities)]
+    entities = np.hstack(entities, dtype=np.int32)
+    values = np.hstack(values, dtype=np.intc)
+    perm = np.argsort(entities)
+    return mesh.meshtags(msh, dim, entities[perm], values[perm])
+

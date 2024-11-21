@@ -1,3 +1,5 @@
+# TODO FIXME SYMMETRIC GRADIENT OBJECTIVITY
+
 # TODO Tidy up problems
 
 # This demo solves the Stokes and Navier-Stokes equations using
@@ -23,6 +25,7 @@ from utils import (
     TimeDependentExpression,
     par_print,
     compute_cell_boundary_int_entities,
+    markers_to_meshtags,
 )
 from enum import Enum
 import gmsh
@@ -223,7 +226,12 @@ def create_forms(
     #     -nu * gamma * inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
     # )
 
-    # # Advective terms
+    # Advective terms
+    if solver_type == SolverType.NAVIER_STOKES:
+        a += -inner(outer(u, u_n), grad(v)) * dx_c + inner(
+            outer(u, u_n) - outer((u - ubar), lmbda * u_n), outer((v - vbar), n)
+        ) * ds_c(cell_boundaries_tag)
+
     # if solver_type == SolverType.NAVIER_STOKES:
     #     a_00 += (
     #         -inner(outer(u, u_n), grad(v)) * dx_c
@@ -255,19 +263,21 @@ def create_forms(
     for name, bc in boundary_conditions.items():
         id = boundaries[name]
         bc_type, bc_expr = bc
-        bc_func = fem.Function(Vbar)
-        bc_func.interpolate(bc_expr)
-        bc_funcs.append((bc_func, bc_expr))
         if bc_type == BCType.Dirichlet:
+            bc_func = fem.Function(Vbar)
+            bc_func.interpolate(bc_expr)
+            bc_funcs.append((bc_func, bc_expr))
             facets = msh_to_facet_mesh[mt.indices[mt.values == id]]
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
             L += inner(dot(bc_func, n), qbar) * ds_c(id)
         else:
             assert bc_type == BCType.Neumann
-            L += inner(bc_func, vbar) * ds_c(id)
+            # FIXME Sign?
+            L += -inner(bc_expr, vbar) * ds_c(id)
+            a += -inner(dot(ubar, n), qbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
-                a += -inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
+                a += inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
     # Compile LHS forms
     a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
@@ -472,7 +482,7 @@ def run_square_problem():
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
     solver_type = SolverType.STOKES
-    h = 1 / 16  # Maximum cell diameter
+    h = 1 / 8  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-6  # Kinematic viscosity
@@ -487,13 +497,11 @@ def run_square_problem():
             comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none
         )
 
-        def boundary_marker(x):
-            return (
-                np.isclose(x[0], 0.0)
-                | np.isclose(x[0], 1.0)
-                | np.isclose(x[1], 0.0)
-                | np.isclose(x[1], 1.0)
-            )
+        def diri_boundary_marker(x):
+            return np.isclose(x[0], 0.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+
+        def neumann_boundary_marker(x):
+            return np.isclose(x[0], 1.0)
     else:
         msh = mesh.create_unit_cube(comm, n, n, n, cell_type, mesh.GhostMode.none)
 
@@ -509,11 +517,9 @@ def run_square_problem():
 
     # Create meshtags for boundary
     fdim = msh.topology.dim - 1
-    boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
-    perm = np.argsort(boundary_facets)
-    values = np.ones_like(boundary_facets, dtype=np.intc)
-    mt = mesh.meshtags(msh, fdim, boundary_facets[perm], values[perm])
-    boundaries = {"boundary": 1}
+    boundaries = {"dirichlet": 1, "neumann": 2}
+    markers = [diri_boundary_marker, neumann_boundary_marker]
+    mt = markers_to_meshtags(msh, boundaries.values(), markers, fdim)
 
     # Exact velocity
     def u_e(x, module=ufl):
@@ -551,11 +557,21 @@ def run_square_problem():
     # Right-hand side
     x = ufl.SpatialCoordinate(msh)
     f = -nu * div(grad(u_e(x))) + grad(p_e(x))
+    sigma = p_e(x) * ufl.Identity(msh.topology.dim) - nu * grad(u_e(x))
+    n = ufl.FacetNormal(msh)
     if solver_type == SolverType.NAVIER_STOKES:
         f += div(outer(u_e(x), u_e(x)))
+        sigma += outer(u_e(x), u_e(x))
+
+    g = dot(sigma, n)
+    if solver_type == SolverType.NAVIER_STOKES:
+        g += -ufl.conditional(ufl.gt(dot(u_e(x), n), 0), dot(u_e(x), n), 0) * u_e(x)
 
     # Boundary conditions
-    boundary_conditions = {"boundary": (BCType.Dirichlet, lambda x: u_e(x, module=np))}
+    boundary_conditions = {
+        "dirichlet": (BCType.Dirichlet, lambda x: u_e(x, module=np)),
+        "neumann": (BCType.Neumann, g),
+    }
 
     # Initial condition
     def u_i(x):
