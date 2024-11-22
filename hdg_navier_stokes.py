@@ -364,8 +364,12 @@ def solve(
     ksp.getPC().setFactorSolverType("mumps")
     opts = PETSc.Options()
     opts["mat_mumps_icntl_14"] = 80  # Increase MUMPS working memory
-    opts["mat_mumps_icntl_24"] = 1  # Option to support solving a singular matrix (pressure nullspace)
-    opts["mat_mumps_icntl_25"] = 0  # Option to support solving a singular matrix (pressure nullspace)
+    opts[
+        "mat_mumps_icntl_24"
+    ] = 1  # Option to support solving a singular matrix (pressure nullspace)
+    opts[
+        "mat_mumps_icntl_25"
+    ] = 0  # Option to support solving a singular matrix (pressure nullspace)
     ksp.setFromOptions()
 
     # Prepare functions for visualisation
@@ -481,7 +485,7 @@ def run_square_problem():
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 32 # Maximum cell diameter
+    h = 1 / 32  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-6  # Kinematic viscosity
@@ -598,11 +602,11 @@ def run_square_problem():
 def run_gaussian_bump():
     # Simulation parameters
     comm = MPI.COMM_WORLD
-    scheme = Scheme.DRW
+    scheme = Scheme.RW
     solver_type = SolverType.NAVIER_STOKES
     h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
-    cell_type = mesh.CellType.quadrilateral
+    cell_type = mesh.CellType.triangle
     nu = 1.0e-3  # Kinematic viscosity
     num_time_steps = 10
     t_end = 10
@@ -686,7 +690,7 @@ def run_gaussian_bump():
 
     boundary_conditions = {
         "left": (BCType.Dirichlet, inlet),
-        "right": (BCType.Neumann, zero),
+        "right": (BCType.Neumann, ufl.as_vector((1e-16, 0))),
         "bottom": (BCType.Dirichlet, zero),
         "top": (BCType.Dirichlet, zero),
     }
@@ -1034,32 +1038,32 @@ def run_kovasznay_problem():
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 8  # Maximum cell diameter
+    h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
-    cell_type = mesh.CellType.quadrilateral
-    nu = 1 / 40  # Kinematic viscosity
-    num_time_steps = 16
-    t_end = 10
+    cell_type = mesh.CellType.triangle
+    nu = 1e-5  # Kinematic viscosity
+    num_time_steps = 128
+    t_end = 120
 
     # Create mesh
     n = round(1 / h)
     point_0 = (0.0, -0.5)
     point_1 = (1, 1.5)
     msh = mesh.create_rectangle(
-        comm, (point_0, point_1), (n, 2 * n), cell_type, mesh.GhostMode.none
+        comm, (point_0, point_1), (n, 2 * n), cell_type, ghost_mode=mesh.GhostMode.none
     )
     fdim = msh.topology.dim - 1
-    boundary_facets = mesh.locate_entities_boundary(
-        msh,
-        fdim,
-        lambda x: np.isclose(x[0], point_0[0])
-        | np.isclose(x[0], point_1[0])
-        | np.isclose(x[1], point_0[1])
-        | np.isclose(x[1], point_1[1]),
-    )
-    values = np.ones_like(boundary_facets, dtype=np.intc)
-    mt = mesh.meshtags(msh, fdim, boundary_facets, values)
     boundaries = {"boundary": 1}
+
+    def boundary_marker(x):
+        return (
+            np.isclose(x[0], point_0[0])
+            | np.isclose(x[0], point_1[0])
+            | np.isclose(x[1], point_0[1])
+            | np.isclose(x[1], point_1[1])
+        )
+
+    mt = markers_to_meshtags(msh, boundaries.values(), [boundary_marker], fdim)
 
     # Reynold's number
     R_e = 1 / nu
@@ -1121,4 +1125,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    run_square_problem()
+    run_kovasznay_problem()
