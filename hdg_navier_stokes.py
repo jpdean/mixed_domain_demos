@@ -954,12 +954,12 @@ def run_taylor_green_problem():
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 16  # Maximum cell diameter
+    h = 1 / 32  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-3  # Kinematic viscosity
-    num_time_steps = 10
-    t_end = 10
+    nu = 1.0e-4  # Kinematic viscosity
+    num_time_steps = 20
+    t_end = 1000
     Re = 1 / nu
 
     # Create mesh
@@ -967,21 +967,20 @@ def run_taylor_green_problem():
     point_0 = (-np.pi / 2, -np.pi / 2)
     point_1 = (np.pi / 2, np.pi / 2)
     msh = mesh.create_rectangle(
-        comm, (point_0, point_1), (n, n), cell_type, mesh.GhostMode.none
+        comm, (point_0, point_1), (n, n), cell_type, ghost_mode=mesh.GhostMode.none
     )
 
     fdim = msh.topology.dim - 1
-    boundary_facets = mesh.locate_entities_boundary(
-        msh,
-        fdim,
-        lambda x: np.isclose(x[0], point_0[0])
-        | np.isclose(x[0], point_1[0])
-        | np.isclose(x[1], point_0[1])
-        | np.isclose(x[1], point_1[1]),
-    )
-    values = np.ones_like(boundary_facets, dtype=np.intc)
-    mt = mesh.meshtags(msh, fdim, boundary_facets, values)
     boundaries = {"boundary": 1}
+
+    def boundary_marker(x):
+        return (
+            np.isclose(x[0], point_0[0])
+            | np.isclose(x[0], point_1[0])
+            | np.isclose(x[1], point_0[1])
+            | np.isclose(x[1], point_1[1])
+        )
+    mt = markers_to_meshtags(msh, boundaries.values(), [boundary_marker], fdim)
 
     # Exact solution
     def u_expr(x, t, module):
@@ -1125,4 +1124,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    run_kovasznay_problem()
+    run_taylor_green_problem()
