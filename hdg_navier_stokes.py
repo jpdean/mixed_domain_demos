@@ -480,13 +480,13 @@ def run_square_problem():
     # Simulation parameters
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
-    solver_type = SolverType.STOKES
+    solver_type = SolverType.NAVIER_STOKES
     h = 1 / 32 # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-3  # Kinematic viscosity
-    num_time_steps = 1
-    t_end = 1e16
+    nu = 1.0e-6  # Kinematic viscosity
+    num_time_steps = 80
+    t_end = 40
     d = 2
 
     # Create mesh
@@ -562,8 +562,8 @@ def run_square_problem():
 
     n = ufl.FacetNormal(msh)
     g = dot(sigma, n)
-    # if solver_type == SolverType.NAVIER_STOKES:
-    #     g += -ufl.conditional(ufl.gt(dot(u_e(x), n), 0), dot(u_e(x), n), 0) * u_e(x)
+    if solver_type == SolverType.NAVIER_STOKES:
+        g += -ufl.conditional(ufl.gt(dot(u_e(x), n), 0), dot(u_e(x), n), 0) * u_e(x)
 
     # Boundary conditions
     boundary_conditions = {
