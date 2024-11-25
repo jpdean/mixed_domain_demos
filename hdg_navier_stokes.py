@@ -165,6 +165,8 @@ def create_forms(
     delta_t = fem.Constant(msh, PETSc.ScalarType(delta_t))
     nu = fem.Constant(msh, PETSc.ScalarType(nu))
 
+    # NOTE: On domain boundary, ubar terms with Dirichlet BC applied and
+    # non-zero test function are effectively moved to the RHS by apply_lifting
     a = (
         inner(u / delta_t, v) * dx_c
         + nu * inner(grad(u), grad(v)) * dx_c
@@ -271,9 +273,10 @@ def create_forms(
             L += inner(dot(bc_func, n), qbar) * ds_c(id)
         else:
             assert bc_type == BCType.Neumann
-            # FIXME Sign?
             L += -inner(bc_expr, vbar) * ds_c(id)
-            # a += inner(dot(ubar, n), qbar) * ds_c(id)
+            a += -inner(dot(ubar, n), qbar) * ds_c(id) - inner(
+                dot(vbar, n), pbar
+            ) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a += inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
@@ -501,10 +504,10 @@ def run_square_problem():
         )
 
         def diri_boundary_marker(x):
-            return np.isclose(x[0], 0.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
+            return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | np.isclose(x[1], 0.0)
 
         def neumann_boundary_marker(x):
-            return np.isclose(x[0], 1.0)
+            return np.isclose(x[1], 1.0)
     else:
         msh = mesh.create_unit_cube(comm, n, n, n, cell_type, mesh.GhostMode.none)
 
@@ -980,6 +983,7 @@ def run_taylor_green_problem():
             | np.isclose(x[1], point_0[1])
             | np.isclose(x[1], point_1[1])
         )
+
     mt = markers_to_meshtags(msh, boundaries.values(), [boundary_marker], fdim)
 
     # Exact solution
@@ -1124,4 +1128,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    run_taylor_green_problem()
+    run_square_problem()
