@@ -179,72 +179,11 @@ def create_forms(
         + inner(dot(u, n), qbar) * ds_c(cell_boundaries_tag)
     )
 
-    # FIXME Try without outers
-    # a = (
-    #     inner(u / delta_t, v) * dx_c
-    #     + nu * inner(grad(u), grad(v)) * dx_c
-    #     - nu * inner(outer(u - ubar, n), grad(v)) * ds_c(cell_boundaries_tag)
-    #     - nu * inner(grad(u), outer(v - vbar, n)) * ds_c(cell_boundaries_tag)
-    #     + nu * gamma * inner(outer(u - ubar, n), outer(v - vbar, n))
-    #     - inner(p * ufl.Identity(msh.topology.dim), grad(v)) * dx_c
-    # )
-
-    # # Diffusive terms
-    # a_00 = (
-    #     inner(u / delta_t, v) * dx_c
-    #     + nu * inner(grad(u), grad(v)) * dx_c
-    #     - nu * inner(grad(u), outer(v, n)) * ds_c(cell_boundaries_tag)
-    #     + nu * gamma * inner(outer(u, n), outer(v, n)) * ds_c(cell_boundaries_tag)
-    #     - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries_tag)
-    # )
-    # a_01 = fem.form(-inner(p * ufl.Identity(msh.topology.dim), grad(v)) * dx_c)
-    # a_02 = -nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(
-    #     cell_boundaries_tag
-    # ) + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries_tag)
-    # a_03 = fem.form(
-    #     inner(pbar * ufl.Identity(msh.topology.dim), outer(v, n))
-    #     * ds_c(cell_boundaries_tag),
-    #     entity_maps=entity_maps,
-    # )
-    # a_10 = fem.form(
-    #     inner(u, grad(q)) * dx_c - inner(dot(u, n), q) * ds_c(cell_boundaries_tag)
-    # )
-    # a_20 = -nu * inner(grad(u), outer(vbar, n)) * ds_c(
-    #     cell_boundaries_tag
-    # ) + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
-    # a_30 = fem.form(
-    #     inner(dot(u, n), qbar) * ds_c(cell_boundaries_tag), entity_maps=entity_maps
-    # )
-    # a_23 = fem.form(
-    #     inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(cell_boundaries_tag),
-    #     entity_maps=entity_maps,
-    # )
-    # # On the Dirichlet boundary, the contribution from this term will be
-    # # added to the RHS in apply_lifting
-    # a_32 = fem.form(-inner(dot(ubar, n), qbar) * ds_c, entity_maps=entity_maps)
-    # a_22 = (
-    #     -nu * gamma * inner(outer(ubar, n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
-    # )
-
     # Advective terms
     if solver_type == SolverType.NAVIER_STOKES:
         a += -inner(outer(u, u_n), grad(v)) * dx_c + inner(
             outer(u, u_n) - outer((u - ubar), lmbda * u_n), outer((v - vbar), n)
         ) * ds_c(cell_boundaries_tag)
-
-    # if solver_type == SolverType.NAVIER_STOKES:
-    #     a_00 += (
-    #         -inner(outer(u, u_n), grad(v)) * dx_c
-    #         + inner(outer(u, u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
-    #         - inner(outer(u, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
-    #     )
-    #     a_02 += inner(outer(ubar, lmbda * u_n), outer(v, n)) * ds_c(cell_boundaries_tag)
-    #     a_20 += inner(outer(u, u_n), outer(vbar, n)) * ds_c(
-    #         cell_boundaries_tag
-    #     ) - inner(outer(u, lmbda * u_n), outer(vbar, n)) * ds_c(cell_boundaries_tag)
-    #     a_22 += inner(outer(ubar, lmbda * u_n), outer(vbar, n)) * ds_c(
-    #         cell_boundaries_tag
-    #     )
 
     L = inner(f + u_n / delta_t, v) * dx_c
     L += inner(
