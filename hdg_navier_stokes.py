@@ -488,11 +488,11 @@ def run_square_problem():
     comm = MPI.COMM_WORLD
     scheme = Scheme.DRW
     solver_type = SolverType.NAVIER_STOKES
-    h = 1 / 32  # Maximum cell diameter
+    h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-6  # Kinematic viscosity
-    num_time_steps = 80
+    num_time_steps = 320
     t_end = 40
     d = 2
 
