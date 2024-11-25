@@ -732,8 +732,8 @@ def run_cylinder_problem():
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
     nu = 1.0e-3  # Kinematic viscosity
-    num_time_steps = 10
-    t_end = 10
+    num_time_steps = 100
+    t_end = 1
     d = 2
 
     # Volume and boundary ids
@@ -922,7 +922,7 @@ def run_cylinder_problem():
 
     boundary_conditions = {
         "inlet": (BCType.Dirichlet, inlet),
-        "outlet": (BCType.Neumann, zero),
+        "outlet": (BCType.Neumann, ufl.as_vector((1e-16, 0.0))),
         "wall": (BCType.Dirichlet, zero),
         "obstacle": (BCType.Dirichlet, zero),
     }
@@ -1128,4 +1128,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    run_square_problem()
+    run_cylinder_problem()
