@@ -1067,4 +1067,4 @@ def run_kovasznay_problem():
 
 
 if __name__ == "__main__":
-    run_gaussian_bump()
+    run_square_problem()
