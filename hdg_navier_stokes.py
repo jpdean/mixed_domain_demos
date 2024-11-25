@@ -124,7 +124,7 @@ def create_forms(
                 fem.IntegralType.exterior_facet, msh.topology, mt.find(tag)
             ),
         )
-        for tag in boundaries.values()
+        for tag in np.sort(list(boundaries.values()))
     ]
 
     # Create integration measures
@@ -682,7 +682,7 @@ def run_gaussian_bump():
         gmsh.model, comm, 0, gdim=2, partitioner=partitioner
     )
     gmsh.finalize()
-    boundaries = {"bottom": 1, "right": 2, "top": 3, "left": 4}
+    boundaries = {"left": 4, "bottom": 1, "top": 3, "right": 2}
 
     # Boundary conditions
     def inlet(x):
