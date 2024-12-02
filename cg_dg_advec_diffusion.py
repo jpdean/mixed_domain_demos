@@ -95,16 +95,13 @@ boundary_entities = [
             fem.IntegralType.exterior_facet,
             msh.topology,
             ft.find(bound_ids["boundary_0"]),
-            ft.dim,
         ),
     )
 ]
 
 # Compute integration entities for the interior facet integrals
 # over omega_0. These are needed for the DG scheme
-omega_0_int_entities = interior_facet_int_entities(
-    submesh_0, sm_0_to_msh
-)
+omega_0_int_entities = interior_facet_int_entities(submesh_0, sm_0_to_msh)
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -126,7 +123,7 @@ h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
 x = ufl.SpatialCoordinate(msh)
-c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+kappa = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
 u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
@@ -145,20 +142,20 @@ a = (
     )
     * dS(bound_ids["omega_0_int_facets"])
     + inner(lmbda * dot(w, n) * u[0], v[0]) * ds(bound_ids["boundary_0"])
-    + inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
-    - inner(c * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
-    - inner(c * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
+    + inner(kappa * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    - inner(kappa * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
+    - inner(kappa * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
     + (gamma_dg / avg(h))
-    * inner(c * jump(u[0], n), jump(v[0], n))
+    * inner(kappa * jump(u[0], n), jump(v[0], n))
     * dS(bound_ids["omega_0_int_facets"])
-    - inner(c * grad(u[0]), v[0] * n) * ds(bound_ids["boundary_0"])
-    - inner(c * grad(v[0]), u[0] * n) * ds(bound_ids["boundary_0"])
-    + (gamma_dg / h) * inner(c * u[0], v[0]) * ds(bound_ids["boundary_0"])
+    - inner(kappa * grad(u[0]), v[0] * n) * ds(bound_ids["boundary_0"])
+    - inner(kappa * grad(v[0]), u[0] * n) * ds(bound_ids["boundary_0"])
+    + (gamma_dg / h) * inner(kappa * u[0], v[0]) * ds(bound_ids["boundary_0"])
 )
 
 # CG scheme in Omega_1
 a += inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
-    c * grad(u[1]), grad(v[1])
+    kappa * grad(u[1]), grad(v[1])
 ) * dx(vol_ids["omega_1"])
 
 
@@ -172,11 +169,11 @@ def grad_avg_i(v):
 
 
 a += (
-    -inner(c * grad_avg_i(u), jump_i(v, n)) * dS(bound_ids["interface"])
-    - inner(c * jump_i(u, n), grad_avg_i(v)) * dS(bound_ids["interface"])
+    -inner(kappa * grad_avg_i(u), jump_i(v, n)) * dS(bound_ids["interface"])
+    - inner(kappa * jump_i(u, n), grad_avg_i(v)) * dS(bound_ids["interface"])
     + gamma_int
     / avg(h)
-    * inner(c * jump_i(u, n), jump_i(v, n))
+    * inner(kappa * jump_i(u, n), jump_i(v, n))
     * dS(bound_ids["interface"])
 )
 
@@ -186,9 +183,9 @@ a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Forms for the righ-hand side
 f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
-    c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))
+    kappa * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))
 )
-f_1 = -div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+f_1 = -div(kappa * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
 u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
@@ -197,8 +194,8 @@ L = (
     inner(f_0, v[0]) * dx(vol_ids["omega_0"])
     - inner((1 - lmbda) * dot(w, n) * u_D, v[0]) * ds(bound_ids["boundary_0"])
     + inner(u_0_n / delta_t, v[0]) * dx(vol_ids["omega_0"])
-    - inner(c * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
-    + gamma_dg / h * inner(c * u_D, v[0]) * ds(bound_ids["boundary_0"])
+    - inner(kappa * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
+    + gamma_dg / h * inner(kappa * u_D, v[0]) * ds(bound_ids["boundary_0"])
     + inner(f_1, v[1]) * dx(vol_ids["omega_1"])
     + inner(u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
