@@ -309,6 +309,18 @@ tdim = msh.topology.dim
 submesh_f, sm_f_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["fluid"]))[:2]
 submesh_s, sm_s_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["solid"]))[:2]
 
+# def write_cell_num_mt(msh, file_name):
+#     cell_imap = msh.topology.index_map(msh.topology.dim)
+#     cell_list = np.arange(cell_imap.size_local + cell_imap.num_ghosts, dtype=np.int32)
+#     cell_num_mt = mesh.meshtags(msh, msh.topology.dim, cell_list, cell_list)
+#     with io.XDMFFile(msh.comm, file_name, "w") as file:
+#         file.write_mesh(msh)
+#         file.write_meshtags(cell_num_mt, msh.geometry)
+
+# write_cell_num_mt(msh, "msh.xdmf")
+# write_cell_num_mt(submesh_f, "submesh_f.xdmf")
+# write_cell_num_mt(submesh_s, "submesh_s.xdmf")
+
 # Create function spaces for Navier-Stokes problem
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
@@ -387,20 +399,14 @@ entity_maps = {submesh_f: msh_to_sm_f, submesh_s: msh_to_sm_s}
 
 # Create integration entities for the interface integral
 interface_facets = ft.find(boundary_id["obstacle"])
-domain_f_cells = ct.find(volume_id["fluid"])
-domain_s_cells = ct.find(volume_id["solid"])
 (
     obstacle_facet_entities,
     msh_to_sm_f,
     msh_to_sm_s,
-) = interface_int_entities(
-    msh, interface_facets, domain_f_cells, domain_s_cells, msh_to_sm_f, msh_to_sm_s
-)
+) = interface_int_entities(msh, interface_facets, msh_to_sm_f, msh_to_sm_s)
 
 # Create integration entities for the interior facet integral
-fluid_int_facet_entities = interior_facet_int_entities(
-    submesh_f, sm_f_to_msh
-)
+fluid_int_facet_entities = interior_facet_int_entities(submesh_f, sm_f_to_msh)
 fluid_int_facets = 3
 facet_integration_entities = [
     (boundary_id["obstacle"], obstacle_facet_entities),

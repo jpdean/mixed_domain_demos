@@ -210,9 +210,10 @@ def interface_int_entities(
         domain_to_domain_1: A map from cells in domain to cells in domain_1
 
     Returns:
-        interface_entities: The integration entities
-        domain_to_domain_0: A modified map (see HACK below)
-        domain_to_domain_1: A modified map (see HACK below)
+        A tuple containing:
+            1) The integration entities
+            2) A modified map (see HACK below)
+            3) A modified map (see HACK below)
     """
     # Create measure for integration. Assign the first (cell, local facet)
     # pair to the cell in domain_0, corresponding to the "+" restriction.
@@ -227,6 +228,8 @@ def interface_int_entities(
     f_to_c = msh.topology.connectivity(fdim, tdim)
     # FIXME This can be done more efficiently
     interface_entities = []
+    domain_to_domain_0_new = np.array(domain_to_domain_0)
+    domain_to_domain_1_new = np.array(domain_to_domain_1)
     for facet in interface_facets:
         # Check if this facet is owned
         if facet < facet_imap.size_local:
@@ -264,11 +267,11 @@ def interface_int_entities(
             # u("-") terms. Could map this to any cell in the submesh, but
             # I think using the cell on the other side of the facet means a
             # facet space coefficient could be used
-            domain_to_domain_0[cell_minus] = domain_to_domain_0[cell_plus]
+            domain_to_domain_0_new[cell_minus] = domain_to_domain_0[cell_plus]
             # Same hack for the right submesh
-            domain_to_domain_1[cell_plus] = domain_to_domain_1[cell_minus]
+            domain_to_domain_1_new[cell_plus] = domain_to_domain_1[cell_minus]
 
-    return interface_entities, domain_to_domain_0, domain_to_domain_1
+    return interface_entities, domain_to_domain_0_new, domain_to_domain_1_new
 
 
 def interior_facet_int_entities(msh, cell_map):
