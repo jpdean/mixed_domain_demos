@@ -27,7 +27,7 @@ from utils import (
     normal_jump_error,
     convert_facet_tags,
     par_print,
-    compute_cell_boundary_facets,
+    compute_cell_boundary_int_entities,
 )
 import ufl
 from ufl import (
@@ -93,7 +93,7 @@ def solve(
 
     # Create integration entities
     cell_boundaries = 0
-    cell_boundary_facets = compute_cell_boundary_facets(submesh_f)
+    cell_boundary_facets = compute_cell_boundary_int_entities(submesh_f)
     ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
     facet_integration_entities = [(cell_boundaries, cell_boundary_facets)]
     facet_integration_entities += [

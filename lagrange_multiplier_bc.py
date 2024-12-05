@@ -5,7 +5,7 @@
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner, div
+from ufl import grad, inner, div, extract_blocks
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
@@ -14,17 +14,17 @@ from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
 
 # Marker for the domain boundary
 def boundary_marker(x):
-    return np.logical_or(
-        np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], l_x)),
-        np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], l_y)),
+    return (
+        np.isclose(x[0], 0.0)
+        | np.isclose(x[0], l_x)
+        | np.isclose(x[1], 0.0)
+        | np.isclose(x[1], l_y)
     )
 
 
 # Create mesh
-l_x = 2.0
-l_y = 1.0
-n_x = 16
-n_y = 8
+l_x, l_y = 2.0, 1.0
+n_x, n_y = 16, 8
 msh = mesh.create_rectangle(
     comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y)
 )
@@ -41,12 +41,11 @@ submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 k = 3  # Polynomial degree
 V = fem.functionspace(msh, ("Lagrange", k))
 W = fem.functionspace(submesh, ("Lagrange", k))
+X = ufl.MixedFunctionSpace(V, W)
 
 # Trial and test functions
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-lmbda = ufl.TrialFunction(W)
-mu = ufl.TestFunction(W)
+u, lmbda = ufl.TrialFunctions(X)
+v, mu = ufl.TestFunctions(X)
 
 # Create manufactured solution
 x = ufl.SpatialCoordinate(msh)
@@ -58,8 +57,8 @@ f = u_e - div(grad(u_e))
 # Dirichlet boundary condition (enforced through Lagrange multiplier)
 u_d = u_e
 
-# Create measure for integral over boundary. We take the integration domain
-# mesh to be msh
+# Create integration measures. We take msh to be the integration domain
+dx = ufl.Measure("dx", domain=msh)
 ds = ufl.Measure("ds", domain=msh)
 
 # Since the integration domain is msh, we must provide a map from facets
@@ -72,16 +71,16 @@ mesh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
 entity_maps = {submesh: mesh_to_submesh}
 
 # Define forms
-a_00 = fem.form(inner(u, v) * ufl.dx + inner(grad(u), grad(v)) * ufl.dx)
-a_01 = fem.form(-inner(lmbda, v) * ds, entity_maps=entity_maps)
-a_10 = fem.form(-inner(u, mu) * ds, entity_maps=entity_maps)
-a_11 = None
-L_0 = fem.form(inner(f, v) * ufl.dx)
-L_1 = fem.form(-inner(u_d, mu) * ds, entity_maps=entity_maps)
+a = (
+    inner(u, v) * dx
+    + inner(grad(u), grad(v)) * dx
+    - (inner(lmbda, v) * ds + inner(u, mu) * ds)
+)
+L = inner(f, v) * dx - inner(u_d, mu) * ds
 
-# Define block structure
-a = [[a_00, a_01], [a_10, a_11]]
-L = [L_0, L_1]
+# Extract block structure and compile forms. We provide the entity maps here
+a = fem.form(extract_blocks(a), entity_maps=entity_maps)
+L = fem.form(extract_blocks(L), entity_maps=entity_maps)
 
 # Assemble matrices
 A = assemble_matrix_block(a)

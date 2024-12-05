@@ -185,11 +185,9 @@ class TimeDependentExpression:
         return self.expression(x, self.t)
 
 
-def compute_interface_integration_entities(
+def interface_int_entities(
     msh,
     interface_facets,
-    domain_0_cells,
-    domain_1_cells,
     domain_to_domain_0,
     domain_to_domain_1,
 ):
@@ -212,9 +210,10 @@ def compute_interface_integration_entities(
         domain_to_domain_1: A map from cells in domain to cells in domain_1
 
     Returns:
-        interface_entities: The integration entities
-        domain_to_domain_0: A modified map (see HACK below)
-        domain_to_domain_1: A modified map (see HACK below)
+        A tuple containing:
+            1) The integration entities
+            2) A modified map (see HACK below)
+            3) A modified map (see HACK below)
     """
     # Create measure for integration. Assign the first (cell, local facet)
     # pair to the cell in domain_0, corresponding to the "+" restriction.
@@ -229,19 +228,31 @@ def compute_interface_integration_entities(
     f_to_c = msh.topology.connectivity(fdim, tdim)
     # FIXME This can be done more efficiently
     interface_entities = []
+    domain_to_domain_0_new = np.array(domain_to_domain_0)
+    domain_to_domain_1_new = np.array(domain_to_domain_1)
     for facet in interface_facets:
         # Check if this facet is owned
         if facet < facet_imap.size_local:
             cells = f_to_c.links(facet)
             assert len(cells) == 2
-            cell_plus = cells[0] if cells[0] in domain_0_cells else cells[1]
-            cell_minus = cells[0] if cells[0] in domain_1_cells else cells[1]
-            assert cell_plus in domain_0_cells
-            assert cell_minus in domain_1_cells
+            if domain_to_domain_0[cells[0]] > 0:
+                cell_plus = cells[0]
+                cell_minus = cells[1]
+            else:
+                cell_plus = cells[1]
+                cell_minus = cells[0]
+            assert (
+                domain_to_domain_0[cell_plus] >= 0
+                and domain_to_domain_0[cell_minus] < 0
+            )
+            assert (
+                domain_to_domain_1[cell_minus] >= 0
+                and domain_to_domain_1[cell_plus] < 0
+            )
 
-            # FIXME Don't use tolist
-            local_facet_plus = c_to_f.links(cell_plus).tolist().index(facet)
-            local_facet_minus = c_to_f.links(cell_minus).tolist().index(facet)
+            local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
+            local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
+
             interface_entities.extend(
                 [cell_plus, local_facet_plus, cell_minus, local_facet_minus]
             )
@@ -256,14 +267,14 @@ def compute_interface_integration_entities(
             # u("-") terms. Could map this to any cell in the submesh, but
             # I think using the cell on the other side of the facet means a
             # facet space coefficient could be used
-            domain_to_domain_0[cell_minus] = domain_to_domain_0[cell_plus]
+            domain_to_domain_0_new[cell_minus] = domain_to_domain_0[cell_plus]
             # Same hack for the right submesh
-            domain_to_domain_1[cell_plus] = domain_to_domain_1[cell_minus]
+            domain_to_domain_1_new[cell_plus] = domain_to_domain_1[cell_minus]
 
-    return interface_entities, domain_to_domain_0, domain_to_domain_1
+    return interface_entities, domain_to_domain_0_new, domain_to_domain_1_new
 
 
-def compute_interior_facet_integration_entities(msh, cell_map):
+def interior_facet_int_entities(msh, cell_map):
     """
     Compute the integration entities for interior facet integrals.
 
@@ -287,8 +298,8 @@ def compute_interior_facet_integration_entities(msh, cell_map):
         cells = f_to_c.links(facet)
         if len(cells) == 2:
             # FIXME Don't use tolist
-            local_facet_plus = c_to_f.links(cells[0]).tolist().index(facet)
-            local_facet_minus = c_to_f.links(cells[1]).tolist().index(facet)
+            local_facet_plus = np.where(c_to_f.links(cells[0]) == facet)[0][0]
+            local_facet_minus = np.where(c_to_f.links(cells[1]) == facet)[0][0]
 
             integration_entities.extend(
                 [
@@ -301,7 +312,7 @@ def compute_interior_facet_integration_entities(msh, cell_map):
     return integration_entities
 
 
-def compute_cell_boundary_facets(msh):
+def compute_cell_boundary_int_entities(msh):
     """Compute the integration entities for integrals around the
     boundaries of all cells in msh.
 
@@ -319,3 +330,47 @@ def compute_cell_boundary_facets(msh):
     return np.vstack(
         (np.repeat(np.arange(n_c), n_f), np.tile(np.arange(n_f), n_c))
     ).T.flatten()
+
+
+# TODO Optimise
+def one_sided_int_entities(msh, facets):
+    """
+    Give a list of facets, this function returns the corresponding
+    (cell, local facet index) pairs. For facets with two connected cells,
+    the first cell in the facet to cell connectivity is taken.
+
+    Parameters:
+        msh: The mesh
+        facets: The facets
+
+    Returns:
+        A list of (cell, local facet index) pairs corresponding to the input facets
+    """
+    tdim = msh.topology.dim
+    fdim = tdim - 1
+    facet_imap = msh.topology.index_map(fdim)
+    facet_integration_entities = []
+    msh.topology.create_connectivity(tdim, fdim)
+    msh.topology.create_connectivity(fdim, tdim)
+    c_to_f = msh.topology.connectivity(tdim, fdim)
+    f_to_c = msh.topology.connectivity(fdim, tdim)
+    # Loop through all interface facets
+    for facet in facets:
+        # Check if this facet is owned
+        if facet < facet_imap.size_local:
+            # Get a cell connected to the facet and extract the local facet index
+            cell = f_to_c.links(facet)[0]
+            local_facet = np.where(c_to_f.links(cell) == facet)[0][0]
+            facet_integration_entities.extend([cell, local_facet])
+
+    return facet_integration_entities
+
+
+def markers_to_meshtags(msh, tags, markers, dim):
+    entities = [mesh.locate_entities_boundary(msh, dim, marker) for marker in markers]
+    values = [np.full_like(entities, tag) for (tag, entities) in zip(tags, entities)]
+    entities = np.hstack(entities, dtype=np.int32)
+    values = np.hstack(values, dtype=np.intc)
+    perm = np.argsort(entities)
+    return mesh.meshtags(msh, dim, entities[perm], values[perm])
+

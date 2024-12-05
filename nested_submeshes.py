@@ -10,56 +10,15 @@ from dolfinx import fem, io, mesh
 from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
-import gmsh
-from dolfinx.io import gmshio
 from dolfinx.mesh import meshtags, exterior_facet_indices
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector
-
-
-def create_mesh(comm, h):
-    # Create some geometry with gmsh
-    gmsh.initialize()
-    model = gmsh.model()
-    model_name = "Hemisphere"
-    if comm.rank == 0:
-        # Generate a mesh
-        model.add(model_name)
-        model.setCurrent(model_name)
-
-        sphere = model.occ.addSphere(0, 0, 0, 1)
-        box_0 = model.occ.addBox(-1, -1, 0, 2, 2, 1)
-        box_1 = model.occ.addBox(-1, -1, -0.75, 2, 2, -1)
-        cylinder = model.occ.addCylinder(0, 0, 0, 0, 0, -1, 0.25)
-        cut = model.occ.cut([(3, sphere)], [(3, box_0), (3, box_1), (3, cylinder)])
-        model.occ.synchronize()
-
-        # Add physical groups
-        boundary = model.getBoundary(cut[0], oriented=False)
-        boundary_ids = [b[1] for b in boundary]
-        model.addPhysicalGroup(2, boundary_ids, tag=1)
-        model.setPhysicalName(2, 1, "Sphere surface")
-
-        volume_entities = [model[1] for model in model.getEntities(3)]
-        model.addPhysicalGroup(3, volume_entities, tag=2)
-        model.setPhysicalName(3, 2, "Sphere volume")
-
-        # # Assign a mesh size to all the points:
-        gmsh.model.mesh.setSize(gmsh.model.getEntities(0), h)
-
-        # Generate the mesh
-        model.mesh.generate(3)
-        # Use second-order geometry
-        model.mesh.setOrder(2)
-
-    msh = gmshio.model_to_mesh(model, comm, 0)[0]
-    msh.name = model_name
-    return msh
+from meshing import create_dome_mesh
 
 
 # Create a mesh
 comm = MPI.COMM_WORLD
 h = 0.25  # Max cell diameter
-msh = create_mesh(comm, h)
+msh = create_dome_mesh(comm, h)
 
 # Create a sub-mesh of part of the boundary of msh to get a disk
 msh_fdim = msh.topology.dim - 1
@@ -78,7 +37,7 @@ submesh_1, sm_1_to_sm_0 = mesh.create_submesh(
     submesh_0, submesh_0_fdim, sm_boundary_facets
 )[0:2]
 
-# Create a functions space on submesh_1 and interpolate a function
+# Create a function space on submesh_1 and interpolate a function
 k = 2  # Polynomial degree
 V_sm_1 = fem.functionspace(submesh_1, ("Lagrange", k))
 u_sm_1 = fem.Function(V_sm_1)
@@ -132,7 +91,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 # Solve
 u_sm_0 = fem.Function(V_sm_0)
 u_sm_0.name = "u_sm_0"
-ksp.solve(b_sm_0, u_sm_0.vector)
+ksp.solve(b_sm_0, u_sm_0.x.petsc_vec)
 u_sm_0.x.scatter_forward()
 
 # Write to file
@@ -192,7 +151,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 
 u_msh = fem.Function(V_msh)
 u_msh.name = "u_msh"
-ksp.solve(b_msh, u_msh.vector)
+ksp.solve(b_msh, u_msh.x.petsc_vec)
 u_msh.x.scatter_forward()
 
 # Write to file

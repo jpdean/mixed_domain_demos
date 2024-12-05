@@ -16,9 +16,12 @@ from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 def boundary_marker(x):
     "A function to mark the domain boundary"
-    return np.logical_or(
-        np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0)),
-        np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], 1.0)),
+
+    return (
+        np.isclose(x[0], 0.0)
+        | np.isclose(x[0], 1.0)
+        | np.isclose(x[1], 0.0)
+        | np.isclose(x[1], 1.0)
     )
 
 
@@ -76,7 +79,7 @@ ksp.getPC().setFactorSolverType("superlu_dist")
 
 # Solve
 u = fem.Function(V)
-ksp.solve(b, u.vector)
+ksp.solve(b, u.x.petsc_vec)
 u.x.scatter_forward()
 
 # Write to file
