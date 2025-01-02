@@ -74,7 +74,7 @@ h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
 x = ufl.SpatialCoordinate(msh)
-c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+kappa = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
 
 def jump_i(v, n):
@@ -86,18 +86,18 @@ def grad_avg_i(v):
 
 
 a = (
-    inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
-    + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
-    - inner(c * grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
-    - inner(c * jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
-    + gamma / avg(h) * inner(c * jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
+    inner(kappa * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    + inner(kappa * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
+    - inner(kappa * grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
+    - inner(kappa * jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
+    + gamma / avg(h) * inner(kappa * jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
 )
 
 # Compile LHS forms
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Define right-hand side forms
-f = -div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+f = -div(kappa * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 L = inner(f, v[0]) * dx(vol_ids["omega_0"]) + inner(f, v[1]) * dx(vol_ids["omega_1"])
 
 # Compile RHS forms and set block structure

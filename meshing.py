@@ -149,11 +149,11 @@ def create_fenics_logo_msh(comm, h):
         gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, ct, ft = io.gmshio.model_to_mesh(
+    mesh_data = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=d, partitioner=partitioner
     )
     gmsh.finalize()
-    return msh, ct, ft, vol_ids, bound_ids
+    return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids
 
 
 def create_box_with_sphere_msh(comm, h):
@@ -326,11 +326,11 @@ def create_square_with_circle(comm, h, c=0.5, r=0.25):
 
     # Create dolfinx mesh
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    msh, ct, ft = io.gmshio.model_to_mesh(
+    mesh_data = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=2, partitioner=partitioner
     )
     gmsh.finalize()
-    return msh, ct, ft, vol_ids, surf_ids
+    return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, surf_ids
 
 
 def create_divided_square(comm, h):
