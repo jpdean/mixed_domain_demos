@@ -405,8 +405,8 @@ def create_divided_square(comm, h):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    msh, ct, ft = io.gmshio.model_to_mesh(
+    mesh_data = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=2, partitioner=partitioner
     )
     gmsh.finalize()
-    return msh, ct, ft, vol_ids, bound_ids
+    return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids
