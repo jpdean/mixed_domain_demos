@@ -85,15 +85,15 @@ def jump_i(v, n):
     return v[0]("+") * n("+") + v[1]("-") * n("-")
 
 
-def grad_avg_i(v):
+def grad_avg_i(v, kappa):
     return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + \
         kappa[0] / (kappa[0] + kappa[1]) * kappa[1] * grad(v[1]("-"))
 
 a = (
     inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
     + inner(kappa[1] * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
-    - inner(grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
-    - inner(jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
+    - inner(grad_avg_i(u, kappa), jump_i(v, n)) * dS(surf_ids["interface"])
+    - inner(jump_i(u, n), grad_avg_i(v, kappa)) * dS(surf_ids["interface"])
     + gamma / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
 )
 
