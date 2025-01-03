@@ -72,12 +72,11 @@ dS = ufl.Measure(
 )
 
 x = ufl.SpatialCoordinate(msh)
-kappa_0 = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-kappa_1 = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
 
 # Penalty parameter (including harmonic mean on kappa on interface)
 # TODO Add k dependency
-gamma = 10 * 2 * kappa_0 * kappa_1 / (kappa_0 + kappa_1)
+gamma = 10 * 2 * kappa[0] * kappa[1] / (kappa[0] + kappa[1])
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
@@ -87,12 +86,12 @@ def jump_i(v, n):
 
 
 def grad_avg_i(v):
-    return kappa_1 / (kappa_0 + kappa_1) * kappa_0 * grad(v[0]("+")) + \
-        kappa_0 / (kappa_0 + kappa_1) * kappa_1 * grad(v[1]("-"))
+    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + \
+        kappa[0] / (kappa[0] + kappa[1]) * kappa[1] * grad(v[1]("-"))
 
 a = (
-    inner(kappa_0 * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
-    + inner(kappa_1 * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
+    inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    + inner(kappa[1] * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
     - inner(grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
     - inner(jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
     + gamma / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
@@ -102,9 +101,8 @@ a = (
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Define right-hand side forms
-f_0 = -div(kappa_0 * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
-f_1 = -div(kappa_1 * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
-L = inner(f_0, v[0]) * dx(vol_ids["omega_0"]) + inner(f_1, v[1]) * dx(vol_ids["omega_1"])
+f = [-div(kap * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) for kap in kappa]
+L = inner(f[0], v[0]) * dx(vol_ids["omega_0"]) + inner(f[1], v[1]) * dx(vol_ids["omega_1"])
 
 # Compile RHS forms and set block structure
 L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
