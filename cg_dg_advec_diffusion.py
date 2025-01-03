@@ -117,7 +117,8 @@ dS = ufl.Measure(
 )
 
 x = ufl.SpatialCoordinate(msh)
-kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
+# kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
+kappa = [1.0, 10.0]
 
 # Define forms
 # TODO Add k dependency
@@ -132,17 +133,19 @@ u_1_n = fem.Function(V_1)
 w = ufl.as_vector((0.5 - x[1], 0.0))
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 1, 0)
 
+alpha = [1.0, 1.0]
+
 # DG scheme in Omega_0
 a = (
-    inner(u[0] / delta_t, v[0]) * dx(vol_ids["omega_0"])
-    - inner(w * u[0], grad(v[0])) * dx(vol_ids["omega_0"])
-    + inner(
+    inner(alpha[0] * u[0] / delta_t, v[0]) * dx(vol_ids["omega_0"])
+    - alpha[0] * inner(w * u[0], grad(v[0])) * dx(vol_ids["omega_0"])
+    + alpha[0] * inner(
         lmbda("+") * dot(w("+"), n("+")) * u[0]("+")
         - lmbda("-") * dot(w("-"), n("-")) * u[0]("-"),
         jump(v[0]),
     )
     * dS(bound_ids["omega_0_int_facets"])
-    + inner(lmbda * dot(w, n) * u[0], v[0]) * ds(bound_ids["boundary_0"])
+    + alpha[0] * inner(lmbda * dot(w, n) * u[0], v[0]) * ds(bound_ids["boundary_0"])
     + inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
     - inner(kappa[0] * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
     - inner(kappa[0] * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
@@ -155,7 +158,7 @@ a = (
 )
 
 # CG scheme in Omega_1
-a += inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
+a += inner(alpha[1] * u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
     kappa[1] * grad(u[1]), grad(v[1])
 ) * dx(vol_ids["omega_1"])
 
@@ -169,8 +172,9 @@ a += (
 entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
-# Forms for the righ-hand side
-f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
+# Forms for the right-hand side
+# TODO Add time derivative for unsteady problems
+f_0 = alpha[0] * dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
     kappa[0] * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))
 )
 f_1 = -div(kappa[1] * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
@@ -180,12 +184,12 @@ u_D.interpolate(u_e)
 
 L = (
     inner(f_0, v[0]) * dx(vol_ids["omega_0"])
-    - inner((1 - lmbda) * dot(w, n) * u_D, v[0]) * ds(bound_ids["boundary_0"])
-    + inner(u_0_n / delta_t, v[0]) * dx(vol_ids["omega_0"])
+    - alpha[0] * inner((1 - lmbda) * dot(w, n) * u_D, v[0]) * ds(bound_ids["boundary_0"])
+    + inner(alpha[0] * u_0_n / delta_t, v[0]) * dx(vol_ids["omega_0"])
     - inner(kappa[0] * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
     + gamma_dg / h * inner(kappa[0] * u_D, v[0]) * ds(bound_ids["boundary_0"])
     + inner(f_1, v[1]) * dx(vol_ids["omega_1"])
-    + inner(u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
+    + inner(alpha[1] * u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
 
 # Compile RHS forms
