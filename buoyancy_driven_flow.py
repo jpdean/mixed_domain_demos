@@ -241,12 +241,12 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    msh, ct, ft = io.gmshio.model_to_mesh(
+    mesh_data = io.gmshio.model_to_mesh(
         gmsh.model, comm, 0, gdim=d, partitioner=partitioner
     )
-    ft.name = "Facet markers"
+    mesh_data.facet_tags.name = "Facet markers"
 
-    return msh, ct, ft, volume_id, boundary_id
+    return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, volume_id, boundary_id
 
 
 def zero(x):
