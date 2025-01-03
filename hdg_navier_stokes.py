@@ -398,9 +398,11 @@ def solve(
 
     # Compute errors
     e_div_u = norm_L2(msh.comm, div(u_n))
-    e_jump_u = normal_jump_error(msh, u_n)
     par_print(comm, f"e_div_u = {e_div_u}")
-    par_print(comm, f"e_jump_u = {e_jump_u}")
+
+    if comm.size == 1:
+        e_jump_u = normal_jump_error(msh, u_n)
+        par_print(comm, f"e_jump_u = {e_jump_u}")
 
     x = ufl.SpatialCoordinate(msh)
     xbar = ufl.SpatialCoordinate(facet_mesh)
