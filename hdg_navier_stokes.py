@@ -400,6 +400,7 @@ def solve(
     e_div_u = norm_L2(msh.comm, div(u_n))
     par_print(comm, f"e_div_u = {e_div_u}")
 
+    # FIXME: Parallel (due to mesh ghost mode none)
     if comm.size == 1:
         e_jump_u = normal_jump_error(msh, u_n)
         par_print(comm, f"e_jump_u = {e_jump_u}")
