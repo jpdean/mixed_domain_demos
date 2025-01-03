@@ -50,7 +50,6 @@ msh_to_sm_0 = np.full(num_cells, -1)
 msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
-entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 
 # Compute integration entities for the interface integral
 fdim = tdim - 1
@@ -58,9 +57,13 @@ interface_facets = ft.find(surf_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
 
+# Create interface integration entities and modify msh_to_sm maps
 interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
     msh, interface_facets, msh_to_sm_0, msh_to_sm_1
 )
+
+# Create entity maps using the modified msh_to_sm maps
+entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
