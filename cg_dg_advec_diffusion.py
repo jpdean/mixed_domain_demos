@@ -36,6 +36,7 @@ from dolfinx.fem.petsc import (
     assemble_vector_block,
 )
 from meshing import create_divided_square
+from poisson_domain_decomp import jump_i, grad_avg_i
 
 
 def u_e(x, module=np):
@@ -115,15 +116,15 @@ dS = ufl.Measure(
     ],
 )
 
+x = ufl.SpatialCoordinate(msh)
+kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
+
 # Define forms
 # TODO Add k dependency
-gamma_int = 10  # Penalty param on interface
+gamma_int = 10 * 2 * kappa[0] * kappa[1] / (kappa[0] + kappa[1])  # Penalty param on interface
 gamma_dg = 10 * k_0**2  # Penalty parm for DG method
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
-
-x = ufl.SpatialCoordinate(msh)
-kappa = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
 u_0_n = fem.Function(V_0)
 u_1_n = fem.Function(V_1)
@@ -142,39 +143,26 @@ a = (
     )
     * dS(bound_ids["omega_0_int_facets"])
     + inner(lmbda * dot(w, n) * u[0], v[0]) * ds(bound_ids["boundary_0"])
-    + inner(kappa * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
-    - inner(kappa * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
-    - inner(kappa * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
+    + inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    - inner(kappa[0] * avg(grad(u[0])), jump(v[0], n)) * dS(bound_ids["omega_0_int_facets"])
+    - inner(kappa[0] * jump(u[0], n), avg(grad(v[0]))) * dS(bound_ids["omega_0_int_facets"])
     + (gamma_dg / avg(h))
-    * inner(kappa * jump(u[0], n), jump(v[0], n))
+    * inner(kappa[0] * jump(u[0], n), jump(v[0], n))
     * dS(bound_ids["omega_0_int_facets"])
-    - inner(kappa * grad(u[0]), v[0] * n) * ds(bound_ids["boundary_0"])
-    - inner(kappa * grad(v[0]), u[0] * n) * ds(bound_ids["boundary_0"])
-    + (gamma_dg / h) * inner(kappa * u[0], v[0]) * ds(bound_ids["boundary_0"])
+    - inner(kappa[0] * grad(u[0]), v[0] * n) * ds(bound_ids["boundary_0"])
+    - inner(kappa[0] * grad(v[0]), u[0] * n) * ds(bound_ids["boundary_0"])
+    + (gamma_dg / h) * inner(kappa[0] * u[0], v[0]) * ds(bound_ids["boundary_0"])
 )
 
 # CG scheme in Omega_1
 a += inner(u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
-    kappa * grad(u[1]), grad(v[1])
+    kappa[1] * grad(u[1]), grad(v[1])
 ) * dx(vol_ids["omega_1"])
 
-
-# Coupling terms on the interface
-def jump_i(v, n):
-    return v[0]("+") * n("+") + v[1]("-") * n("-")
-
-
-def grad_avg_i(v):
-    return 1 / 2 * (grad(v[0]("+")) + grad(v[1]("-")))
-
-
 a += (
-    -inner(kappa * grad_avg_i(u), jump_i(v, n)) * dS(bound_ids["interface"])
-    - inner(kappa * jump_i(u, n), grad_avg_i(v)) * dS(bound_ids["interface"])
-    + gamma_int
-    / avg(h)
-    * inner(kappa * jump_i(u, n), jump_i(v, n))
-    * dS(bound_ids["interface"])
+    - inner(grad_avg_i(u, kappa), jump_i(v, n)) * dS(bound_ids["interface"])
+    - inner(jump_i(u, n), grad_avg_i(v, kappa)) * dS(bound_ids["interface"])
+    + gamma_int / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(bound_ids["interface"])
 )
 
 # Compile LHS forms
@@ -183,9 +171,9 @@ a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Forms for the righ-hand side
 f_0 = dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
-    kappa * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))
+    kappa[0] * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))
 )
-f_1 = -div(kappa * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
+f_1 = -div(kappa[1] * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
 
 u_D = fem.Function(V_0)
 u_D.interpolate(u_e)
@@ -194,8 +182,8 @@ L = (
     inner(f_0, v[0]) * dx(vol_ids["omega_0"])
     - inner((1 - lmbda) * dot(w, n) * u_D, v[0]) * ds(bound_ids["boundary_0"])
     + inner(u_0_n / delta_t, v[0]) * dx(vol_ids["omega_0"])
-    - inner(kappa * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
-    + gamma_dg / h * inner(kappa * u_D, v[0]) * ds(bound_ids["boundary_0"])
+    - inner(kappa[0] * u_D * n, grad(v[0])) * ds(bound_ids["boundary_0"])
+    + gamma_dg / h * inner(kappa[0] * u_D, v[0]) * ds(bound_ids["boundary_0"])
     + inner(f_1, v[1]) * dx(vol_ids["omega_1"])
     + inner(u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
