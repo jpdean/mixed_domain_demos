@@ -50,7 +50,6 @@ msh_to_sm_0 = np.full(num_cells, -1)
 msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
 msh_to_sm_1 = np.full(num_cells, -1)
 msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
-entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 
 # Compute integration entities for the interface integral
 fdim = tdim - 1
@@ -58,9 +57,13 @@ interface_facets = ft.find(surf_ids["interface"])
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
 
+# Create interface integration entities and modify msh_to_sm maps
 interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
     msh, interface_facets, msh_to_sm_0, msh_to_sm_1
 )
+
+# Create entity maps using the modified msh_to_sm maps
+entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -68,37 +71,38 @@ dS = ufl.Measure(
     "dS", domain=msh, subdomain_data=[(surf_ids["interface"], interface_entities)]
 )
 
+x = ufl.SpatialCoordinate(msh)
+kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
+
+# Penalty parameter (including harmonic mean on kappa on interface)
 # TODO Add k dependency
-gamma = 10  # Penalty parameter
+gamma = 10 * 2 * kappa[0] * kappa[1] / (kappa[0] + kappa[1])
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
-
-x = ufl.SpatialCoordinate(msh)
-c = 1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
 
 
 def jump_i(v, n):
     return v[0]("+") * n("+") + v[1]("-") * n("-")
 
 
-def grad_avg_i(v):
-    return 1 / 2 * (grad(v[0]("+")) + grad(v[1]("-")))
-
+def grad_avg_i(v, kappa):
+    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + \
+        kappa[0] / (kappa[0] + kappa[1]) * kappa[1] * grad(v[1]("-"))
 
 a = (
-    inner(c * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
-    + inner(c * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
-    - inner(c * grad_avg_i(u), jump_i(v, n)) * dS(surf_ids["interface"])
-    - inner(c * jump_i(u, n), grad_avg_i(v)) * dS(surf_ids["interface"])
-    + gamma / avg(h) * inner(c * jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
+    inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
+    + inner(kappa[1] * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
+    - inner(grad_avg_i(u, kappa), jump_i(v, n)) * dS(surf_ids["interface"])
+    - inner(jump_i(u, n), grad_avg_i(v, kappa)) * dS(surf_ids["interface"])
+    + gamma / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
 )
 
 # Compile LHS forms
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Define right-hand side forms
-f = -div(c * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl)))
-L = inner(f, v[0]) * dx(vol_ids["omega_0"]) + inner(f, v[1]) * dx(vol_ids["omega_1"])
+f = [-div(kap * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) for kap in kappa]
+L = inner(f[0], v[0]) * dx(vol_ids["omega_0"]) + inner(f[1], v[1]) * dx(vol_ids["omega_1"])
 
 # Compile RHS forms and set block structure
 L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
