@@ -450,7 +450,7 @@ a_T = (
     - alpha[0] * inner(u_h * T[0], grad(w[0])) * dx_T(volume_id["fluid"])
     + alpha[0] * inner(
         lmbda_T("+") * dot(u_h("+"), n_T("+")) * T[0]("+")
-        - lmbda_T("-") * dot(u_h("-"), n_T("-")) * w[0]("-"),
+        - lmbda_T("-") * dot(u_h("-"), n_T("-")) * T[0]("-"),
         jump_T(w[0]),
     )
     * dS_T(fluid_int_facets)
@@ -620,7 +620,6 @@ L_T = (
 # L_T = [L_T_0, L_T_1]
 
 a_T = fem.form(extract_blocks(a_T), entity_maps=entity_maps)
-exit()
 L_T = fem.form(extract_blocks(L_T), entity_maps=entity_maps)
 
 # Assemble matrix and vector for thermal problem
