@@ -117,8 +117,7 @@ dS = ufl.Measure(
 )
 
 x = ufl.SpatialCoordinate(msh)
-# kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
-kappa = [1.0, 10.0]
+kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
 
 # Define forms
 # TODO Add k dependency
