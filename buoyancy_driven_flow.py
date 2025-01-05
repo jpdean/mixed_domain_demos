@@ -312,18 +312,6 @@ tdim = msh.topology.dim
 submesh_f, sm_f_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["fluid"]))[:2]
 submesh_s, sm_s_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["solid"]))[:2]
 
-# def write_cell_num_mt(msh, file_name):
-#     cell_imap = msh.topology.index_map(msh.topology.dim)
-#     cell_list = np.arange(cell_imap.size_local + cell_imap.num_ghosts, dtype=np.int32)
-#     cell_num_mt = mesh.meshtags(msh, msh.topology.dim, cell_list, cell_list)
-#     with io.XDMFFile(msh.comm, file_name, "w") as file:
-#         file.write_mesh(msh)
-#         file.write_meshtags(cell_num_mt, msh.geometry)
-
-# write_cell_num_mt(msh, "msh.xdmf")
-# write_cell_num_mt(submesh_f, "submesh_f.xdmf")
-# write_cell_num_mt(submesh_s, "submesh_s.xdmf")
-
 # Create function spaces for Navier-Stokes problem
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
@@ -345,7 +333,6 @@ T_s_n = fem.Function(W_s)
 
 # Time step
 delta_t = t_end / num_time_steps  # TODO Make constant
-
 
 # Create forms for Navier-Stokes solver. We begin by defining the
 # buoyancy force (taking rho as reference density), see
@@ -443,6 +430,7 @@ c_s = fem.Constant(submesh_s, PETSc.ScalarType(c_s))
 c_f = fem.Constant(submesh_f, PETSc.ScalarType(c_f))
 
 # DG solver in the fluid region
+# TODO Generalise cg_dg_advec_diffusion.py and use solver in this code to avoid duplication
 alpha = [rho * c_f, rho_s * c_s]
 kappa = [kappa_f, kappa_s]
 a_T = (
@@ -477,102 +465,7 @@ a_T += (
     + gamma_int / avg(h_T) * inner(jump_i(T, n_T), jump_i(w, n_T)) * dS_T(boundary_id["obstacle"])
 )
 
-
-# Define some quantities that are used to handle the discontinuity in
-# kappa at the interface (see DiPietro Sec 4.5 p. 150)
-# Kappa harmonic mean
-# kappa_hm = 2 * kappa_f * kappa_s / (kappa_f + kappa_s)
-# Weights for weighted average operator
-# kappa_w_f = kappa_s / (kappa_f + kappa_s)
-# kappa_w_s = kappa_f / (kappa_f + kappa_s)
-
-# Define forms for the thermal problem
-# FIXME Refactor cg_dg_advec_diffusion.py and use forms in this code to avoid
-# duplication
-# a_T_00 = (
-#     inner(rho * c_f * T_f / delta_t, w_f) * dx_T(volume_id["fluid"])
-#     + rho
-#     * c_f
-#     * (
-#         -inner(u_h * T_f, grad(w_f)) * dx_T(volume_id["fluid"])
-#         + inner(
-#             lmbda_T("+") * dot(u_h("+"), n_T("+")) * T_f("+")
-#             - lmbda_T("-") * dot(u_h("-"), n_T("-")) * T_f("-"),
-#             jump_T(w_f),
-#         )
-#         * dS_T(fluid_int_facets)
-#         + inner(lmbda_T * dot(u_h, n_T) * T_f, w_f) * ds_T
-#     )
-#     + kappa_f
-#     * (
-#         inner(grad(T_f), grad(w_f)) * dx_T(volume_id["fluid"])
-#         - inner(avg(grad(T_f)), jump_T(w_f, n_T)) * dS_T(fluid_int_facets)
-#         - inner(jump_T(T_f, n_T), avg(grad(w_f))) * dS_T(fluid_int_facets)
-#         + (alpha / avg(h_T))
-#         * inner(jump_T(T_f, n_T), jump_T(w_f, n_T))
-#         * dS_T(fluid_int_facets)
-#     )
-#     + kappa_hm
-#     * gamma_int
-#     / avg(h_T)
-#     * inner(T_f("+"), w_f("+"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_f
-#     * kappa_w_f
-#     * (
-#         -inner(dot(grad(T_f("+")), n_T("+")), w_f("+")) * dS_T(boundary_id["obstacle"])
-#         - inner(dot(grad(w_f("+")), n_T("+")), T_f("+")) * dS_T(boundary_id["obstacle"])
-#     )
-# )
-
-# a_T_01 = (
-#     -kappa_hm
-#     * gamma_int
-#     / avg(h_T)
-#     * inner(T_s("-"), w_f("+"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_s
-#     * kappa_w_s
-#     * inner(dot(grad(T_s("-")), n_T("-")), w_f("+"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_f
-#     * kappa_w_f
-#     * inner(dot(grad(w_f("+")), n_T("+")), T_s("-"))
-#     * dS_T(boundary_id["obstacle"])
-# )
-
-# a_T_10 = (
-#     -kappa_hm
-#     * gamma_int
-#     / avg(h_T)
-#     * inner(T_f("+"), w_s("-"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_f
-#     * kappa_w_f
-#     * inner(dot(grad(T_f("+")), n_T("+")), w_s("-"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_s
-#     * kappa_w_s
-#     * inner(dot(grad(w_s("-")), n_T("-")), T_f("+"))
-#     * dS_T(boundary_id["obstacle"])
-# )
-
-# a_T_11 = (
-#     inner(rho_s * c_s * T_s / delta_t, w_s) * dx_T(volume_id["solid"])
-#     + kappa_s * inner(grad(T_s), grad(w_s)) * dx_T(volume_id["solid"])
-#     + kappa_hm
-#     * gamma_int
-#     / avg(h_T)
-#     * inner(T_s("-"), w_s("-"))
-#     * dS_T(boundary_id["obstacle"])
-#     + kappa_s
-#     * kappa_w_s
-#     * (
-#         -inner(dot(grad(T_s("-")), n_T("-")), w_s("-")) * dS_T(boundary_id["obstacle"])
-#         - inner(dot(grad(w_s("-")), n_T("-")), T_s("-")) * dS_T(boundary_id["obstacle"])
-#     )
-# )
-
+# Right-hand side
 T_D = fem.Function(W_f)
 T_D.interpolate(dirichlet_bcs_T["walls"])
 L_T = (
@@ -583,41 +476,6 @@ L_T = (
     + inner(f_T, w[1]) * dx_T(volume_id["solid"])
     + inner(alpha[1] * T_s_n / delta_t, w[1]) * dx_T(volume_id["solid"])
 )
-
-# L_T_0 = inner(rho * c_f * T_f_n / delta_t, w_f) * dx_T(volume_id["fluid"])
-
-# # Apply Dirichlet BCs for the thermal problem
-# for b_name, bc_func in dirichlet_bcs_T.items():
-#     b_id = boundary_id[b_name]
-#     T_D = fem.Function(W_f)
-#     T_D.interpolate(bc_func)
-#     a_T_00 += kappa_f * (
-#         -inner(grad(T_f), w_f * n_T) * ds_T(b_id)
-#         - inner(grad(w_f), T_f * n_T) * ds_T(b_id)
-#         + (alpha / h_T) * inner(T_f, w_f) * ds_T(b_id)
-#     )
-#     L_T_0 += -rho * c_f * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w_f) * ds_T(
-#         b_id
-#     ) + kappa_f * (
-#         -inner(T_D * n_T, grad(w_f)) * ds_T(b_id)
-#         + (alpha / h_T) * inner(T_D, w_f) * ds_T(b_id)
-#     )
-
-# L_T_1 = inner(f_T, w_s) * dx_T(volume_id["solid"]) + inner(
-#     rho_s * c_s * T_s_n / delta_t, w_s
-# ) * dx_T(volume_id["solid"])
-
-# Compile forms for the thermal problem
-# a_T_00 = fem.form(a_T_00, entity_maps=entity_maps)
-# a_T_01 = fem.form(a_T_01, entity_maps=entity_maps)
-# a_T_10 = fem.form(a_T_10, entity_maps=entity_maps)
-# a_T_11 = fem.form(a_T_11, entity_maps=entity_maps)
-# L_T_0 = fem.form(L_T_0, entity_maps=entity_maps)
-# L_T_1 = fem.form(L_T_1, entity_maps=entity_maps)
-
-# Define block structure for thermal problem
-# a_T = [[a_T_00, a_T_01], [a_T_10, a_T_11]]
-# L_T = [L_T_0, L_T_1]
 
 a_T = fem.form(extract_blocks(a_T), entity_maps=entity_maps)
 L_T = fem.form(extract_blocks(L_T), entity_maps=entity_maps)
