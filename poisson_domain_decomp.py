@@ -7,7 +7,7 @@
 from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import ufl
-from ufl import inner, grad, dot, avg, div
+from ufl import inner, grad, avg, div
 import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
@@ -67,9 +67,7 @@ entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
-dS = ufl.Measure(
-    "dS", domain=msh, subdomain_data=[(surf_ids["interface"], interface_entities)]
-)
+dS = ufl.Measure("dS", domain=msh, subdomain_data=[(surf_ids["interface"], interface_entities)])
 
 x = ufl.SpatialCoordinate(msh)
 kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in range(2)]
@@ -86,8 +84,10 @@ def jump_i(v, n):
 
 
 def grad_avg_i(v, kappa):
-    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + \
-        kappa[0] / (kappa[0] + kappa[1]) * kappa[1] * grad(v[1]("-"))
+    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + kappa[0] / (
+        kappa[0] + kappa[1]
+    ) * kappa[1] * grad(v[1]("-"))
+
 
 a = (
     inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])

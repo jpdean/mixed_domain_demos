@@ -22,9 +22,7 @@ msh = create_dome_mesh(comm, h)
 
 # Create a sub-mesh of part of the boundary of msh to get a disk
 msh_fdim = msh.topology.dim - 1
-submesh_0_entities = mesh.locate_entities_boundary(
-    msh, msh_fdim, lambda x: np.isclose(x[2], 0.0)
-)
+submesh_0_entities = mesh.locate_entities_boundary(msh, msh_fdim, lambda x: np.isclose(x[2], 0.0))
 submesh_0, sm_0_to_msh = mesh.create_submesh(msh, msh_fdim, submesh_0_entities)[0:2]
 
 # Create a sub-mesh of the boundary of submesh_0 to get concentric circles
@@ -33,9 +31,7 @@ submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
 submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, sm_1_to_sm_0 = mesh.create_submesh(
-    submesh_0, submesh_0_fdim, sm_boundary_facets
-)[0:2]
+submesh_1, sm_1_to_sm_0 = mesh.create_submesh(submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a function space on submesh_1 and interpolate a function
 k = 2  # Polynomial degree
@@ -103,22 +99,17 @@ V_msh = fem.functionspace(msh, ("Lagrange", k))
 u_msh, v_msh = ufl.TrialFunction(V_msh), ufl.TestFunction(V_msh)
 
 # Create Dirichlet boundary condition
-dirichlet_facets = mesh.locate_entities_boundary(
-    msh, msh_fdim, lambda x: np.isclose(x[2], -0.75)
-)
+dirichlet_facets = mesh.locate_entities_boundary(msh, msh_fdim, lambda x: np.isclose(x[2], -0.75))
 dirichlet_dofs = fem.locate_dofs_topological(V_msh, msh_fdim, dirichlet_facets)
 bc = fem.dirichletbc(value=PETSc.ScalarType(0), dofs=dirichlet_dofs, V=V_msh)
 
 # Create a function to represent the forcing term
 f_msh = fem.Function(V_msh)
-f_msh.interpolate(
-    lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2])
-)
+f_msh.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2]))
 
 # Create entity maps
 num_facets_msh = (
-    msh.topology.index_map(msh_fdim).size_local
-    + msh.topology.index_map(msh_fdim).num_ghosts
+    msh.topology.index_map(msh_fdim).size_local + msh.topology.index_map(msh_fdim).num_ghosts
 )
 msh_to_sm_0 = np.full(num_facets_msh, -1)
 msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))

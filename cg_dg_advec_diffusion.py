@@ -138,9 +138,9 @@ alpha = [1.0, 1.0]
 a = (
     inner(alpha[0] * u[0] / delta_t, v[0]) * dx(vol_ids["omega_0"])
     - alpha[0] * inner(w * u[0], grad(v[0])) * dx(vol_ids["omega_0"])
-    + alpha[0] * inner(
-        lmbda("+") * dot(w("+"), n("+")) * u[0]("+")
-        - lmbda("-") * dot(w("-"), n("-")) * u[0]("-"),
+    + alpha[0]
+    * inner(
+        lmbda("+") * dot(w("+"), n("+")) * u[0]("+") - lmbda("-") * dot(w("-"), n("-")) * u[0]("-"),
         jump(v[0]),
     )
     * dS(bound_ids["omega_0_int_facets"])
@@ -162,7 +162,7 @@ a += inner(alpha[1] * u[1] / delta_t, v[1]) * dx(vol_ids["omega_1"]) + inner(
 ) * dx(vol_ids["omega_1"])
 
 a += (
-    - inner(grad_avg_i(u, kappa), jump_i(v, n)) * dS(bound_ids["interface"])
+    -inner(grad_avg_i(u, kappa), jump_i(v, n)) * dS(bound_ids["interface"])
     - inner(jump_i(u, n), grad_avg_i(v, kappa)) * dS(bound_ids["interface"])
     + gamma_int / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(bound_ids["interface"])
 )

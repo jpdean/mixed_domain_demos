@@ -67,9 +67,7 @@ v, vbar = ufl.TestFunctions(W)
 cell_boundary_facets = compute_cell_boundary_int_entities(msh)
 dx_c = ufl.Measure("dx", domain=msh)
 cell_boundaries = 0  # Tag
-ds_c = ufl.Measure(
-    "ds", subdomain_data=[(cell_boundaries, cell_boundary_facets)], domain=msh
-)
+ds_c = ufl.Measure("ds", subdomain_data=[(cell_boundaries, cell_boundary_facets)], domain=msh)
 dx_f = ufl.Measure("dx", domain=facet_mesh)
 
 # Create entity maps. We take msh to be the integration domain, so the
@@ -104,9 +102,9 @@ w = ufl.as_vector(
     )
 )
 lmbda = ufl.conditional(ufl.gt(dot(w, n), 0), 0, 1)
-a += -inner(w * u, grad(v)) * dx_c + inner(
-    dot(w * (u - lmbda * (u - ubar)), n), v - vbar
-) * ds_c(cell_boundaries)
+a += -inner(w * u, grad(v)) * dx_c + inner(dot(w * (u - lmbda * (u - ubar)), n), v - vbar) * ds_c(
+    cell_boundaries
+)
 
 # Compile form
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)

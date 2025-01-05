@@ -35,9 +35,7 @@ submsh, sm_to_msh = mesh.create_submesh(msh, fdim, facets)[:2]
 # We take msh to be the integration domain and thus need to provide
 # a map from the facets in msh to the cells in submesh. This is the
 # "inverse" of sm_to_msh.
-num_facets = (
-    msh.topology.index_map(fdim).size_local + msh.topology.index_map(fdim).num_ghosts
-)
+num_facets = msh.topology.index_map(fdim).size_local + msh.topology.index_map(fdim).num_ghosts
 msh_to_sm = np.full(num_facets, -1)
 msh_to_sm[sm_to_msh] = np.arange(len(sm_to_msh))
 entity_maps = {submsh: msh_to_sm}
@@ -72,9 +70,7 @@ ubar.x.scatter_forward()
 # Compute error and check it's zero to machine precision
 e = u - ubar
 e_L2 = np.sqrt(
-    msh.comm.allreduce(
-        fem.assemble_scalar(fem.form(ufl.inner(e, e) * ds, entity_maps=entity_maps))
-    )
+    msh.comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(e, e) * ds, entity_maps=entity_maps)))
 )
 assert np.isclose(e_L2, 0.0)
 

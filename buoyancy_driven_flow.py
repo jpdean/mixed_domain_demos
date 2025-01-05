@@ -89,9 +89,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
 
         # Corners of a square surrounding the cylinder
         square_points = [
-            factory.addPoint(
-                c[0] + r_s * np.cos(theta), c[1] + r_s * np.sin(theta), 0.0
-            )
+            factory.addPoint(c[0] + r_s * np.cos(theta), c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas
         ]
 
@@ -134,9 +132,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
 
         # Define regions around the cylinder where the mesh is refined
         # to better capture the boundary layer
-        bl_diag_lines = [
-            factory.addLine(circle_points[i + 1], square_points[i]) for i in range(4)
-        ]
+        bl_diag_lines = [factory.addLine(circle_points[i + 1], square_points[i]) for i in range(4)]
         boundary_layer_lines = [
             [square_lines[0], -bl_diag_lines[1], -circle_lines[0], bl_diag_lines[0]],
             [square_lines[1], -bl_diag_lines[2], -circle_lines[1], bl_diag_lines[1]],
@@ -148,18 +144,12 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
         circle_curve = factory.addCurveLoop(circle_lines)
         square_curve = factory.addCurveLoop(square_lines)
-        boundary_layer_curves = [
-            factory.addCurveLoop(bll) for bll in boundary_layer_lines
-        ]
+        boundary_layer_curves = [factory.addCurveLoop(bll) for bll in boundary_layer_lines]
         plume_curve = factory.add_curve_loop(plume_lines)
 
         # Create surfaces
-        outer_surface = factory.addPlaneSurface(
-            [rectangle_curve, square_curve, plume_curve]
-        )
-        boundary_layer_surfaces = [
-            factory.addPlaneSurface([blc]) for blc in boundary_layer_curves
-        ]
+        outer_surface = factory.addPlaneSurface([rectangle_curve, square_curve, plume_curve])
+        boundary_layer_surfaces = [factory.addPlaneSurface([blc]) for blc in boundary_layer_curves]
         circle_surface = factory.addPlaneSurface([circle_curve])
         plume_surface = factory.addPlaneSurface([plume_curve])
 
@@ -167,15 +157,11 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         num_bl_eles_tan = round(0.8 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
-            gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][0], num_bl_eles_tan
-            )
+            gmsh.model.geo.mesh.setTransfiniteCurve(boundary_layer_lines[i][0], num_bl_eles_tan)
             gmsh.model.geo.mesh.setTransfiniteCurve(
                 boundary_layer_lines[i][1], num_bl_eles_norm, coef=progression_coeff
             )
-            gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][2], num_bl_eles_tan
-            )
+            gmsh.model.geo.mesh.setTransfiniteCurve(boundary_layer_lines[i][2], num_bl_eles_tan)
             gmsh.model.geo.mesh.setTransfiniteCurve(
                 boundary_layer_lines[i][3], num_bl_eles_norm, coef=progression_coeff
             )
@@ -231,10 +217,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
             gmsh.model.addPhysicalGroup(1, circle_lines, boundary_id["obstacle"])
 
         gmsh.option.setNumber("Mesh.Smoothing", 25)
-        if (
-            cell_type == mesh.CellType.quadrilateral
-            or cell_type == mesh.CellType.hexahedron
-        ):
+        if cell_type == mesh.CellType.quadrilateral or cell_type == mesh.CellType.hexahedron:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
 
@@ -244,12 +227,16 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=d, partitioner=partitioner
-    )
+    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     mesh_data.facet_tags.name = "Facet markers"
 
-    return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, volume_id, boundary_id
+    return (
+        mesh_data.mesh,
+        mesh_data.cell_tags,
+        mesh_data.facet_tags,
+        volume_id,
+        boundary_id,
+    )
 
 
 def zero(x):
@@ -315,9 +302,7 @@ submesh_s, sm_s_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["solid
 # Create function spaces for Navier-Stokes problem
 scheme = hdg_navier_stokes.Scheme.DRW
 facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
-V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
-    submesh_f, facet_mesh_f, scheme, k
-)
+V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(submesh_f, facet_mesh_f, scheme, k)
 
 # Function spaces for fluid and solid temperature
 W_f = fem.functionspace(submesh_f, ("Discontinuous Lagrange", k))
@@ -413,7 +398,9 @@ h_T = CellDiameter(msh)
 n_T = FacetNormal(msh)
 # Marker for outflow boundaries
 lmbda_T = conditional(gt(dot(u_n, n_T), 0), 1, 0)
-gamma_int = 32 * 2 * kappa_f * kappa_s / (kappa_f + kappa_s)  # Penalty param for temperature on interface
+gamma_int = (
+    32 * 2 * kappa_f * kappa_s / (kappa_f + kappa_s)
+)  # Penalty param for temperature on interface
 gamma_dg = 10 * k**2
 
 alpha = 32.0 * k**2  # Penalty param for DG temp solver
@@ -436,7 +423,8 @@ kappa = [kappa_f, kappa_s]
 a_T = (
     inner(alpha[0] * T[0] / delta_t, w[0]) * dx_T(volume_id["fluid"])
     - alpha[0] * inner(u_h * T[0], grad(w[0])) * dx_T(volume_id["fluid"])
-    + alpha[0] * inner(
+    + alpha[0]
+    * inner(
         lmbda_T("+") * dot(u_h("+"), n_T("+")) * T[0]("+")
         - lmbda_T("-") * dot(u_h("-"), n_T("-")) * T[0]("-"),
         jump_T(w[0]),
@@ -447,7 +435,8 @@ a_T = (
     - inner(kappa[0] * avg(grad(T[0])), jump_T(w[0], n_T)) * dS_T(fluid_int_facets)
     - inner(kappa[0] * jump_T(T[0], n_T), avg(grad(w[0]))) * dS_T(fluid_int_facets)
     + (gamma_dg / avg(h_T))
-    * inner(kappa[0] * jump_T(T[0], n_T), jump_T(w[0], n_T)) * dS_T(fluid_int_facets)
+    * inner(kappa[0] * jump_T(T[0], n_T), jump_T(w[0], n_T))
+    * dS_T(fluid_int_facets)
     - inner(kappa[0] * grad(T[0]), w[0] * n_T) * ds_T(boundary_id["walls"])
     - inner(kappa[0] * grad(T[0]), w[0] * n_T) * ds_T(boundary_id["walls"])
     + (gamma_dg / h_T) * inner(kappa[0] * T[0], w[0]) * ds_T(boundary_id["walls"])
@@ -460,7 +449,7 @@ a_T += inner(alpha[1] * T[1] / delta_t, w[1]) * dx_T(volume_id["solid"]) + inner
 
 # Interface coupling terms
 a_T += (
-    - inner(grad_avg_i(T, kappa), jump_i(w, n_T)) * dS_T(boundary_id["obstacle"])
+    -inner(grad_avg_i(T, kappa), jump_i(w, n_T)) * dS_T(boundary_id["obstacle"])
     - inner(jump_i(T, n_T), grad_avg_i(w, kappa)) * dS_T(boundary_id["obstacle"])
     + gamma_int / avg(h_T) * inner(jump_i(T, n_T), jump_i(w, n_T)) * dS_T(boundary_id["obstacle"])
 )
@@ -469,7 +458,7 @@ a_T += (
 T_D = fem.Function(W_f)
 T_D.interpolate(dirichlet_bcs_T["walls"])
 L_T = (
-    - alpha[0] * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w[0]) * ds_T(boundary_id["walls"])
+    -alpha[0] * inner((1 - lmbda_T) * dot(u_h, n_T) * T_D, w[0]) * ds_T(boundary_id["walls"])
     + inner(alpha[0] * T_f_n / delta_t, w[0]) * dx_T(volume_id["fluid"])
     - inner(kappa[0] * T_D * n_T, grad(w[0])) * ds_T(boundary_id["walls"])
     + gamma_dg / h_T * inner(kappa[0] * T_D, w[0]) * ds_T(boundary_id["walls"])
@@ -516,9 +505,7 @@ ksp.setFromOptions()
 if scheme == hdg_navier_stokes.Scheme.RW:
     u_vis = fem.Function(V)
 else:
-    V_vis = fem.functionspace(
-        submesh_f, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,))
-    )
+    V_vis = fem.functionspace(submesh_f, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
     u_vis = fem.Function(V_vis)
 u_vis.name = "u"
 p_h = fem.Function(Q)

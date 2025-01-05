@@ -16,25 +16,17 @@ def par_print(comm, string):
 
 def norm_L2(comm, v, measure=ufl.dx):
     return np.sqrt(
-        comm.allreduce(
-            fem.assemble_scalar(fem.form(ufl.inner(v, v) * measure)), op=MPI.SUM
-        )
+        comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(v, v) * measure)), op=MPI.SUM)
     )
 
 
 def domain_average(msh, v):
     """Compute the average of a function over the domain"""
     vol = msh.comm.allreduce(
-        fem.assemble_scalar(
-            fem.form(fem.Constant(msh, PETSc.ScalarType(1.0)) * ufl.dx)
-        ),
+        fem.assemble_scalar(fem.form(fem.Constant(msh, PETSc.ScalarType(1.0)) * ufl.dx)),
         op=MPI.SUM,
     )
-    return (
-        1
-        / vol
-        * msh.comm.allreduce(fem.assemble_scalar(fem.form(v * ufl.dx)), op=MPI.SUM)
-    )
+    return 1 / vol * msh.comm.allreduce(fem.assemble_scalar(fem.form(v * ufl.dx)), op=MPI.SUM)
 
 
 def normal_jump_error(msh, v):
@@ -112,18 +104,12 @@ def create_random_mesh(corners, n, ghost_mode):
 
     import basix.ufl_wrapper
 
-    domain = ufl.Mesh(
-        basix.ufl_wrapper.create_vector_element("Lagrange", "triangle", 1)
-    )
+    domain = ufl.Mesh(basix.ufl_wrapper.create_vector_element("Lagrange", "triangle", 1))
     partitioner = mesh.create_cell_partitioner(ghost_mode)
-    return mesh.create_mesh(
-        MPI.COMM_WORLD, cells, points, domain, partitioner=partitioner
-    )
+    return mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain, partitioner=partitioner)
 
 
-def create_trap_mesh(
-    comm, n, corners, offset_scale=0.25, ghost_mode=mesh.GhostMode.none
-):
+def create_trap_mesh(comm, n, corners, offset_scale=0.25, ghost_mode=mesh.GhostMode.none):
     """Creates a trapezium mesh by creating a square mesh and offsetting
     the points by a fraction of the cell diameter. The offset can be
     controlled with offset_scale.
@@ -241,21 +227,13 @@ def interface_int_entities(
             else:
                 cell_plus = cells[1]
                 cell_minus = cells[0]
-            assert (
-                domain_to_domain_0[cell_plus] >= 0
-                and domain_to_domain_0[cell_minus] < 0
-            )
-            assert (
-                domain_to_domain_1[cell_minus] >= 0
-                and domain_to_domain_1[cell_plus] < 0
-            )
+            assert domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0
+            assert domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0
 
             local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
             local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
 
-            interface_entities.extend(
-                [cell_plus, local_facet_plus, cell_minus, local_facet_minus]
-            )
+            interface_entities.extend([cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
             # FIXME HACK cell_minus does not exist in the left submesh, so it
             # will be mapped to index -1. This is problematic for the
@@ -327,9 +305,7 @@ def compute_cell_boundary_int_entities(msh):
     fdim = tdim - 1
     n_f = cell_num_entities(msh.topology.cell_type, fdim)
     n_c = msh.topology.index_map(tdim).size_local
-    return np.vstack(
-        (np.repeat(np.arange(n_c), n_f), np.tile(np.arange(n_f), n_c))
-    ).T.flatten()
+    return np.vstack((np.repeat(np.arange(n_c), n_f), np.tile(np.arange(n_f), n_c))).T.flatten()
 
 
 # TODO Optimise
@@ -373,4 +349,3 @@ def markers_to_meshtags(msh, tags, markers, dim):
     values = np.hstack(values, dtype=np.intc)
     perm = np.argsort(entities)
     return mesh.meshtags(msh, dim, entities[perm], values[perm])
-
