@@ -78,9 +78,7 @@ def create_function_spaces(msh, facet_mesh, scheme, k):
     else:
         V = fem.functionspace(msh, ("Discontinuous Raviart-Thomas", k + 1))
         Q = fem.functionspace(msh, ("Discontinuous Lagrange", k))
-    Vbar = fem.functionspace(
-        facet_mesh, ("Discontinuous Lagrange", k, (msh.geometry.dim,))
-    )
+    Vbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k, (msh.geometry.dim,)))
     Qbar = fem.functionspace(facet_mesh, ("Discontinuous Lagrange", k))
 
     return V, Q, Vbar, Qbar
@@ -186,12 +184,10 @@ def create_forms(
         ) * ds_c(cell_boundaries_tag)
 
     L = inner(f + u_n / delta_t, v) * dx_c
-    L += inner(
-        fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar
-    ) * ds_c(cell_boundaries_tag)
-    L += inner(fem.Constant(facet_mesh, PETSc.ScalarType(0.0)), qbar) * ds_c(
+    L += inner(fem.Constant(msh, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar) * ds_c(
         cell_boundaries_tag
     )
+    L += inner(fem.Constant(facet_mesh, PETSc.ScalarType(0.0)), qbar) * ds_c(cell_boundaries_tag)
     L += inner(fem.Constant(msh, 0.0), q) * dx_c
 
     # Apply boundary conditions
@@ -213,9 +209,7 @@ def create_forms(
         else:
             assert bc_type == BCType.Neumann
             L += -inner(bc_expr, vbar) * ds_c(id)
-            a += -inner(dot(ubar, n), qbar) * ds_c(id) - inner(
-                dot(vbar, n), pbar
-            ) * ds_c(id)
+            a += -inner(dot(ubar, n), qbar) * ds_c(id) - inner(dot(vbar, n), pbar) * ds_c(id)
             if solver_type == SolverType.NAVIER_STOKES:
                 a += inner((1 - lmbda) * dot(ubar_n, n) * ubar, vbar) * ds_c(id)
 
@@ -323,9 +317,7 @@ def solve(
         # we create a discontinuous Lagrange space to interpolate the
         # solution into for visualisation. This allows artifact-free
         # visualisation of the solution
-        V_vis = fem.functionspace(
-            msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,))
-        )
+        V_vis = fem.functionspace(msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -441,9 +433,7 @@ def run_square_problem():
     # Create mesh
     n = round(1 / h)
     if d == 2:
-        msh = mesh.create_unit_square(
-            comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none
-        )
+        msh = mesh.create_unit_square(comm, n, n, cell_type, ghost_mode=mesh.GhostMode.none)
 
         def diri_boundary_marker(x):
             return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | np.isclose(x[1], 0.0)
@@ -620,9 +610,7 @@ def run_gaussian_bump():
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(order)
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, _, mt = gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
-    )
+    msh, _, mt = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     boundaries = {"left": 4, "bottom": 1, "top": 3, "right": 2}
 
@@ -713,9 +701,7 @@ def run_cylinder_problem():
         ]
 
         square_points = [
-            factory.addPoint(
-                c[0] + r_s * np.cos(theta), c[1] + r_s * np.sin(theta), 0.0
-            )
+            factory.addPoint(c[0] + r_s * np.cos(theta), c[1] + r_s * np.sin(theta), 0.0)
             for theta in thetas
         ]
 
@@ -740,9 +726,7 @@ def run_cylinder_problem():
             factory.addLine(square_points[3], square_points[0]),
         ]
 
-        bl_diag_lines = [
-            factory.addLine(circle_points[i + 1], square_points[i]) for i in range(4)
-        ]
+        bl_diag_lines = [factory.addLine(circle_points[i + 1], square_points[i]) for i in range(4)]
 
         boundary_layer_lines = [
             [square_lines[0], -bl_diag_lines[1], -circle_lines[0], bl_diag_lines[0]],
@@ -754,27 +738,19 @@ def run_cylinder_problem():
         rectangle_curve = factory.addCurveLoop(rectangle_lines)
         factory.addCurveLoop(circle_lines)
         square_curve = factory.addCurveLoop(square_lines)
-        boundary_layer_curves = [
-            factory.addCurveLoop(bll) for bll in boundary_layer_lines
-        ]
+        boundary_layer_curves = [factory.addCurveLoop(bll) for bll in boundary_layer_lines]
 
         outer_surface = factory.addPlaneSurface([rectangle_curve, square_curve])
-        boundary_layer_surfaces = [
-            factory.addPlaneSurface([blc]) for blc in boundary_layer_curves
-        ]
+        boundary_layer_surfaces = [factory.addPlaneSurface([blc]) for blc in boundary_layer_curves]
 
         num_bl_eles = round(0.5 * 1 / h)
         progression_coeff = 1.2
         for i in range(len(boundary_layer_surfaces)):
-            gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][0], num_bl_eles
-            )
+            gmsh.model.geo.mesh.setTransfiniteCurve(boundary_layer_lines[i][0], num_bl_eles)
             gmsh.model.geo.mesh.setTransfiniteCurve(
                 boundary_layer_lines[i][1], num_bl_eles, coef=progression_coeff
             )
-            gmsh.model.geo.mesh.setTransfiniteCurve(
-                boundary_layer_lines[i][2], num_bl_eles
-            )
+            gmsh.model.geo.mesh.setTransfiniteCurve(boundary_layer_lines[i][2], num_bl_eles)
             gmsh.model.geo.mesh.setTransfiniteCurve(
                 boundary_layer_lines[i][3], num_bl_eles, coef=progression_coeff
             )
@@ -785,9 +761,7 @@ def run_cylinder_problem():
                 recombine = False
             else:
                 recombine = True
-            extrude_surfs = [
-                (2, surf) for surf in [outer_surface] + boundary_layer_surfaces
-            ]
+            extrude_surfs = [(2, surf) for surf in [outer_surface] + boundary_layer_surfaces]
             gmsh.model.geo.extrude(extrude_surfs, 0, 0, 0.41, [8], recombine=recombine)
 
         gmsh.model.geo.synchronize()
@@ -819,10 +793,7 @@ def run_cylinder_problem():
             gmsh.model.addPhysicalGroup(2, [75, 97, 119, 141], boundary_id["obstacle"])
 
         # gmsh.option.setNumber("Mesh.Smoothing", 5)
-        if (
-            cell_type == mesh.CellType.quadrilateral
-            or cell_type == mesh.CellType.hexahedron
-        ):
+        if cell_type == mesh.CellType.quadrilateral or cell_type == mesh.CellType.hexahedron:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
             # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
@@ -830,18 +801,14 @@ def run_cylinder_problem():
         gmsh.model.mesh.setOrder(order)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, _, mt = gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=d, partitioner=partitioner
-    )
+    msh, _, mt = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
 
     # Boundary conditions
     if d == 2:
 
         def inlet(x):
-            return np.vstack(
-                ((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0]))
-            )
+            return np.vstack(((1.5 * 4 * x[1] * (0.41 - x[1])) / 0.41**2, np.zeros_like(x[0])))
 
         def zero(x):
             return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0])))
@@ -858,9 +825,7 @@ def run_cylinder_problem():
             )
 
         def zero(x):
-            return np.vstack(
-                (np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0]))
-            )
+            return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0])))
 
     boundary_conditions = {
         "inlet": (BCType.Dirichlet, inlet),
@@ -939,9 +904,7 @@ def run_taylor_green_problem():
         return ufl.as_vector(u_expr(x, t_end, ufl))
 
     def p_e(x):
-        return (
-            -1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(-4 * t_end / Re)
-        )
+        return -1 / 4 * (ufl.cos(2 * x[0]) + ufl.cos(2 * x[1])) * ufl.exp(-4 * t_end / Re)
 
     # Boundary conditions
     boundary_conditions = {
@@ -1033,10 +996,7 @@ def run_kovasznay_problem():
     # Exact pressure
     def p_e(x, module=ufl):
         return (1 / 2) * (
-            1
-            - module.exp(
-                2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0]
-            )
+            1 - module.exp(2 * (R_e / 2 - module.sqrt(R_e**2 / 4 + 4 * module.pi**2)) * x[0])
         )
 
     # Boundary conditions

@@ -125,9 +125,7 @@ def create_fenics_logo_msh(comm, h):
         logo_curve_1 = factory.addCurveLoop(logo_lines_1)
 
         # Create surfaces
-        square_surface = factory.addPlaneSurface(
-            [square_curve, logo_curve_0, logo_curve_1]
-        )
+        square_surface = factory.addPlaneSurface([square_curve, logo_curve_0, logo_curve_1])
         circle_surface = factory.addPlaneSurface([logo_curve_0])
         logo_surface_1 = factory.addPlaneSurface([logo_curve_1])
 
@@ -135,23 +133,17 @@ def create_fenics_logo_msh(comm, h):
 
         # Add 2D physical groups
         gmsh.model.addPhysicalGroup(2, [square_surface], vol_ids["omega_0"])
-        gmsh.model.addPhysicalGroup(
-            2, [circle_surface, logo_surface_1], vol_ids["omega_1"]
-        )
+        gmsh.model.addPhysicalGroup(2, [circle_surface, logo_surface_1], vol_ids["omega_1"])
 
         # Add 1D physical groups
         gmsh.model.addPhysicalGroup(1, square_lines, bound_ids["gamma"])
-        gmsh.model.addPhysicalGroup(
-            1, logo_lines_0 + logo_lines_1, bound_ids["gamma_i"]
-        )
+        gmsh.model.addPhysicalGroup(1, logo_lines_0 + logo_lines_1, bound_ids["gamma_i"])
 
         # Generate the mesh
         gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    mesh_data = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=d, partitioner=partitioner
-    )
+    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids
 
@@ -200,9 +192,7 @@ def create_box_with_sphere_msh(comm, h):
         gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, ct, ft = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=d, partitioner=partitioner
-    )
+    msh, ct, ft = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return msh, ct, ft, vol_ids, bound_ids
 
@@ -326,9 +316,7 @@ def create_square_with_circle(comm, h, c=0.5, r=0.25):
 
     # Create dolfinx mesh
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
-    )
+    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, surf_ids
 
@@ -405,8 +393,6 @@ def create_divided_square(comm, h):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=2, partitioner=partitioner
-    )
+    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids

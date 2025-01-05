@@ -71,18 +71,16 @@ def solve(
     mu,
 ):
     # Create a sub-mesh of the fluid region
-    submesh_f, sm_f_to_msh = mesh.create_submesh(
-        msh, msh.topology.dim, ct.find(volumes["fluid"])
-    )[:2]
+    submesh_f, sm_f_to_msh = mesh.create_submesh(msh, msh.topology.dim, ct.find(volumes["fluid"]))[
+        :2
+    ]
 
     # Create a facet sub-mesh of the fluid sub-mesh for the HDG Navier-Stokes
     # solver
     facet_mesh_f, fm_f_to_sm_f = hdg_navier_stokes.create_facet_mesh(submesh_f)
 
     # Create function spaces for Navier-Stokes solver
-    V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(
-        submesh_f, facet_mesh_f, scheme, k
-    )
+    V, Q, Vbar, Qbar = hdg_navier_stokes.create_function_spaces(submesh_f, facet_mesh_f, scheme, k)
 
     # H(curl; Ω)-conforming space for magnetic vector potential and electric
     # field
@@ -175,23 +173,18 @@ def solve(
         - nu * inner(outer(u, n), grad(v)) * ds_c(cell_boundaries)
     )
     a_01 = fem.form(-inner(p * ufl.Identity(msh.topology.dim), grad(v)) * dx_c)
-    a_02 = -nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(
-        cell_boundaries
-    ) + nu * inner(outer(ubar, n), grad(v)) * ds_c(cell_boundaries)
+    a_02 = -nu * gamma * inner(outer(ubar, n), outer(v, n)) * ds_c(cell_boundaries) + nu * inner(
+        outer(ubar, n), grad(v)
+    ) * ds_c(cell_boundaries)
     a_03 = fem.form(
-        inner(pbar * ufl.Identity(msh.topology.dim), outer(v, n))
-        * ds_c(cell_boundaries),
+        inner(pbar * ufl.Identity(msh.topology.dim), outer(v, n)) * ds_c(cell_boundaries),
         entity_maps=entity_maps,
     )
-    a_10 = fem.form(
-        inner(u, grad(q)) * dx_c - inner(dot(u, n), q) * ds_c(cell_boundaries)
-    )
-    a_20 = -nu * inner(grad(u), outer(vbar, n)) * ds_c(
-        cell_boundaries
-    ) + nu * gamma * inner(outer(u, n), outer(vbar, n)) * ds_c(cell_boundaries)
-    a_30 = fem.form(
-        inner(dot(u, n), qbar) * ds_c(cell_boundaries), entity_maps=entity_maps
-    )
+    a_10 = fem.form(inner(u, grad(q)) * dx_c - inner(dot(u, n), q) * ds_c(cell_boundaries))
+    a_20 = -nu * inner(grad(u), outer(vbar, n)) * ds_c(cell_boundaries) + nu * gamma * inner(
+        outer(u, n), outer(vbar, n)
+    ) * ds_c(cell_boundaries)
+    a_30 = fem.form(inner(dot(u, n), qbar) * ds_c(cell_boundaries), entity_maps=entity_maps)
     a_23 = fem.form(
         inner(pbar * ufl.Identity(tdim), outer(vbar, n)) * ds_c(cell_boundaries),
         entity_maps=entity_maps,
@@ -215,12 +208,9 @@ def solve(
         a_22 += inner(outer(ubar, lmbda * u_n), outer(vbar, n)) * ds_c(cell_boundaries)
 
     # Add LHS terms from Maxwell's equations
-    a_44 = fem.form(
-        inner(sigma * A / delta_t, phi) * dx + inner(1 / mu * curl(A), curl(phi)) * dx
-    )
+    a_44 = fem.form(inner(sigma * A / delta_t, phi) * dx + inner(1 / mu * curl(A), curl(phi)) * dx)
     a_40 = fem.form(
-        inner(sigma * cross(B_0, u), phi) * dx_c
-        + inner(sigma * cross(curl(A_n), u), phi) * dx_c,
+        inner(sigma * cross(B_0, u), phi) * dx_c + inner(sigma * cross(curl(A_n), u), phi) * dx_c,
         entity_maps={msh: sm_f_to_msh},
     )
     a_04 = fem.form(
@@ -238,9 +228,9 @@ def solve(
         + inner(sigma * cross(u_n, B_0), cross(B_0, v)) * dx_c
     )
     L_1 = inner(fem.Constant(msh, 0.0), q) * dx_c
-    L_2 = inner(
-        fem.Constant(submesh_f, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar
-    ) * ds_c(cell_boundaries)
+    L_2 = inner(fem.Constant(submesh_f, [PETSc.ScalarType(0.0) for i in range(tdim)]), vbar) * ds_c(
+        cell_boundaries
+    )
     L_3 = inner(fem.Constant(facet_mesh_f, PETSc.ScalarType(0.0)), qbar) * dx_f
     L_4 = inner(sigma * A_n / delta_t, phi) * dx
 
@@ -310,9 +300,7 @@ def solve(
     if scheme == Scheme.RW:
         u_vis = fem.Function(V)
     else:
-        V_vis = fem.functionspace(
-            submesh_f, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,))
-        )
+        V_vis = fem.functionspace(submesh_f, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
         u_vis = fem.Function(V_vis)
     u_vis.name = "u"
     u_vis.interpolate(u_n)
@@ -322,9 +310,7 @@ def solve(
     pbar_h.name = "pbar"
 
     # Set-up functions for visualisation (Maxwell problem)
-    X_vis = fem.functionspace(
-        msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,))
-    )
+    X_vis = fem.functionspace(msh, ("Discontinuous Lagrange", k + 1, (msh.geometry.dim,)))
     B_h = B_0 + curl(A_h)
     # B_h = curl(A_h)
     B_expr = fem.Expression(B_h, X_vis.element.interpolation_points())
@@ -359,9 +345,7 @@ def solve(
     for vis_file in vis_files:
         vis_file.write(t)
     u_offset, p_offset, ubar_offset = hdg_navier_stokes.compute_offsets(V, Q, Vbar)
-    pbar_offset = (
-        ubar_offset + Qbar.dofmap.index_map.size_local * Qbar.dofmap.index_map_bs
-    )
+    pbar_offset = ubar_offset + Qbar.dofmap.index_map.size_local * Qbar.dofmap.index_map_bs
     for n in range(num_time_steps):
         t += delta_t.value
         par_print(comm, f"t = {t}")
@@ -540,10 +524,7 @@ if __name__ == "__main__":
         gmsh.model.addPhysicalGroup(2, [45], boundaries["outlet"])
 
         # gmsh.option.setNumber("Mesh.Smoothing", 5)
-        if (
-            cell_type == mesh.CellType.quadrilateral
-            or cell_type == mesh.CellType.hexahedron
-        ):
+        if cell_type == mesh.CellType.quadrilateral or cell_type == mesh.CellType.hexahedron:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
             gmsh.option.setNumber("Mesh.Algorithm", 8)
             # TODO Check what this is doing, it may be making things worse
@@ -554,9 +535,7 @@ if __name__ == "__main__":
         # gmsh.write("msh.msh")
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, ct, ft = gmshio.model_to_mesh(
-        gmsh.model, comm, 0, gdim=3, partitioner=partitioner
-    )
+    msh, ct, ft = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=3, partitioner=partitioner)
     gmsh.finalize()
 
     # Fluid BCs
@@ -570,9 +549,7 @@ if __name__ == "__main__":
         )
 
     def zero(x):
-        return np.vstack(
-            (np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0]))
-        )
+        return np.vstack((np.zeros_like(x[0]), np.zeros_like(x[0]), np.zeros_like(x[0])))
 
     u_bcs = {
         "inlet": (BCType.Dirichlet, inlet),

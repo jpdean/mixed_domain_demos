@@ -25,9 +25,7 @@ def boundary_marker(x):
 # Create mesh
 l_x, l_y = 2.0, 1.0
 n_x, n_y = 16, 8
-msh = mesh.create_rectangle(
-    comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y)
-)
+msh = mesh.create_rectangle(comm=MPI.COMM_WORLD, points=((0.0, 0.0), (l_x, l_y)), n=(n_x, n_y))
 
 # Create sub-mesh of the boundary to define function space for the Lagrange
 # multipiler
@@ -71,11 +69,7 @@ mesh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
 entity_maps = {submesh: mesh_to_submesh}
 
 # Define forms
-a = (
-    inner(u, v) * dx
-    + inner(grad(u), grad(v)) * dx
-    - (inner(lmbda, v) * ds + inner(u, mu) * ds)
-)
+a = inner(u, v) * dx + inner(grad(u), grad(v)) * dx - (inner(lmbda, v) * ds + inner(u, mu) * ds)
 L = inner(f, v) * dx - inner(u_d, mu) * ds
 
 # Extract block structure and compile forms. We provide the entity maps here
