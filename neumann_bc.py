@@ -49,9 +49,10 @@ submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, neumann_boundary_facet
 # Create function spaces
 k = 3  # Polynomial degree
 V = fem.functionspace(msh, ("Lagrange", k))
-W = fem.functionspace(submesh, ("Lagrange", k))
+# Function space for the Neumann boundary condition. Note that this is defined
+# only over the Neumann boundary
+W = fem.functionspace(submesh, ("Lagrange", k))  
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-
 
 # Create integration measure and entity maps
 ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
@@ -64,18 +65,21 @@ msh_to_submesh = np.full(num_facets, -1)
 msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
 entity_maps = {submesh: msh_to_submesh}
 
+# Interpolate the source term and Neumann boundary condition
 f = fem.Function(V)
 f.interpolate(f_expr)
 
 g = fem.Function(W)
 g.interpolate(g_expr)
 
-# Define forms
+# Define forms. Since the Neumann boundary term involves funcriotns defined over
+# different meshes, we must provide entity maps
 a = fem.form(inner(grad(u), grad(v)) * ufl.dx)
 L = fem.form(
     inner(f, v) * ufl.dx + inner(g, v) * ds(boundaries["neumann"]), entity_maps=entity_maps
 )
 
+# Dirichlet boundary condition
 dirichlet_facets = ft.find(boundaries["dirichlet"])
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 u_d = fem.Function(V)
