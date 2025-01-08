@@ -424,9 +424,9 @@ def run_square_problem():
     h = 1 / 16  # Maximum cell diameter
     k = 3  # Polynomial degree
     cell_type = mesh.CellType.quadrilateral
-    nu = 1.0e-6  # Kinematic viscosity
-    num_time_steps = 320
-    t_end = 40
+    nu = 1.0e-3  # Kinematic viscosity
+    num_time_steps = 64
+    t_end = 10
     d = 2
 
     # Create mesh
