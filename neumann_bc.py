@@ -14,33 +14,36 @@ from utils import norm_L2, markers_to_meshtags
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting
 
 
-def dirichlet_bc_marker(x):
-    return np.isclose(x[0], 0.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)
-
-
-def neumann_bc_marker(x):
-    return np.isclose(x[0], 1.0)
-
-
 def u_e_expr(x, module=np):
+    "Expression for the exact solution"
     return module.sin(module.pi * x[0]) * module.sin(module.pi * x[1])
 
 
 def f_expr(x):
+    "Source term"
     return 2 * np.pi**2 * u_e_expr(x)
 
 
 def g_expr(x):
+    "Neumann boundary condition"
     return np.pi * np.cos(np.pi * x[0]) * np.sin(np.pi * x[1])
 
 
-# Create a mesh and a sub-mesh of the Neumann boundary
+# Create a mesh and meshtags for the Dirichlet and Neumann boundaries
 n = 8
 msh = mesh.create_unit_square(MPI.COMM_WORLD, n, n)
+
 tdim = msh.topology.dim
 fdim = tdim - 1
-num_facets = msh.topology.create_entities(fdim)
-neumann_boundary_facets = mesh.locate_entities_boundary(msh, fdim, neumann_bc_marker)
+boundaries = {"dirichlet": 1, "neumann": 2}  # Tags for the boundaries
+markers = [
+    lambda x: np.isclose(x[0], 0.0) | np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0),
+    lambda x: np.isclose(x[0], 1.0),
+]
+ft = markers_to_meshtags(msh, boundaries.values(), markers, fdim)
+
+# Create a submesh of the Neumann boundary
+neumann_boundary_facets = ft.find(boundaries["neumann"])
 submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, neumann_boundary_facets)[:2]
 
 # Create function spaces
@@ -49,8 +52,6 @@ V = fem.functionspace(msh, ("Lagrange", k))
 W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
-boundaries = {"dirichlet": 1, "neumann": 2}
-ft = markers_to_meshtags(msh, boundaries.values(), [dirichlet_bc_marker, neumann_bc_marker], fdim)
 
 # Create integration measure and entity maps
 ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
