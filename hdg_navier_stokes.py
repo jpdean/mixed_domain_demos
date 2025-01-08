@@ -299,13 +299,12 @@ def solve(
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     opts = PETSc.Options()
-    opts["mat_mumps_icntl_14"] = 80  # Increase MUMPS working memory
-    opts[
-        "mat_mumps_icntl_24"
-    ] = 1  # Option to support solving a singular matrix (pressure nullspace)
-    opts[
-        "mat_mumps_icntl_25"
-    ] = 0  # Option to support solving a singular matrix (pressure nullspace)
+    # Increase MUMPS working memory
+    opts["mat_mumps_icntl_14"] = 80
+    # Option to support solving a singular matrix (pressure nullspace)
+    opts["mat_mumps_icntl_24"] = 1
+    # Option to support solving a singular matrix (pressure nullspace)
+    opts["mat_mumps_icntl_25"] = 0
     ksp.setFromOptions()
 
     # Prepare functions for visualisation
