@@ -72,7 +72,7 @@ f.interpolate(f_expr)
 g = fem.Function(W)
 g.interpolate(g_expr)
 
-# Lets write g to file to visualise it
+# Let's write g to file to visualise it
 with io.VTXWriter(msh.comm, "g.bp", g, "BP4") as file:
     file.write(0.0)
 
