@@ -343,6 +343,16 @@ def one_sided_int_entities(msh, facets):
 
 
 def markers_to_meshtags(msh, tags, markers, dim):
+    """
+    Create meshtags from a given set of tags and markers. Tag[i] is is the tag for
+    the part of the domain marked by markers[i].\
+
+    Parameters:
+        msh: The mesh
+        tags: A list of tags
+        markers: A list of markers
+        dim: The dimension of the entities
+    """
     entities = [mesh.locate_entities_boundary(msh, dim, marker) for marker in markers]
     values = [np.full_like(entities, tag) for (tag, entities) in zip(tags, entities)]
     entities = np.hstack(entities, dtype=np.int32)
