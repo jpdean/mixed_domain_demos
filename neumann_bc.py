@@ -72,6 +72,10 @@ f.interpolate(f_expr)
 g = fem.Function(W)
 g.interpolate(g_expr)
 
+# Lets write g to file to visualise it
+with io.VTXWriter(msh.comm, "g.bp", g, "BP4") as file:
+    file.write(0.0)
+
 # Define forms. Since the Neumann boundary term involves funcriotns defined over
 # different meshes, we must provide entity maps
 a = fem.form(inner(grad(u), grad(v)) * ufl.dx)
@@ -107,8 +111,8 @@ ksp.solve(b, u.x.petsc_vec)
 u.x.scatter_forward()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
-    f.write(0.0)
+with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as file:
+    file.write(0.0)
 
 # Compute the error
 x = ufl.SpatialCoordinate(msh)
