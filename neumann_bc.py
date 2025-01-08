@@ -7,7 +7,7 @@
 import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner, div, dot
+from ufl import grad, inner
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2, markers_to_meshtags
@@ -51,7 +51,7 @@ k = 3  # Polynomial degree
 V = fem.functionspace(msh, ("Lagrange", k))
 # Function space for the Neumann boundary condition. Note that this is defined
 # only over the Neumann boundary
-W = fem.functionspace(submesh, ("Lagrange", k))  
+W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
 # Create integration measure and entity maps
