@@ -11,7 +11,7 @@ from ufl import inner, grad, avg, div
 import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
-from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_square_with_circle
 
 
@@ -120,9 +120,14 @@ bc_0 = fem.dirichletbc(u_bc_0, bound_dofs)
 bcs = [bc_0]
 
 # Assemble linear system of equations
-A = assemble_matrix_block(a, bcs=bcs)
+A = assemble_matrix(a, bcs=bcs)
 A.assemble()
-b = assemble_vector_block(L, a, bcs=bcs)
+
+b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
+apply_lifting(b, a, bcs=bcs)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
+set_bc(b, bcs0)
 
 # Set-up solver
 ksp = PETSc.KSP().create(msh.comm)
