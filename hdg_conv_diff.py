@@ -10,7 +10,7 @@ import numpy as np
 from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2, compute_cell_boundary_int_entities
-from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 
 
 def u_e(x):
@@ -128,11 +128,17 @@ dofs = fem.locate_dofs_topological(Vbar, fdim, facet_mesh_boundary_facets)
 u_bc = fem.Function(Vbar)
 u_bc.interpolate(u_e)
 bc = fem.dirichletbc(u_bc, dofs)
+bcs = [bc]
 
 # Assemble system of equations
-A = assemble_matrix_block(a, bcs=[bc])
+A = assemble_matrix(a, bcs=bcs)
 A.assemble()
-b = assemble_vector_block(L, a, bcs=[bc])
+
+b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
+apply_lifting(b, a, bcs=bcs)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
+set_bc(b, bcs0)
 
 # Setup solver
 ksp = PETSc.KSP().create(msh.comm)
