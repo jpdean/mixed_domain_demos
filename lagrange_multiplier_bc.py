@@ -9,7 +9,7 @@ from ufl import grad, inner, div, extract_blocks
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
-from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 
 
 # Marker for the domain boundary
@@ -77,9 +77,10 @@ a = fem.form(extract_blocks(a), entity_maps=entity_maps)
 L = fem.form(extract_blocks(L), entity_maps=entity_maps)
 
 # Assemble matrices
-A = assemble_matrix_block(a)
+A = assemble_matrix(a)
 A.assemble()
-b = assemble_vector_block(L, a)
+b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
 # Solve
 ksp = PETSc.KSP().create(msh.comm)
