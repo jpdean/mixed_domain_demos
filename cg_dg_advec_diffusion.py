@@ -30,11 +30,7 @@ from utils import (
     interface_int_entities,
     interior_facet_int_entities,
 )
-from dolfinx.fem.petsc import (
-    assemble_matrix_block,
-    create_vector_block,
-    assemble_vector_block,
-)
+from dolfinx.fem.petsc import assemble_matrix, create_vector, assemble_vector, apply_lifting, set_bc
 from meshing import create_divided_square
 from poisson_domain_decomp import jump_i, grad_avg_i
 
@@ -207,11 +203,12 @@ u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
 bcs = [bc_1]
+bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
 # Assemble the system of equations
-A = assemble_matrix_block(a, bcs=bcs)
+A = assemble_matrix(a, bcs=bcs)
 A.assemble()
-b = create_vector_block(L)
+b = create_vector(L, kind=PETSc.Vec.Type.MPI)
 
 # Set up solver
 ksp = PETSc.KSP().create(msh.comm)
@@ -233,7 +230,10 @@ for n in range(num_time_steps):
 
     with b.localForm() as b_loc:
         b_loc.set(0.0)
-    assemble_vector_block(b, L, a, bcs=bcs)
+    assemble_vector(b, L)
+    apply_lifting(b, a, bcs=bcs)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    set_bc(b, bcs0)
 
     # Compute solution
     ksp.solve(b, x)
