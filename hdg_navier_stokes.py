@@ -36,7 +36,7 @@ from dolfinx.fem.petsc import (
     create_matrix,
     create_vector,
     apply_lifting,
-    set_bc
+    set_bc,
 )
 
 

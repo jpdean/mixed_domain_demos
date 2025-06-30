@@ -48,7 +48,7 @@ from dolfinx.fem.petsc import (
     assemble_matrix,
     assemble_vector,
     apply_lifting,
-    set_bc
+    set_bc,
 )
 from poisson_domain_decomp import jump_i, grad_avg_i
 
