@@ -31,9 +31,12 @@ from enum import Enum
 import gmsh
 from dolfinx.io import gmshio
 from dolfinx.fem.petsc import (
-    assemble_matrix_block,
-    assemble_vector_block,
-    create_matrix_block,
+    assemble_matrix,
+    assemble_vector,
+    create_matrix,
+    create_vector,
+    apply_lifting,
+    set_bc,
 )
 
 
@@ -283,14 +286,16 @@ def solve(
 
     # Set up matrix
     if solver_type == SolverType.NAVIER_STOKES:
-        A = create_matrix_block(a)
+        A = create_matrix(a)
     else:
-        A = assemble_matrix_block(a, bcs=bcs)
+        A = assemble_matrix(a, bcs=bcs)
         A.assemble()
 
     # Create vectors for RHS and solution
-    b = fem.petsc.create_vector_block(L)
+    b = create_vector(L, kind=PETSc.Vec.Type.MPI)
     x = A.createVecRight()
+
+    bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
     # Configure solver
     ksp = PETSc.KSP().create(msh.comm)
@@ -356,13 +361,16 @@ def solve(
         # Assemble LHS
         if solver_type == SolverType.NAVIER_STOKES:
             A.zeroEntries()
-            assemble_matrix_block(A, a, bcs=bcs)
+            assemble_matrix(A, a, bcs=bcs)
             A.assemble()
 
         # Assemble RHS
         with b.localForm() as b_loc:
             b_loc.set(0)
-        assemble_vector_block(b, L, a, bcs=bcs)
+        assemble_vector(b, L)
+        apply_lifting(b, a, bcs=bcs)
+        b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        set_bc(b, bcs0)
 
         # Compute solution
         ksp.solve(b, x)

@@ -182,24 +182,20 @@ def interface_int_entities(
     (cell, local facet index) pairs) required to assemble mixed domain forms
     over the interface. It assumes there is a domain with two sub-domains,
     domain_0 and domain_1, that have a common interface. Cells in domain_0
-    correspond to the "-" restriction and cells in domain_1 correspond to
+    correspond to the "+" restriction and cells in domain_1 correspond to
     the "-" restriction.
 
     Parameters:
+        msh: the mesh
         interface_facets: A list of facets on the interface
-        domain_0_cells: A list of cells in domain_0
-        domain_1_cells: A list of cells in domain_1
-        c_to_f: The cell to facet connectivity for the domain mesh
-        f_to_c: the facet to cell connectivity for the domain mesh
-        facet_imap: The facet index_map for the domain mesh
         domain_to_domain_0: A map from cells in domain to cells in domain_0
         domain_to_domain_1: A map from cells in domain to cells in domain_1
 
     Returns:
         A tuple containing:
             1) The integration entities
-            2) A modified map (see HACK below)
-            3) A modified map (see HACK below)
+            2) A modified map from domain to domain_0 (see HACK below)
+            3) A modified map from domain to domain_1 (see HACK below)
     """
     # Create measure for integration. Assign the first (cell, local facet)
     # pair to the cell in domain_0, corresponding to the "+" restriction.
@@ -221,7 +217,7 @@ def interface_int_entities(
         if facet < facet_imap.size_local:
             cells = f_to_c.links(facet)
             assert len(cells) == 2
-            if domain_to_domain_0[cells[0]] > 0:
+            if domain_to_domain_0[cells[0]] >= 0:
                 cell_plus = cells[0]
                 cell_minus = cells[1]
             else:

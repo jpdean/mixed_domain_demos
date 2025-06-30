@@ -12,7 +12,7 @@ from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2, one_sided_int_entities
-from dolfinx.fem.petsc import assemble_matrix_block, assemble_vector_block
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
 
 
@@ -94,11 +94,16 @@ a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 L = fem.form(ufl.extract_blocks(L))
 
 # Assemble matrix
-A = assemble_matrix_block(a, bcs=[bc])
+bcs = [bc]
+A = assemble_matrix(a, bcs=bcs)
 A.assemble()
 
 # Assemble vector
-b = assemble_vector_block(L, a, bcs=[bc])
+b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
+apply_lifting(b, a, bcs=bcs)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
+set_bc(b, bcs0)
 
 # Configure solver
 ksp = PETSc.KSP().create(msh.comm)

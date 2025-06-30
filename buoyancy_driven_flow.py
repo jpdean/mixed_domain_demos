@@ -43,10 +43,12 @@ from utils import (
     interior_facet_int_entities,
 )
 from dolfinx.fem.petsc import (
-    create_matrix_block,
-    create_vector_block,
-    assemble_matrix_block,
-    assemble_vector_block,
+    create_matrix,
+    create_vector,
+    assemble_matrix,
+    assemble_vector,
+    apply_lifting,
+    set_bc,
 )
 from poisson_domain_decomp import jump_i, grad_avg_i
 
@@ -470,16 +472,16 @@ a_T = fem.form(extract_blocks(a_T), entity_maps=entity_maps)
 L_T = fem.form(extract_blocks(L_T), entity_maps=entity_maps)
 
 # Assemble matrix and vector for thermal problem
-A_T = create_matrix_block(a_T)
-b_T = create_vector_block(L_T)
+A_T = create_matrix(a_T)
+b_T = create_vector(L_T, kind=PETSc.Vec.Type.MPI)
 
 # Set-up matrix and vectors for fluid problem
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
-    A = create_matrix_block(a)
+    A = create_matrix(a)
 else:
-    A = assemble_matrix_block(a, bcs=bcs)
+    A = assemble_matrix(a, bcs=bcs)
     A.assemble()
-b = create_vector_block(L)
+b = create_vector(L, kind=PETSc.Vec.Type.MPI)
 x = A.createVecRight()
 
 # Set-up solver for thermal problem
@@ -500,6 +502,8 @@ opts = PETSc.Options()
 opts["mat_mumps_icntl_6"] = 2
 opts["mat_mumps_icntl_14"] = 100
 ksp.setFromOptions()
+
+bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
 # Set-up functions for visualisation
 if scheme == hdg_navier_stokes.Scheme.RW:
@@ -539,12 +543,15 @@ for n in range(num_time_steps):
     # Assemble Navier-Stokes problem
     if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
         A.zeroEntries()
-        assemble_matrix_block(A, a, bcs=bcs)
+        assemble_matrix(A, a, bcs=bcs)
         A.assemble()
 
     with b.localForm() as b_loc:
         b_loc.set(0)
-    assemble_vector_block(b, L, a, bcs=bcs)
+    assemble_vector(b, L)
+    apply_lifting(b, a, bcs=bcs)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    set_bc(b, bcs0)
 
     # Compute Navier-Stokes solution
     ksp.solve(b, x)
@@ -561,12 +568,15 @@ for n in range(num_time_steps):
 
     # Assemble thermal problem
     A_T.zeroEntries()
-    assemble_matrix_block(A_T, a_T)
+    assemble_matrix(A_T, a_T)
     A_T.assemble()
 
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
-    assemble_vector_block(b_T, L_T, a_T)
+    assemble_vector(b_T, L_T)
+    apply_lifting(b_T, a_T, bcs=bcs)
+    b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    set_bc(b_T, bcs0)
 
     # Solver thermal problem
     ksp_T.solve(b_T, x_T)
