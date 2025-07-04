@@ -38,6 +38,7 @@ from dolfinx.fem.petsc import (
     apply_lifting,
     set_bc,
 )
+from dolfinx.cpp.mesh import EntityMap
 
 
 class SolverType(Enum):
@@ -139,14 +140,12 @@ def create_forms(
         metadata={"quadrature_degree": quad_deg},
     )
 
-    # We write the mixed domain forms as integrals over msh. Hence, we must
-    # provide a map from facets in msh to cells in facet_mesh. This is the
-    # 'inverse' of facet_mesh_to_mesh, which we compute as follows:
-    facet_imap = msh.topology.index_map(fdim)
-    num_facets = facet_imap.size_local + facet_imap.num_ghosts
-    msh_to_facet_mesh = np.full(num_facets, -1)
-    msh_to_facet_mesh[facet_mesh_to_msh] = np.arange(len(facet_mesh_to_msh))
-    entity_maps = {facet_mesh: msh_to_facet_mesh}
+    # We write the mixed domain forms as integrals over `msh`. Hence, we must provide
+    # maps relating entities in msh to other meshes in the form (in this case just
+    # `facet_mesh`)
+    entity_maps = [
+        EntityMap(msh.topology._cpp_object, facet_mesh.topology._cpp_object, facet_mesh_to_msh)
+    ]
 
     # Define trial and test functitons
     W = ufl.MixedFunctionSpace(V, Q, Vbar, Qbar)
@@ -205,7 +204,9 @@ def create_forms(
             bc_func = fem.Function(Vbar)
             bc_func.interpolate(bc_expr)
             bc_funcs.append((bc_func, bc_expr))
-            facets = msh_to_facet_mesh[mt.indices[mt.values == id]]
+            facets = entity_maps[0].map_entities(
+                mt.indices[mt.values == id], facet_mesh.topology._cpp_object
+            )
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
             L += inner(dot(bc_func, n), qbar) * ds_c(id)
