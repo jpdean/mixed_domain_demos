@@ -13,6 +13,7 @@ from petsc4py import PETSc
 from dolfinx.mesh import meshtags, exterior_facet_indices
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 from meshing import create_dome_mesh
+from dolfinx.cpp.mesh import EntityMap
 
 
 # Create a mesh
@@ -53,15 +54,15 @@ u_sm_0, v_sm_0 = ufl.TrialFunction(V_sm_0), ufl.TestFunction(V_sm_0)
 f_sm_0 = fem.Function(V_sm_0)
 f_sm_0.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
-# We use submesh_0 as the integration domain mesh, so we must provide a
-# map from facets in submesh_0 to cells in submesh_1. This is simply
-# the "inverse" of sm_1_to_sm_0
-facet_imap_sm_0 = submesh_0.topology.index_map(submesh_0_fdim)
-num_facets_sm_0 = facet_imap_sm_0.size_local + facet_imap_sm_0.num_ghosts
-sm_0_to_sm_1 = np.full(num_facets_sm_0, -1)
-sm_0_to_sm_1[sm_1_to_sm_0] = np.arange(len(sm_1_to_sm_0))
-entity_maps_sm_0 = {submesh_1: sm_0_to_sm_1}
+# Create integration measure taking `submesh_0` to be the integration domain mesh
 ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
+
+# Since our form involves different meshes, we must provide a map from the
+# integration domain mesh (`submesh_0`) to the other meshes in the form (here
+# just `submesh_1`)
+entity_maps_sm_0 = [
+    EntityMap(submesh_0.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_sm_0)
+]
 
 # Define forms using the function interpolated on the concentric circle mesh
 # as the Neumann boundary condition
@@ -108,12 +109,7 @@ f_msh = fem.Function(V_msh)
 f_msh.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2]))
 
 # Create entity maps
-num_facets_msh = (
-    msh.topology.index_map(msh_fdim).size_local + msh.topology.index_map(msh_fdim).num_ghosts
-)
-msh_to_sm_0 = np.full(num_facets_msh, -1)
-msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-entity_maps_msh = {submesh_0: msh_to_sm_0}
+entity_maps_msh = [EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh)]
 
 # Create meshtags to mark the Neumann boundary
 mt = meshtags(msh, msh_fdim, submesh_0_entities, np.ones_like(submesh_0_entities))
