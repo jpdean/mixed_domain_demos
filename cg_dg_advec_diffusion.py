@@ -32,7 +32,8 @@ from utils import (
 )
 from dolfinx.fem.petsc import assemble_matrix, create_vector, assemble_vector, apply_lifting, set_bc
 from meshing import create_divided_square
-from poisson_domain_decomp import jump_i, grad_avg_i
+from utils import jump_i, grad_avg_i
+from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e(x, module=np):
@@ -55,8 +56,10 @@ msh, ct, ft, vol_ids, bound_ids = create_divided_square(comm, h)
 # Create sub-meshes of omega_0 and omega_1 so that we can create
 # different function spaces over each part of the domain
 tdim = msh.topology.dim
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_0"]))[:2]
-submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1"]))[:2]
+domain_0_cells = ct.find(vol_ids["omega_0"])
+domain_1_cells = ct.find(vol_ids["omega_1"])
+submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
+submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
 
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Discontinuous Lagrange", k_0))
@@ -67,22 +70,19 @@ W = ufl.MixedFunctionSpace(V_0, V_1)
 u = ufl.TrialFunctions(W)
 v = ufl.TestFunctions(W)
 
-# We use msh as the integration domain, so we require maps from
-# cells in msh to cells in submesh_0 and submesh_1
-cell_imap = msh.topology.index_map(tdim)
-num_cells = cell_imap.size_local + cell_imap.num_ghosts
-msh_to_sm_0 = np.full(num_cells, -1)
-msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-msh_to_sm_1 = np.full(num_cells, -1)
-msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
+# We use msh as the integration domain, so we require maps relating cells
+# in msh to cells in submesh_0 and submesh_1. These can be created
+# as follows:
+entity_maps = [
+    EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh),
+    EntityMap(msh.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_msh),
+]
 
-# Create integration entities for the interface integral
+# Create interface integration entities. We provide a marker to identify which cells
+# correspond to the "+" restriction and which correspond to the "-" restriction
+marker = ct.values == vol_ids["omega_0"]
 interface_facets = ft.find(bound_ids["interface"])
-domain_0_cells = ct.find(vol_ids["omega_0"])
-domain_1_cells = ct.find(vol_ids["omega_1"])
-interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
-    msh, interface_facets, msh_to_sm_0, msh_to_sm_1
-)
+interface_entities = interface_int_entities(msh, interface_facets, marker)
 
 # Compute integration entities for boundary terms
 boundary_entities = [
@@ -164,7 +164,6 @@ a += (
 )
 
 # Compile LHS forms
-entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
 a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
 
 # Forms for the right-hand side
