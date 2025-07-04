@@ -12,6 +12,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2, markers_to_meshtags
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting
+from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e_expr(x, module=np):
@@ -54,17 +55,6 @@ V = fem.functionspace(msh, ("Lagrange", k))
 W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
 
-# Create integration measure and entity maps
-ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
-# We take msh to be the integration domain, so we must provide a map from
-# facets in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
-msh_to_submesh = np.full(num_facets, -1)
-msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
-entity_maps = {submesh: msh_to_submesh}
-
 # Interpolate the source term and Neumann boundary condition
 f = fem.Function(V)
 f.interpolate(f_expr)
@@ -75,6 +65,14 @@ g.interpolate(g_expr)
 # Let's write g to file to visualise it
 with io.VTXWriter(msh.comm, "g.bp", g, "BP4") as file:
     file.write(0.0)
+
+# Create integration measure, taking mesh to be the integration domain
+ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
+
+# Since our boundary data is defined over a different mesh, we must create a map
+# relating entities in the integration domain mesh (`msh`) to the mesh our
+# boundary data is defined over (`submesh`)
+entity_maps = [EntityMap(msh.topology._cpp_object, submesh.topology._cpp_object, submesh_to_mesh)]
 
 # Define forms. Since the Neumann boundary term involves funcriotns defined over
 # different meshes, we must provide entity maps
