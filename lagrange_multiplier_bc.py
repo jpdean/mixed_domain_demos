@@ -10,6 +10,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.cpp.mesh import EntityMap
 
 
 # Marker for the domain boundary
@@ -59,14 +60,10 @@ u_d = u_e
 dx = ufl.Measure("dx", domain=msh)
 ds = ufl.Measure("ds", domain=msh)
 
-# Since the integration domain is msh, we must provide a map from facets
-# in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh and can be computed as follows:
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
-mesh_to_submesh = np.full(num_facets, -1)
-mesh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
-entity_maps = {submesh: mesh_to_submesh}
+# Since our form involves multiple meshes, we need to provide maps relating
+# the integration domain mesh (`msh`) to the other meshes in the form (just
+# `submesh` here)
+entity_maps = [EntityMap(msh.topology._cpp_object, submesh.topology._cpp_object, submesh_to_mesh)]
 
 # Define forms
 a = inner(u, v) * dx + inner(grad(u), grad(v)) * dx - (inner(lmbda, v) * ds + inner(u, mu) * ds)
