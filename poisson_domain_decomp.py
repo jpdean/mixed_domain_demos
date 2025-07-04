@@ -57,10 +57,8 @@ entity_maps = [
 fdim = tdim - 1
 interface_facets = ft.find(surf_ids["interface"])
 
-# Create interface integration entities and modify msh_to_sm maps
-# cell_imap = msh.topology.index_map(tdim)
-# num_cells = cell_imap.size_local + cell_imap.num_ghosts
-# marker = np.array()
+# Create interface integration entities. We provide a marker to identify which cells
+# correspond to the "+" restriction and which correspond to the "-" restriction
 marker = ct.values == vol_ids["omega_0"]
 interface_entities = interface_int_entities(msh, interface_facets, marker)
 
