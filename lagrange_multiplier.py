@@ -14,6 +14,7 @@ from petsc4py import PETSc
 from utils import norm_L2, one_sided_int_entities
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
+from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e(x):
@@ -59,14 +60,10 @@ dirichlet_facets = ft.find(bound_ids["gamma"])
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
-# We take msh to be the integration domain mesh, so we must provide a map
-# from facets in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh and can be computed as follows.
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
-msh_to_submesh = np.full(num_facets, -1)
-msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
-entity_maps = {submesh: msh_to_submesh}
+# We take `msh`` to be the integration domain mesh (we will pass this mesh the
+# domain when creating measures). We must provide entity maps relating this
+# mesh to the other meshes in the form (here just `submesh`)
+entity_maps = [EntityMap(msh.topology._cpp_object, submesh.topology._cpp_object, submesh_to_mesh)]
 
 # Create integration measure for the interface terms. We specify the facets
 # on gamma_i, which are identified as (cell, local facet index) pairs
