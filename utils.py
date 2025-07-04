@@ -171,36 +171,20 @@ class TimeDependentExpression:
         return self.expression(x, self.t)
 
 
-def interface_int_entities(
-    msh,
-    interface_facets,
-    domain_to_domain_0,
-    domain_to_domain_1,
-):
+def interface_int_entities(msh, interface_facets, marker):
     """
-    This function computes the integration entities (as a list of pairs of
-    (cell, local facet index) pairs) required to assemble mixed domain forms
-    over the interface. It assumes there is a domain with two sub-domains,
-    domain_0 and domain_1, that have a common interface. Cells in domain_0
-    correspond to the "+" restriction and cells in domain_1 correspond to
-    the "-" restriction.
+    This helper function computes the integration entities for interior facet
+    integrals (i.e. a list of (cell_0, local_facet_0, cell_1, local_facet_1))
+    over an interface. The integration entities are ordered consistently such
+    that cells for which `marker[cell] != 0` correspond to the "+" restriction,
+    and cells for which `marker[cell] == 0` correspond to the "-" restriction.
 
     Parameters:
         msh: the mesh
-        interface_facets: A list of facets on the interface
-        domain_to_domain_0: A map from cells in domain to cells in domain_0
-        domain_to_domain_1: A map from cells in domain to cells in domain_1
-
-    Returns:
-        A tuple containing:
-            1) The integration entities
-            2) A modified map from domain to domain_0 (see HACK below)
-            3) A modified map from domain to domain_1 (see HACK below)
+        interface_facets: Facet indices of interior facets on an interface
+        marker: If `marker[cell] != 0`, then that cell corresponds to a "+"
+            restriction. Otherwise, it corresponds to a negative restriction.
     """
-    # Create measure for integration. Assign the first (cell, local facet)
-    # pair to the cell in domain_0, corresponding to the "+" restriction.
-    # Assign the second pair to the domain_1 cell, corresponding to the "-"
-    # restriction.
     tdim = msh.topology.dim
     fdim = tdim - 1
     msh.topology.create_connectivity(tdim, fdim)
@@ -208,44 +192,24 @@ def interface_int_entities(
     facet_imap = msh.topology.index_map(fdim)
     c_to_f = msh.topology.connectivity(tdim, fdim)
     f_to_c = msh.topology.connectivity(fdim, tdim)
-    # FIXME This can be done more efficiently
+
     interface_entities = []
-    domain_to_domain_0_new = np.array(domain_to_domain_0)
-    domain_to_domain_1_new = np.array(domain_to_domain_1)
     for facet in interface_facets:
         # Check if this facet is owned
         if facet < facet_imap.size_local:
             cells = f_to_c.links(facet)
             assert len(cells) == 2
-            if domain_to_domain_0[cells[0]] >= 0:
-                cell_plus = cells[0]
-                cell_minus = cells[1]
+            if marker[cells[0]] == 0:
+                cell_plus, cell_minus = cells[1], cells[0]
             else:
-                cell_plus = cells[1]
-                cell_minus = cells[0]
-            assert domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0
-            assert domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0
+                cell_plus, cell_minus = cells[0], cells[1]
 
             local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
             local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
 
             interface_entities.extend([cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
-            # FIXME HACK cell_minus does not exist in the left submesh, so it
-            # will be mapped to index -1. This is problematic for the
-            # assembler, which assumes it is possible to get the full macro
-            # dofmap for the trial and test functions, despite the restriction
-            # meaning we don't need the non-existant dofs. To fix this, we just
-            # map cell_minus to the cell corresponding to cell plus. This will
-            # just add zeros to the assembled system, since there are no
-            # u("-") terms. Could map this to any cell in the submesh, but
-            # I think using the cell on the other side of the facet means a
-            # facet space coefficient could be used
-            domain_to_domain_0_new[cell_minus] = domain_to_domain_0[cell_plus]
-            # Same hack for the right submesh
-            domain_to_domain_1_new[cell_plus] = domain_to_domain_1[cell_minus]
-
-    return interface_entities, domain_to_domain_0_new, domain_to_domain_1_new
+    return interface_entities
 
 
 def interior_facet_int_entities(msh, cell_map):
@@ -355,3 +319,13 @@ def markers_to_meshtags(msh, tags, markers, dim):
     values = np.hstack(values, dtype=np.intc)
     perm = np.argsort(entities)
     return mesh.meshtags(msh, dim, entities[perm], values[perm])
+
+
+def jump_i(v, n):
+    return v[0]("+") * n("+") + v[1]("-") * n("-")
+
+
+def grad_avg_i(v, kappa):
+    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * ufl.grad(v[0]("+")) + kappa[0] / (
+        kappa[0] + kappa[1]
+    ) * kappa[1] * ufl.grad(v[1]("-"))
