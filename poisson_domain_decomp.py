@@ -13,6 +13,8 @@ from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_square_with_circle
+from dolfinx.cpp.mesh import EntityMap
+from utils import jump_i, grad_avg_i
 
 
 def u_e(x, module=np):
@@ -29,8 +31,10 @@ k_1 = 3  # Polynomial degree in omega_1
 # Create mesh and sub-meshes
 msh, ct, ft, vol_ids, surf_ids = create_square_with_circle(comm, h)
 tdim = msh.topology.dim
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_0"]))[:2]
-submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1"]))[:2]
+domain_0_cells = ct.find(vol_ids["omega_0"])
+domain_1_cells = ct.find(vol_ids["omega_1"])
+submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
+submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
 
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Lagrange", k_0))
@@ -41,29 +45,24 @@ W = ufl.MixedFunctionSpace(V_0, V_1)
 u = ufl.TrialFunctions(W)
 v = ufl.TestFunctions(W)
 
-# We use msh as the integration domain, so we require maps from cells
+# We use msh as the integration domain, so we require maps relating cells
 # in msh to cells in submesh_0 and submesh_1. These can be created
 # as follows:
-cell_imap = msh.topology.index_map(tdim)
-num_cells = cell_imap.size_local + cell_imap.num_ghosts
-msh_to_sm_0 = np.full(num_cells, -1)
-msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-msh_to_sm_1 = np.full(num_cells, -1)
-msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
+entity_maps = [
+    EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh),
+    EntityMap(msh.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_msh),
+]
 
 # Compute integration entities for the interface integral
 fdim = tdim - 1
 interface_facets = ft.find(surf_ids["interface"])
-domain_0_cells = ct.find(vol_ids["omega_0"])
-domain_1_cells = ct.find(vol_ids["omega_1"])
 
 # Create interface integration entities and modify msh_to_sm maps
-interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
-    msh, interface_facets, msh_to_sm_0, msh_to_sm_1
-)
-
-# Create entity maps using the modified msh_to_sm maps
-entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
+# cell_imap = msh.topology.index_map(tdim)
+# num_cells = cell_imap.size_local + cell_imap.num_ghosts
+# marker = np.array()
+marker = ct.values == vol_ids["omega_0"]
+interface_entities = interface_int_entities(msh, interface_facets, marker)
 
 # Create integration measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -77,16 +76,6 @@ kappa = [1.0 + 0.1 * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]) for _ in ra
 gamma = 10 * 2 * kappa[0] * kappa[1] / (kappa[0] + kappa[1])
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
-
-
-def jump_i(v, n):
-    return v[0]("+") * n("+") + v[1]("-") * n("-")
-
-
-def grad_avg_i(v, kappa):
-    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * grad(v[0]("+")) + kappa[0] / (
-        kappa[0] + kappa[1]
-    ) * kappa[1] * grad(v[1]("-"))
 
 
 a = (
