@@ -77,7 +77,6 @@ gamma = 10 * 2 * kappa[0] * kappa[1] / (kappa[0] + kappa[1])
 h = ufl.CellDiameter(msh)
 n = ufl.FacetNormal(msh)
 
-
 a = (
     inner(kappa[0] * grad(u[0]), grad(v[0])) * dx(vol_ids["omega_0"])
     + inner(kappa[1] * grad(u[1]), grad(v[1])) * dx(vol_ids["omega_1"])
