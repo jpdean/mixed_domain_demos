@@ -50,7 +50,8 @@ from dolfinx.fem.petsc import (
     apply_lifting,
     set_bc,
 )
-from poisson_domain_decomp import jump_i, grad_avg_i
+from utils import jump_i, grad_avg_i
+from dolfinx.cpp.mesh import EntityMap
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -363,24 +364,18 @@ a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
 T = TrialFunctions(W)
 w = TestFunctions(W)
 
-# Create entity maps for the thermal problem. Since we take msh to be the
-# integration domain, we must create maps from cells in msh to cells in
-# submesh_f
-cell_imap = msh.topology.index_map(tdim)
-num_cells = cell_imap.size_local + cell_imap.num_ghosts
-msh_to_sm_f = np.full(num_cells, -1)
-msh_to_sm_f[sm_f_to_msh] = np.arange(len(sm_f_to_msh))
-msh_to_sm_s = np.full(num_cells, -1)
-msh_to_sm_s[sm_s_to_msh] = np.arange(len(sm_s_to_msh))
+# Create entity maps for the thermal problem. Since we take `msh`` to be the
+# integration domain, we must create maps relating cells in `msh`` to cells in
+# submesh_f and submesh_s
+entity_maps = [
+    EntityMap(msh.topology._cpp_object, submesh_f.topology._cpp_object, sm_f_to_msh),
+    EntityMap(msh.topology._cpp_object, submesh_s.topology._cpp_object, sm_s_to_msh),
+]
 
 # Create integration entities for the interface integral
 interface_facets = ft.find(boundary_id["obstacle"])
-(
-    obstacle_facet_entities,
-    msh_to_sm_f,
-    msh_to_sm_s,
-) = interface_int_entities(msh, interface_facets, msh_to_sm_f, msh_to_sm_s)
-entity_maps = {submesh_f: msh_to_sm_f, submesh_s: msh_to_sm_s}
+marker = ct.values == volume_id["fluid"]
+obstacle_facet_entities = interface_int_entities(msh, interface_facets, marker)
 
 # Create integration entities for the interior facet integral
 fluid_int_facet_entities = interior_facet_int_entities(submesh_f, sm_f_to_msh)
