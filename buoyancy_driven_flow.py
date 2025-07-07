@@ -51,7 +51,6 @@ from dolfinx.fem.petsc import (
     set_bc,
 )
 from utils import jump_i, grad_avg_i
-from dolfinx.cpp.mesh import EntityMap
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
@@ -368,8 +367,8 @@ w = TestFunctions(W)
 # integration domain, we must create maps relating cells in `msh`` to cells in
 # submesh_f and submesh_s
 entity_maps = [
-    EntityMap(msh.topology._cpp_object, submesh_f.topology._cpp_object, sm_f_to_msh),
-    EntityMap(msh.topology._cpp_object, submesh_s.topology._cpp_object, sm_s_to_msh),
+    mesh.entity_map(msh.topology, submesh_f.topology, sm_f_to_msh),
+    mesh.entity_map(msh.topology, submesh_s.topology, sm_s_to_msh),
 ]
 
 # Create integration entities for the interface integral

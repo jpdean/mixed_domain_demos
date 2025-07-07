@@ -33,7 +33,6 @@ from utils import (
 from dolfinx.fem.petsc import assemble_matrix, create_vector, assemble_vector, apply_lifting, set_bc
 from meshing import create_divided_square
 from utils import jump_i, grad_avg_i
-from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e(x, module=np):
@@ -74,8 +73,8 @@ v = ufl.TestFunctions(W)
 # in msh to cells in submesh_0 and submesh_1. These can be created
 # as follows:
 entity_maps = [
-    EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh),
-    EntityMap(msh.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_msh),
+    mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh),
+    mesh.entity_map(msh.topology, submesh_1.topology, sm_1_to_msh),
 ]
 
 # Create interface integration entities. We provide a marker to identify which cells

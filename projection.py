@@ -8,7 +8,6 @@ import numpy as np
 import ufl
 from petsc4py import PETSc
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector
-from dolfinx.cpp.mesh import EntityMap
 
 # Create a mesh
 comm = MPI.COMM_WORLD
@@ -36,7 +35,7 @@ submsh, sm_to_msh = mesh.create_submesh(msh, fdim, facets)[:2]
 # We take msh to be the integration domain (we will pass this mess as the domain
 # when creating the measure). We need to provide entity maps relating entities in
 # `msh` to each other mesh in the form (here just `submsh`)
-entity_maps = [EntityMap(msh.topology._cpp_object, submsh.topology._cpp_object, sm_to_msh)]
+entity_maps = [mesh.entity_map(msh.topology, submsh.topology, sm_to_msh)]
 
 # Create function space on the boundary
 Vbar = fem.functionspace(submsh, ("Lagrange", 1))

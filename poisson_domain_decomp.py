@@ -13,7 +13,6 @@ from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_square_with_circle
-from dolfinx.cpp.mesh import EntityMap
 from utils import jump_i, grad_avg_i
 
 
@@ -49,8 +48,8 @@ v = ufl.TestFunctions(W)
 # in msh to cells in submesh_0 and submesh_1. These can be created
 # as follows:
 entity_maps = [
-    EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh),
-    EntityMap(msh.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_msh),
+    mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh),
+    mesh.entity_map(msh.topology, submesh_1.topology, sm_1_to_msh),
 ]
 
 # Compute integration entities for the interface integral

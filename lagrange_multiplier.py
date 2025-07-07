@@ -14,7 +14,6 @@ from petsc4py import PETSc
 from utils import norm_L2, one_sided_int_entities
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
-from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e(x):
@@ -63,7 +62,7 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 # We take `msh`` to be the integration domain mesh (we will pass this mesh the
 # domain when creating measures). We must provide entity maps relating this
 # mesh to the other meshes in the form (here just `submesh`)
-entity_maps = [EntityMap(msh.topology._cpp_object, submesh.topology._cpp_object, submesh_to_mesh)]
+entity_maps = [mesh.entity_map(msh.topology, submesh.topology, submesh_to_mesh)]
 
 # Create integration measure for the interface terms. We specify the facets
 # on gamma_i, which are identified as (cell, local facet index) pairs

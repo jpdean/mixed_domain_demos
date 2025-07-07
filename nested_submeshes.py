@@ -13,7 +13,6 @@ from petsc4py import PETSc
 from dolfinx.mesh import meshtags, exterior_facet_indices
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector
 from meshing import create_dome_mesh
-from dolfinx.cpp.mesh import EntityMap
 
 
 # Create a mesh
@@ -61,7 +60,7 @@ ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 # integration domain mesh (`submesh_0`) to the other meshes in the form (here
 # just `submesh_1`)
 entity_maps_sm_0 = [
-    EntityMap(submesh_0.topology._cpp_object, submesh_1.topology._cpp_object, sm_1_to_sm_0)
+    mesh.entity_map(submesh_0.topology, submesh_1.topology, sm_1_to_sm_0)
 ]
 
 # Define forms using the function interpolated on the concentric circle mesh
@@ -109,7 +108,7 @@ f_msh = fem.Function(V_msh)
 f_msh.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2]))
 
 # Create entity maps
-entity_maps_msh = [EntityMap(msh.topology._cpp_object, submesh_0.topology._cpp_object, sm_0_to_msh)]
+entity_maps_msh = [mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh)]
 
 # Create meshtags to mark the Neumann boundary
 mt = meshtags(msh, msh_fdim, submesh_0_entities, np.ones_like(submesh_0_entities))

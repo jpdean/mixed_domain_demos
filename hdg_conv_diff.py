@@ -11,7 +11,6 @@ from petsc4py import PETSc
 from dolfinx.cpp.mesh import cell_num_entities
 from utils import norm_L2, compute_cell_boundary_int_entities
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
-from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e(x):
@@ -74,7 +73,7 @@ dx_f = ufl.Measure("dx", domain=facet_mesh)
 # Create entity maps. We take msh to be the integration domain, so we must
 # provide a map relating entities in `msh` to entities in `facet_mesh`
 entity_maps = [
-    EntityMap(msh.topology._cpp_object, facet_mesh.topology._cpp_object, facet_mesh_to_msh)
+    mesh.entity_map(msh.topology, facet_mesh.topology, facet_mesh_to_msh)
 ]
 
 # Define finite element forms

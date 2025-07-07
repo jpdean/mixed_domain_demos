@@ -12,7 +12,6 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2, markers_to_meshtags
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting
-from dolfinx.cpp.mesh import EntityMap
 
 
 def u_e_expr(x, module=np):
@@ -72,7 +71,7 @@ ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
 # Since our boundary data is defined over a different mesh, we must create a map
 # relating entities in the integration domain mesh (`msh`) to the mesh our
 # boundary data is defined over (`submesh`)
-entity_maps = [EntityMap(msh.topology._cpp_object, submesh.topology._cpp_object, submesh_to_mesh)]
+entity_maps = [mesh.entity_map(msh.topology, submesh.topology, submesh_to_mesh)]
 
 # Define forms. Since the Neumann boundary term involves funcriotns defined over
 # different meshes, we must provide entity maps

@@ -38,7 +38,6 @@ from dolfinx.fem.petsc import (
     apply_lifting,
     set_bc,
 )
-from dolfinx.cpp.mesh import EntityMap
 
 
 class SolverType(Enum):
@@ -144,7 +143,7 @@ def create_forms(
     # maps relating entities in msh to other meshes in the form (in this case just
     # `facet_mesh`)
     entity_maps = [
-        EntityMap(msh.topology._cpp_object, facet_mesh.topology._cpp_object, facet_mesh_to_msh)
+        mesh.entity_map(msh.topology, facet_mesh.topology, facet_mesh_to_msh)
     ]
 
     # Define trial and test functitons
