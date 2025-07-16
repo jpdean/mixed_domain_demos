@@ -23,7 +23,7 @@ msh = create_dome_mesh(comm, h)
 # Create a sub-mesh of part of the boundary of msh to get a disk
 msh_fdim = msh.topology.dim - 1
 submesh_0_entities = mesh.locate_entities_boundary(msh, msh_fdim, lambda x: np.isclose(x[2], 0.0))
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, msh_fdim, submesh_0_entities)[0:2]
+submesh_0, sm_0_emap = mesh.create_submesh(msh, msh_fdim, submesh_0_entities)[0:2]
 
 # Create a sub-mesh of the boundary of submesh_0 to get concentric circles
 submesh_0_tdim = submesh_0.topology.dim
@@ -31,7 +31,7 @@ submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
 submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, sm_1_to_sm_0 = mesh.create_submesh(submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
+submesh_1, sm_1_emap = mesh.create_submesh(submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a function space on submesh_1 and interpolate a function
 k = 2  # Polynomial degree
@@ -59,9 +59,7 @@ ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
 # Since our form involves different meshes, we must provide a map from the
 # integration domain mesh (`submesh_0`) to the other meshes in the form (here
 # just `submesh_1`)
-entity_maps_sm_0 = [
-    mesh.entity_map(submesh_0.topology, submesh_1.topology, sm_1_to_sm_0)
-]
+entity_maps_sm_0 = [sm_1_emap]
 
 # Define forms using the function interpolated on the concentric circle mesh
 # as the Neumann boundary condition
@@ -108,7 +106,7 @@ f_msh = fem.Function(V_msh)
 f_msh.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2]))
 
 # Create entity maps
-entity_maps_msh = [mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh)]
+entity_maps_msh = [sm_0_emap]
 
 # Create meshtags to mark the Neumann boundary
 mt = meshtags(msh, msh_fdim, submesh_0_entities, np.ones_like(submesh_0_entities))
