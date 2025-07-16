@@ -30,12 +30,12 @@ facets = mesh.locate_entities_boundary(
     | np.isclose(x[1], 0.0)
     | np.isclose(x[1], 1.0),
 )
-submsh, sm_to_msh = mesh.create_submesh(msh, fdim, facets)[:2]
+submsh, sm_emap = mesh.create_submesh(msh, fdim, facets)[:2]
 
 # We take msh to be the integration domain (we will pass this mess as the domain
 # when creating the measure). We need to provide entity maps relating entities in
 # `msh` to each other mesh in the form (here just `submsh`)
-entity_maps = [mesh.entity_map(msh.topology, submsh.topology, sm_to_msh)]
+entity_maps = [sm_emap]
 
 # Create function space on the boundary
 Vbar = fem.functionspace(submsh, ("Lagrange", 1))
