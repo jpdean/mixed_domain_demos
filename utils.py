@@ -219,7 +219,9 @@ def interior_facet_int_entities(msh, cell_map):
 
     Parameters:
         msh: The mesh
-        cell_map: A map to apply to the cells in the integration entities
+        cell_map: An EntityMap for the cells in msh where msh is the
+            sub-topology and the EntityMap's topology is the target
+            topology to map to
 
     Returns:
         A (flattened) list of pairs of (cell, local facet index) pairs
