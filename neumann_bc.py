@@ -44,7 +44,7 @@ ft = markers_to_meshtags(msh, boundaries.values(), markers, fdim)
 
 # Create a submesh of the Neumann boundary
 neumann_boundary_facets = ft.find(boundaries["neumann"])
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, neumann_boundary_facets)[:2]
+submesh, submesh_emap = mesh.create_submesh(msh, fdim, neumann_boundary_facets)[:2]
 
 # Create function spaces
 k = 3  # Polynomial degree
@@ -71,7 +71,7 @@ ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
 # Since our boundary data is defined over a different mesh, we must create a map
 # relating entities in the integration domain mesh (`msh`) to the mesh our
 # boundary data is defined over (`submesh`)
-entity_maps = [mesh.entity_map(msh.topology, submesh.topology, submesh_to_mesh)]
+entity_maps = [submesh_emap]
 
 # Define forms. Since the Neumann boundary term involves funcriotns defined over
 # different meshes, we must provide entity maps
