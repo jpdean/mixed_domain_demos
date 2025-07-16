@@ -33,7 +33,7 @@ tdim = msh.topology.dim
 fdim = tdim - 1
 num_facets = msh.topology.create_entities(fdim)
 boundary_facets = mesh.locate_entities_boundary(msh, fdim, boundary_marker)
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
+submesh, submesh_emap = mesh.create_submesh(msh, fdim, boundary_facets)[0:2]
 
 # Create function spaces on the mesh and sub-mesh
 k = 3  # Polynomial degree
@@ -62,7 +62,7 @@ ds = ufl.Measure("ds", domain=msh)
 # Since our form involves multiple meshes, we need to provide maps relating
 # the integration domain mesh (`msh`) to the other meshes in the form (just
 # `submesh` here)
-entity_maps = [mesh.entity_map(msh.topology, submesh.topology, submesh_to_mesh)]
+entity_maps = [submesh_emap]
 
 # Define forms
 a = inner(u, v) * dx + inner(grad(u), grad(v)) * dx - (inner(lmbda, v) * ds + inner(u, mu) * ds)
