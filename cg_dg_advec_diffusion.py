@@ -57,8 +57,8 @@ msh, ct, ft, vol_ids, bound_ids = create_divided_square(comm, h)
 tdim = msh.topology.dim
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
-submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
+submesh_0, sm_0_emap = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
+submesh_1, sm_1_emap = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
 
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Discontinuous Lagrange", k_0))
@@ -70,12 +70,9 @@ u = ufl.TrialFunctions(W)
 v = ufl.TestFunctions(W)
 
 # We use msh as the integration domain, so we require maps relating cells
-# in msh to cells in submesh_0 and submesh_1. These can be created
-# as follows:
-entity_maps = [
-    mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh),
-    mesh.entity_map(msh.topology, submesh_1.topology, sm_1_to_msh),
-]
+# in msh to cells in submesh_0 and submesh_1. These are the entity maps
+# returned by `create_submesh`
+entity_maps = [sm_0_emap, sm_1_emap]
 
 # Create interface integration entities. We provide a marker to identify which cells
 # correspond to the "+" restriction and which correspond to the "-" restriction
@@ -97,7 +94,7 @@ boundary_entities = [
 
 # Compute integration entities for the interior facet integrals
 # over omega_0. These are needed for the DG scheme
-omega_0_int_entities = interior_facet_int_entities(submesh_0, sm_0_to_msh)
+omega_0_int_entities = interior_facet_int_entities(submesh_0, sm_0_emap)
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -193,6 +190,12 @@ L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
 # the boundary degrees of freedom.
 # NOTE: We don't do this for V_0 since the Dirichlet boundary condition
 # is enforced weakly by the DG scheme.
+# FIXME Temporarily get the map
+smsh_1_imap = submesh_1.topology.index_map(tdim)
+num_cells_smsh_1 = smsh_1_imap.size_local + smsh_1_imap.num_ghosts
+sm_1_to_msh = sm_1_emap.sub_topology_to_topology(
+    np.arange(num_cells_smsh_1, dtype=np.int32), inverse=False
+)
 ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
 bound_facets_sm_1 = ft_sm_1.find(bound_ids["boundary_1"])
 submesh_1.topology.create_connectivity(tdim - 1, tdim)

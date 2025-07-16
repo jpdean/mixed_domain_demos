@@ -6,6 +6,7 @@ from petsc4py import PETSc
 from dolfinx import mesh
 import sys
 from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 
 
 def par_print(comm, string):
@@ -223,30 +224,20 @@ def interior_facet_int_entities(msh, cell_map):
     Returns:
         A (flattened) list of pairs of (cell, local facet index) pairs
     """
-    # FIXME Do this more efficiently
+
     tdim = msh.topology.dim
     fdim = tdim - 1
     msh.topology.create_entities(fdim)
-    msh.topology.create_connectivity(tdim, fdim)
     msh.topology.create_connectivity(fdim, tdim)
-    c_to_f = msh.topology.connectivity(tdim, fdim)
-    f_to_c = msh.topology.connectivity(fdim, tdim)
-    integration_entities = []
-    for facet in range(msh.topology.index_map(fdim).size_local):
-        cells = f_to_c.links(facet)
-        if len(cells) == 2:
-            # FIXME Don't use tolist
-            local_facet_plus = np.where(c_to_f.links(cells[0]) == facet)[0][0]
-            local_facet_minus = np.where(c_to_f.links(cells[1]) == facet)[0][0]
 
-            integration_entities.extend(
-                [
-                    cell_map[cells[0]],
-                    local_facet_plus,
-                    cell_map[cells[1]],
-                    local_facet_minus,
-                ]
-            )
+    facets = np.arange(msh.topology.index_map(fdim).size_local, dtype=np.int32)
+    integration_entities = compute_integration_domains(
+        fem.IntegralType.interior_facet, msh.topology._cpp_object, facets
+    )
+
+    cells = integration_entities[::2]
+    mapped_cells = cell_map.sub_topology_to_topology(cells, inverse=False)
+    integration_entities[::2] = mapped_cells
     return integration_entities
 
 
