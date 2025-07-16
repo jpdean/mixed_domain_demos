@@ -42,7 +42,7 @@ else:
 tdim = msh.topology.dim
 fdim = tdim - 1
 gamma_i_facets = ft.find(bound_ids["gamma_i"])
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
+submesh, submesh_emap = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
 
 # Create functions spaces
 V = fem.functionspace(msh, ("Lagrange", k))
@@ -62,7 +62,7 @@ bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 # We take `msh`` to be the integration domain mesh (we will pass this mesh the
 # domain when creating measures). We must provide entity maps relating this
 # mesh to the other meshes in the form (here just `submesh`)
-entity_maps = [mesh.entity_map(msh.topology, submesh.topology, submesh_to_mesh)]
+entity_maps = [submesh_emap]
 
 # Create integration measure for the interface terms. We specify the facets
 # on gamma_i, which are identified as (cell, local facet index) pairs
