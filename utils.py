@@ -210,7 +210,7 @@ def interface_int_entities(msh, interface_facets, marker):
 
             interface_entities.extend([cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
-    return interface_entities
+    return np.array(interface_entities, dtype=np.int32)
 
 
 def interior_facet_int_entities(msh, cell_map):
