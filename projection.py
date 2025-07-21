@@ -7,7 +7,7 @@ from mpi4py import MPI
 import numpy as np
 import ufl
 from petsc4py import PETSc
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.fem.petsc import LinearProblem
 
 # Create a mesh
 comm = MPI.COMM_WORLD
@@ -43,26 +43,19 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # Define forms for the projection
 ds = ufl.Measure("ds", domain=msh)
-a = fem.form(ufl.inner(ubar, vbar) * ds, entity_maps=entity_maps)
-L = fem.form(ufl.inner(u, vbar) * ds, entity_maps=entity_maps)
+a = ufl.inner(ubar, vbar) * ds
+L = ufl.inner(u, vbar) * ds
 
-# Assemble matrix and vector
-A = assemble_matrix(a)
-A.assemble()
-b = assemble_vector(L)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-# Setup solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-
-# Compute projection
-ubar = fem.Function(Vbar)
-ksp.solve(b, ubar.x.petsc_vec)
-ubar.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+problem = LinearProblem(
+    a,
+    L,
+    bcs=[],
+    petsc_options_prefix="projection_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+ubar = problem.solve()
 
 # Compute error and check it's zero to machine precision
 e = u - ubar
