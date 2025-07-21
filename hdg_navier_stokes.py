@@ -68,9 +68,9 @@ def create_facet_mesh(msh):
 
     # NOTE Despite all facets being present in the submesh, the entity
     # map isn't necessarily the identity in parallel
-    facet_mesh, facet_mesh_to_msh = mesh.create_submesh(msh, fdim, facets)[0:2]
+    facet_mesh, facet_mesh_emap = mesh.create_submesh(msh, fdim, facets)[0:2]
 
-    return facet_mesh, facet_mesh_to_msh
+    return facet_mesh, facet_mesh_emap
 
 
 def create_function_spaces(msh, facet_mesh, scheme, k):
@@ -96,7 +96,7 @@ def create_forms(
     k,
     delta_t,
     nu,
-    facet_mesh_to_msh,
+    facet_mesh_emap,
     solver_type,
     boundary_conditions,
     boundaries,
@@ -142,9 +142,7 @@ def create_forms(
     # We write the mixed domain forms as integrals over `msh`. Hence, we must provide
     # maps relating entities in msh to other meshes in the form (in this case just
     # `facet_mesh`)
-    entity_maps = [
-        mesh.entity_map(msh.topology, facet_mesh.topology, facet_mesh_to_msh)
-    ]
+    entity_maps = [facet_mesh_emap]
 
     # Define trial and test functitons
     W = ufl.MixedFunctionSpace(V, Q, Vbar, Qbar)
@@ -203,8 +201,8 @@ def create_forms(
             bc_func = fem.Function(Vbar)
             bc_func.interpolate(bc_expr)
             bc_funcs.append((bc_func, bc_expr))
-            facets = entity_maps[0].map_entities(
-                mt.indices[mt.values == id], facet_mesh.topology._cpp_object
+            facets = facet_mesh_emap.sub_topology_to_topology(
+                mt.indices[mt.values == id], inverse=True
             )
             dofs = fem.locate_dofs_topological(Vbar, fdim, facets)
             bcs.append(fem.dirichletbc(bc_func, dofs))
@@ -295,21 +293,24 @@ def solve(
     b = create_vector(L, kind=PETSc.Vec.Type.MPI)
     x = A.createVecRight()
 
+    bcs1 = fem.bcs_by_block(fem.extract_function_spaces(a, 1), bcs)
     bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
     # Configure solver
     ksp = PETSc.KSP().create(msh.comm)
     ksp.setOperators(A)
+    prefix = "hdg_navier_stokes_"
+    ksp.setOptionsPrefix(prefix)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     opts = PETSc.Options()
     # Increase MUMPS working memory
-    opts["mat_mumps_icntl_14"] = 80
+    opts[f"{prefix}mat_mumps_icntl_14"] = 80
     # Option to support solving a singular matrix (pressure nullspace)
-    opts["mat_mumps_icntl_24"] = 1
+    opts[f"{prefix}mat_mumps_icntl_24"] = 1
     # Option to support solving a singular matrix (pressure nullspace)
-    opts["mat_mumps_icntl_25"] = 0
+    opts[f"{prefix}mat_mumps_icntl_25"] = 0
     ksp.setFromOptions()
 
     # Prepare functions for visualisation
@@ -368,7 +369,7 @@ def solve(
         with b.localForm() as b_loc:
             b_loc.set(0)
         assemble_vector(b, L)
-        apply_lifting(b, a, bcs=bcs)
+        apply_lifting(b, a, bcs=bcs1)
         b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
         set_bc(b, bcs0)
 

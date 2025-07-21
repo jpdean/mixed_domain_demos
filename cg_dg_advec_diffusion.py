@@ -222,6 +222,8 @@ u_1_file.write(t)
 for n in range(num_time_steps):
     t += delta_t
 
+    # FIXME This reassembles the matrix at each stem, which is not
+    # necessary.
     problem.solve()
 
     # Write to file
