@@ -9,7 +9,7 @@ from ufl import grad, inner, div, extract_blocks
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.fem.petsc import LinearProblem
 
 
 # Marker for the domain boundary
@@ -68,34 +68,20 @@ entity_maps = [submesh_emap]
 a = inner(u, v) * dx + inner(grad(u), grad(v)) * dx - (inner(lmbda, v) * ds + inner(u, mu) * ds)
 L = inner(f, v) * dx - inner(u_d, mu) * ds
 
-# Extract block structure and compile forms. We provide the entity maps here
-a = fem.form(extract_blocks(a), entity_maps=entity_maps)
-L = fem.form(extract_blocks(L), entity_maps=entity_maps)
-
-# Assemble matrices
-A = assemble_matrix(a)
-A.assemble()
-b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-# Solve
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Compute solution
-x = A.createVecLeft()
-ksp.solve(b, x)
-
-# Recover solution
+# Extract block structure and create LinearProblem. We provide the entity maps here
 u, lmbda = fem.Function(V), fem.Function(W)
-offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-u.x.array[:offset] = x.array_r[:offset]
-u.x.scatter_forward()
-lmbda.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
-lmbda.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    extract_blocks(a),
+    extract_blocks(L),
+    u=[u, lmbda],
+    bcs=[],
+    kind="mpi",
+    petsc_options_prefix="lagrange_multiplier_bc_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+problem.solve()
 
 # Write to file
 with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
