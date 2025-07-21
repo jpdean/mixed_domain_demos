@@ -11,7 +11,7 @@ from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx.mesh import meshtags, exterior_facet_indices
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_dome_mesh
 
 
@@ -63,30 +63,19 @@ entity_maps_sm_0 = [sm_1_emap]
 
 # Define forms using the function interpolated on the concentric circle mesh
 # as the Neumann boundary condition
-a_sm_0 = fem.form(inner(u_sm_0, v_sm_0) * dx + inner(grad(u_sm_0), grad(v_sm_0)) * dx)
-L_sm_0 = fem.form(
-    inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0,
+a_sm_0 = inner(u_sm_0, v_sm_0) * dx + inner(grad(u_sm_0), grad(v_sm_0)) * dx
+L_sm_0 = inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0
+
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    a_sm_0,
+    L_sm_0,
+    bcs=[],
+    petsc_options_prefix="nested_submeshes_",
+    petsc_options=petsc_opts,
     entity_maps=entity_maps_sm_0,
 )
-
-# Assemble matrix and vector
-A_sm_0 = assemble_matrix(a_sm_0)
-A_sm_0.assemble()
-b_sm_0 = assemble_vector(L_sm_0)
-b_sm_0.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-# Configure solver
-ksp = PETSc.KSP().create(comm)
-ksp.setOperators(A_sm_0)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Solve
-u_sm_0 = fem.Function(V_sm_0)
-u_sm_0.name = "u_sm_0"
-ksp.solve(b_sm_0, u_sm_0.x.petsc_vec)
-u_sm_0.x.scatter_forward()
+u_sm_0 = problem.solve()
 
 # Write to file
 with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0, "BP4") as f:
@@ -112,31 +101,18 @@ entity_maps_msh = [sm_0_emap]
 mt = meshtags(msh, msh_fdim, submesh_0_entities, np.ones_like(submesh_0_entities))
 ds_msh = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
-a_msh = fem.form(inner(grad(u_msh), grad(v_msh)) * dx)
-L_msh = fem.form(
-    inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1),
+a_msh = inner(grad(u_msh), grad(v_msh)) * dx
+L_msh = inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1)
+
+problem = LinearProblem(
+    a_msh,
+    L_msh,
+    bcs=[bc],
+    petsc_options_prefix="nested_submeshes_msh_",
+    petsc_options=petsc_opts,
     entity_maps=entity_maps_msh,
 )
-
-# Assemble matrix and vector
-A_msh = assemble_matrix(a_msh, bcs=[bc])
-A_msh.assemble()
-b_msh = assemble_vector(L_msh)
-fem.petsc.apply_lifting(b_msh, [a_msh], bcs=[[bc]])
-b_msh.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-fem.petsc.set_bc(b_msh, [bc])
-
-# Solve
-ksp = PETSc.KSP().create(comm)
-ksp.setOperators(A_msh)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-u_msh = fem.Function(V_msh)
-u_msh.name = "u_msh"
-ksp.solve(b_msh, u_msh.x.petsc_vec)
-u_msh.x.scatter_forward()
+u_msh = problem.solve()
 
 # Write to file
 with io.VTXWriter(comm, "u_msh.bp", u_msh, "BP4") as f:
