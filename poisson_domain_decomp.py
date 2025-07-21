@@ -11,7 +11,7 @@ from ufl import inner, grad, avg, div
 import numpy as np
 from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_square_with_circle
 from utils import jump_i, grad_avg_i
 
@@ -32,8 +32,8 @@ msh, ct, ft, vol_ids, surf_ids = create_square_with_circle(comm, h)
 tdim = msh.topology.dim
 domain_0_cells = ct.find(vol_ids["omega_0"])
 domain_1_cells = ct.find(vol_ids["omega_1"])
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
-submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
+submesh_0, sm_0_emap = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
+submesh_1, sm_1_emap = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
 
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Lagrange", k_0))
@@ -47,10 +47,7 @@ v = ufl.TestFunctions(W)
 # We use msh as the integration domain, so we require maps relating cells
 # in msh to cells in submesh_0 and submesh_1. These can be created
 # as follows:
-entity_maps = [
-    mesh.entity_map(msh.topology, submesh_0.topology, sm_0_to_msh),
-    mesh.entity_map(msh.topology, submesh_1.topology, sm_1_to_msh),
-]
+entity_maps = [sm_0_emap, sm_1_emap]
 
 # Compute integration entities for the interface integral
 fdim = tdim - 1
@@ -82,19 +79,20 @@ a = (
     + gamma / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(surf_ids["interface"])
 )
 
-# Compile LHS forms
-a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
-
 # Define right-hand side forms
 f = [-div(kap * grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) for kap in kappa]
 L = inner(f[0], v[0]) * dx(vol_ids["omega_0"]) + inner(f[1], v[1]) * dx(vol_ids["omega_1"])
 
-# Compile RHS forms and set block structure
-L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
-
 # Apply boundary conditions. We require the DOFs of V_0 on the domain
 # boundary. These can be identified via that facets of submesh_0 that
 # lie on the domain boundary.
+# FIXME Update function
+smhs0_cell_imap = submesh_0.topology.index_map(tdim)
+smsh_0_num_cells = smhs0_cell_imap.size_local + smhs0_cell_imap.num_ghosts
+sm_0_to_msh = sm_0_emap.sub_topology_to_topology(
+    np.arange(smsh_0_num_cells, dtype=np.int32), inverse=False
+)
+# print(sm_0_to_msh)
 ft_sm_0 = convert_facet_tags(msh, submesh_0, sm_0_to_msh, ft)
 bound_facets_sm_0 = ft_sm_0.find(surf_ids["boundary"])
 submesh_0.topology.create_connectivity(fdim, tdim)
@@ -104,34 +102,19 @@ u_bc_0.interpolate(u_e)
 bc_0 = fem.dirichletbc(u_bc_0, bound_dofs)
 bcs = [bc_0]
 
-# Assemble linear system of equations
-A = assemble_matrix(a, bcs=bcs)
-A.assemble()
-
-b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
-apply_lifting(b, a, bcs=bcs)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
-set_bc(b, bcs0)
-
-# Set-up solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Compute solution
-x = A.createVecRight()
-ksp.solve(b, x)
-
-# Recover solution
 u_0, u_1 = fem.Function(V_0), fem.Function(V_1)
-offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
-u_0.x.array[:offset] = x.array_r[:offset]
-u_1.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
-u_0.x.scatter_forward()
-u_1.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    ufl.extract_blocks(a),
+    ufl.extract_blocks(L),
+    u=[u_0, u_1],
+    bcs=bcs,
+    kind="mpi",
+    petsc_options_prefix="poisson_domain_decomp_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+problem.solve()
 
 # Write solution to file
 with io.VTXWriter(msh.comm, "u_0.bp", u_0, "BP4") as f:
