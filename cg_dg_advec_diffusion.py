@@ -30,7 +30,7 @@ from utils import (
     interface_int_entities,
     interior_facet_int_entities,
 )
-from dolfinx.fem.petsc import assemble_matrix, create_vector, assemble_vector, apply_lifting, set_bc
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_divided_square
 from utils import jump_i, grad_avg_i
 
@@ -159,9 +159,6 @@ a += (
     + gamma_int / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(bound_ids["interface"])
 )
 
-# Compile LHS forms
-a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
-
 # Forms for the right-hand side
 # TODO Add time derivative for unsteady problems
 f_0 = alpha[0] * dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
@@ -182,8 +179,6 @@ L = (
     + inner(alpha[1] * u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
 
-# Compile RHS forms
-L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
 
 # Apply boundary condition. Since the boundary condition is applied on
 # V_1, we must convert the facet tags to submesh_1 in order to locate
@@ -204,18 +199,18 @@ u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
 bcs = [bc_1]
-bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
-# Assemble the system of equations
-A = assemble_matrix(a, bcs=bcs)
-A.assemble()
-b = create_vector(L, kind=PETSc.Vec.Type.MPI)
-
-# Set up solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu"}
+problem = LinearProblem(
+    ufl.extract_blocks(a),
+    ufl.extract_blocks(L),
+    u=[u_0_n, u_1_n],
+    bcs=bcs,
+    kind="mpi",
+    petsc_options_prefix="cg_dg_advec_diffusion_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
 
 # Setup files for visualisation
 u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object], "BP4")
@@ -225,26 +220,10 @@ u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object], "BP4")
 t = 0.0
 u_0_file.write(t)
 u_1_file.write(t)
-x = A.createVecRight()
 for n in range(num_time_steps):
     t += delta_t
 
-    with b.localForm() as b_loc:
-        b_loc.set(0.0)
-    assemble_vector(b, L)
-    apply_lifting(b, a, bcs=bcs)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    set_bc(b, bcs0)
-
-    # Compute solution
-    ksp.solve(b, x)
-
-    # Recover solution
-    offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
-    u_0_n.x.array[:offset] = x.array_r[:offset]
-    u_1_n.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
-    u_0_n.x.scatter_forward()
-    u_1_n.x.scatter_forward()
+    problem.solve()
 
     # Write to file
     u_0_file.write(t)
