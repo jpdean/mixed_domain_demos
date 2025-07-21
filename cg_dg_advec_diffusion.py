@@ -179,7 +179,6 @@ L = (
     + inner(alpha[1] * u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
 
-
 # Apply boundary condition. Since the boundary condition is applied on
 # V_1, we must convert the facet tags to submesh_1 in order to locate
 # the boundary degrees of freedom.
