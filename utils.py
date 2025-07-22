@@ -35,9 +35,9 @@ def normal_jump_error(msh, v):
     return norm_L2(msh.comm, ufl.jump(v, n), measure=ufl.dS)
 
 
-# FIXME This should be a C++ helper function
-# TODO Simplify, make scalable, and document
-def convert_facet_tags(msh, submesh, cell_map, facet_tag):
+# # FIXME This should be a C++ helper function
+# # TODO Simplify, make scalable, and document
+def convert_facet_tags_1(msh, submesh, cell_map, facet_tag):
     msh_facets = facet_tag.indices
 
     # Connectivities
@@ -49,18 +49,23 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
     submesh.topology.create_connectivity(tdim, tdim - 1)
     submesh_c_to_f = submesh.topology.connectivity(tdim, tdim - 1)
 
-    # NOTE: Tagged facets mat not have a cell in the submesh, or may
+    cell_imap = submesh.topology.index_map(tdim)
+    num_cells = cell_imap.size_local + cell_imap.num_ghosts
+    all_cells = np.arange(num_cells, dtype=np.int32)
+    sub_to_topo = cell_map.sub_topology_to_topology(all_cells, inverse=False)
+
+    # NOTE: Tagged facets may not have a cell in the submesh, or may
     # have more than one cell in the submesh
     submesh_facets = []
     submesh_values = []
     for i, facet in enumerate(msh_facets):
         cells = msh_f_to_c.links(facet)
         for cell in cells:
-            if cell in cell_map:
+            if cell in sub_to_topo:
                 local_facet = msh_c_to_f.links(cell).tolist().index(facet)
                 # FIXME Don't hardcode cell type
                 assert local_facet >= 0  # and local_facet <= 2
-                submesh_cell = np.where(cell_map == cell)[0][0]
+                submesh_cell = np.where(sub_to_topo == cell)[0][0]
                 submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
                 submesh_facets.append(submesh_facet)
                 submesh_values.append(facet_tag.values[i])
@@ -73,6 +78,48 @@ def convert_facet_tags(msh, submesh, cell_map, facet_tag):
         submesh, submesh.topology.dim - 1, submesh_facets, submesh_values
     )
     return submesh_meshtags
+
+
+def convert_facet_tags(submsh, cell_emap, facet_tags):
+    """Convert facet tags from a mesh to a submesh using an entity map."""
+    cells = np.full(2 * len(facet_tags.indices), -1, dtype=np.int32)
+    local_facets = np.full(2 * len(facet_tags.indices), -1, dtype=np.int32)
+
+    tdim = cell_emap.topology.dim
+    fdim = tdim - 1
+
+    cell_emap.topology.create_connectivity(fdim, tdim)
+    cell_emap.topology.create_connectivity(tdim, fdim)
+    f_to_c = cell_emap.topology.connectivity(fdim, tdim)
+    c_to_f = cell_emap.topology.connectivity(tdim, fdim)
+
+    cell_emap.sub_topology.create_connectivity(tdim, fdim)
+    c_to_f_sub = cell_emap.topology.connectivity(tdim, fdim)
+
+    for i, facet in enumerate(facet_tags.indices):
+        cs = f_to_c.links(facet)
+        for j, c in enumerate(cs):
+            cells[2 * i + j] = c
+            local_facets[2 * i + j] = np.where(c_to_f.links(c) == facet)[0][0]
+
+    cells[cells >= 0] = cell_emap.sub_topology_to_topology(cells[cells >= 0], inverse=True)
+
+    facets_sub = []
+    values_sub = []
+    for i in range(len(facet_tags.indices)):
+        for j in range(2):
+            if cells[2 * i + j] >= 0:
+                facet_sub = c_to_f_sub.links(cells[2 * i + j])[local_facets[2 * i + j]]
+                facets_sub.append(facet_sub)
+                values_sub.append(facet_tags.values[i])
+
+    # Sort and make unique
+    facets_sub = np.array(facets_sub)
+    values_sub = np.array(values_sub, dtype=np.intc)
+    facets_sub, ind = np.unique(facets_sub, return_index=True)
+    values_sub = values_sub[ind]
+    facet_tags_sub = mesh.meshtags(submsh, fdim, facets_sub, values_sub)
+    return facet_tags_sub
 
 
 def create_random_mesh(corners, n, ghost_mode):
