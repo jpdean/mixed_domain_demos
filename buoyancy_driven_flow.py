@@ -41,6 +41,7 @@ from utils import (
     par_print,
     interface_int_entities,
     interior_facet_int_entities,
+    convert_facet_tags_1,
 )
 from dolfinx.fem.petsc import (
     create_matrix,
@@ -298,8 +299,8 @@ msh, ct, ft, volume_id, boundary_id = generate_mesh(
 
 # Create sub-meshes of fluid and solid domains
 tdim = msh.topology.dim
-submesh_f, sm_f_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["fluid"]))[:2]
-submesh_s, sm_s_to_msh = mesh.create_submesh(msh, tdim, ct.find(volume_id["solid"]))[:2]
+submesh_f, sm_f_emap = mesh.create_submesh(msh, tdim, ct.find(volume_id["fluid"]))[:2]
+submesh_s, sm_s_emap = mesh.create_submesh(msh, tdim, ct.find(volume_id["solid"]))[:2]
 
 # Create function spaces for Navier-Stokes problem
 scheme = hdg_navier_stokes.Scheme.DRW
@@ -338,7 +339,16 @@ f = -eps * rho * T_f_n * g
 nu = mu / rho  # Kinematic viscosity
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
-ft_f = convert_facet_tags(msh, submesh_f, sm_f_to_msh, ft)
+
+# FIXME Use new function
+# ft_f = convert_facet_tags(submesh_f, sm_f_emap, ft)
+ft_f = convert_facet_tags_1(msh, submesh_f, sm_f_emap, ft)
+
+# assert np.allclose(ft_f.values, ft_f1.values)
+# assert np.allclose(ft_f.indices, ft_f1.indices)
+
+# exit()
+
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V,
     Q,
@@ -366,10 +376,7 @@ w = TestFunctions(W)
 # Create entity maps for the thermal problem. Since we take `msh`` to be the
 # integration domain, we must create maps relating cells in `msh`` to cells in
 # submesh_f and submesh_s
-entity_maps = [
-    mesh.entity_map(msh.topology, submesh_f.topology, sm_f_to_msh),
-    mesh.entity_map(msh.topology, submesh_s.topology, sm_s_to_msh),
-]
+entity_maps = [sm_f_emap, sm_s_emap]
 
 # Create integration entities for the interface integral
 interface_facets = ft.find(boundary_id["obstacle"])
@@ -377,7 +384,7 @@ marker = ct.values == volume_id["fluid"]
 obstacle_facet_entities = interface_int_entities(msh, interface_facets, marker)
 
 # Create integration entities for the interior facet integral
-fluid_int_facet_entities = interior_facet_int_entities(submesh_f, sm_f_to_msh)
+fluid_int_facet_entities = interior_facet_int_entities(submesh_f, sm_f_emap)
 fluid_int_facets = 3
 facet_integration_entities = [
     (boundary_id["obstacle"], obstacle_facet_entities),
@@ -497,7 +504,14 @@ opts["mat_mumps_icntl_6"] = 2
 opts["mat_mumps_icntl_14"] = 100
 ksp.setFromOptions()
 
+# Navier-Stokes boundary conditions
+bcs1 = fem.bcs_by_block(fem.extract_function_spaces(a, 1), bcs)
 bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
+
+# Thermal boundary conditions
+bcs_T = []  # Any strongly imposed Dirichlet conditions would be added here
+bcs_T1 = fem.bcs_by_block(fem.extract_function_spaces(a_T, 1), bcs_T)
+bcs_T0 = fem.bcs_by_block(fem.extract_function_spaces(L_T), bcs_T)
 
 # Set-up functions for visualisation
 if scheme == hdg_navier_stokes.Scheme.RW:
@@ -543,7 +557,7 @@ for n in range(num_time_steps):
     with b.localForm() as b_loc:
         b_loc.set(0)
     assemble_vector(b, L)
-    apply_lifting(b, a, bcs=bcs)
+    apply_lifting(b, a, bcs=bcs1)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     set_bc(b, bcs0)
 
@@ -562,15 +576,15 @@ for n in range(num_time_steps):
 
     # Assemble thermal problem
     A_T.zeroEntries()
-    assemble_matrix(A_T, a_T)
+    assemble_matrix(A_T, a_T, bcs=bcs_T)
     A_T.assemble()
 
     with b_T.localForm() as b_T_loc:
         b_T_loc.set(0)
     assemble_vector(b_T, L_T)
-    apply_lifting(b_T, a_T, bcs=bcs)
+    apply_lifting(b_T, a_T, bcs=bcs_T1)
     b_T.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    set_bc(b_T, bcs0)
+    set_bc(b_T, bcs_T0)
 
     # Solver thermal problem
     ksp_T.solve(b_T, x_T)
