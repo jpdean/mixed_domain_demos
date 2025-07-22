@@ -5,14 +5,13 @@
 # NOTE: the Schur complement behaves like a Neumann-to-Dirichlet
 # map, which is important for designing a good preconditioner
 
-import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
 from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
 from utils import norm_L2, one_sided_int_entities
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
 
 
@@ -42,7 +41,7 @@ else:
 tdim = msh.topology.dim
 fdim = tdim - 1
 gamma_i_facets = ft.find(bound_ids["gamma_i"])
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
+submesh, submesh_emap = mesh.create_submesh(msh, fdim, gamma_i_facets)[0:2]
 
 # Create functions spaces
 V = fem.functionspace(msh, ("Lagrange", k))
@@ -59,14 +58,10 @@ dirichlet_facets = ft.find(bound_ids["gamma"])
 dirichlet_dofs = fem.locate_dofs_topological(V, fdim, dirichlet_facets)
 bc = fem.dirichletbc(PETSc.ScalarType(0.0), dirichlet_dofs, V)
 
-# We take msh to be the integration domain mesh, so we must provide a map
-# from facets in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh and can be computed as follows.
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
-msh_to_submesh = np.full(num_facets, -1)
-msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
-entity_maps = {submesh: msh_to_submesh}
+# We take `msh`` to be the integration domain mesh (we will pass this mesh the
+# domain when creating measures). We must provide entity maps relating this
+# mesh to the other meshes in the form (here just `submesh`)
+entity_maps = [submesh_emap]
 
 # Create integration measure for the interface terms. We specify the facets
 # on gamma_i, which are identified as (cell, local facet index) pairs
@@ -89,40 +84,19 @@ f = -div(grad(u_e(x_msh)))
 
 L = inner(f, v) * ufl.dx + inner(u_e(x_sm), eta) * ufl.dx
 
-# Define block structure
-a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
-L = fem.form(ufl.extract_blocks(L))
-
-# Assemble matrix
-bcs = [bc]
-A = assemble_matrix(a, bcs=bcs)
-A.assemble()
-
-# Assemble vector
-b = assemble_vector(L, kind=PETSc.Vec.Type.MPI)
-apply_lifting(b, a, bcs=bcs)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
-set_bc(b, bcs0)
-
-# Configure solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Compute solution
-x = A.createVecLeft()
-ksp.solve(b, x)
-
-# Recover solution
 u, lmbda = fem.Function(V), fem.Function(W)
-offset = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-u.x.array[:offset] = x.array_r[:offset]
-u.x.scatter_forward()
-lmbda.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
-lmbda.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    ufl.extract_blocks(a),
+    ufl.extract_blocks(L),
+    u=[u, lmbda],
+    bcs=[bc],
+    kind="mpi",
+    petsc_options_prefix="lagrange_multiplier_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+problem.solve()
 
 # Write to file
 with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:

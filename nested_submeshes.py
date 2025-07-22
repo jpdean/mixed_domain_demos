@@ -11,7 +11,7 @@ from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
 from dolfinx.mesh import meshtags, exterior_facet_indices
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_dome_mesh
 
 
@@ -23,7 +23,7 @@ msh = create_dome_mesh(comm, h)
 # Create a sub-mesh of part of the boundary of msh to get a disk
 msh_fdim = msh.topology.dim - 1
 submesh_0_entities = mesh.locate_entities_boundary(msh, msh_fdim, lambda x: np.isclose(x[2], 0.0))
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, msh_fdim, submesh_0_entities)[0:2]
+submesh_0, sm_0_emap = mesh.create_submesh(msh, msh_fdim, submesh_0_entities)[0:2]
 
 # Create a sub-mesh of the boundary of submesh_0 to get concentric circles
 submesh_0_tdim = submesh_0.topology.dim
@@ -31,7 +31,7 @@ submesh_0_fdim = submesh_0_tdim - 1
 submesh_0.topology.create_entities(submesh_0_fdim)
 submesh_0.topology.create_connectivity(submesh_0_fdim, submesh_0_tdim)
 sm_boundary_facets = exterior_facet_indices(submesh_0.topology)
-submesh_1, sm_1_to_sm_0 = mesh.create_submesh(submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
+submesh_1, sm_1_emap = mesh.create_submesh(submesh_0, submesh_0_fdim, sm_boundary_facets)[0:2]
 
 # Create a function space on submesh_1 and interpolate a function
 k = 2  # Polynomial degree
@@ -53,42 +53,29 @@ u_sm_0, v_sm_0 = ufl.TrialFunction(V_sm_0), ufl.TestFunction(V_sm_0)
 f_sm_0 = fem.Function(V_sm_0)
 f_sm_0.interpolate(lambda x: np.cos(np.pi * x[0]) * np.cos(np.pi * x[1]))
 
-# We use submesh_0 as the integration domain mesh, so we must provide a
-# map from facets in submesh_0 to cells in submesh_1. This is simply
-# the "inverse" of sm_1_to_sm_0
-facet_imap_sm_0 = submesh_0.topology.index_map(submesh_0_fdim)
-num_facets_sm_0 = facet_imap_sm_0.size_local + facet_imap_sm_0.num_ghosts
-sm_0_to_sm_1 = np.full(num_facets_sm_0, -1)
-sm_0_to_sm_1[sm_1_to_sm_0] = np.arange(len(sm_1_to_sm_0))
-entity_maps_sm_0 = {submesh_1: sm_0_to_sm_1}
+# Create integration measure taking `submesh_0` to be the integration domain mesh
 ds_sm_0 = ufl.Measure("ds", domain=submesh_0)
+
+# Since our form involves different meshes, we must provide a map from the
+# integration domain mesh (`submesh_0`) to the other meshes in the form (here
+# just `submesh_1`)
+entity_maps_sm_0 = [sm_1_emap]
 
 # Define forms using the function interpolated on the concentric circle mesh
 # as the Neumann boundary condition
-a_sm_0 = fem.form(inner(u_sm_0, v_sm_0) * dx + inner(grad(u_sm_0), grad(v_sm_0)) * dx)
-L_sm_0 = fem.form(
-    inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0,
+a_sm_0 = inner(u_sm_0, v_sm_0) * dx + inner(grad(u_sm_0), grad(v_sm_0)) * dx
+L_sm_0 = inner(f_sm_0, v_sm_0) * dx + inner(u_sm_1, v_sm_0) * ds_sm_0
+
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    a_sm_0,
+    L_sm_0,
+    bcs=[],
+    petsc_options_prefix="nested_submeshes_",
+    petsc_options=petsc_opts,
     entity_maps=entity_maps_sm_0,
 )
-
-# Assemble matrix and vector
-A_sm_0 = assemble_matrix(a_sm_0)
-A_sm_0.assemble()
-b_sm_0 = assemble_vector(L_sm_0)
-b_sm_0.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-# Configure solver
-ksp = PETSc.KSP().create(comm)
-ksp.setOperators(A_sm_0)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Solve
-u_sm_0 = fem.Function(V_sm_0)
-u_sm_0.name = "u_sm_0"
-ksp.solve(b_sm_0, u_sm_0.x.petsc_vec)
-u_sm_0.x.scatter_forward()
+u_sm_0 = problem.solve()
 
 # Write to file
 with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0, "BP4") as f:
@@ -108,42 +95,24 @@ f_msh = fem.Function(V_msh)
 f_msh.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) * np.sin(np.pi * x[2]))
 
 # Create entity maps
-num_facets_msh = (
-    msh.topology.index_map(msh_fdim).size_local + msh.topology.index_map(msh_fdim).num_ghosts
-)
-msh_to_sm_0 = np.full(num_facets_msh, -1)
-msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-entity_maps_msh = {submesh_0: msh_to_sm_0}
+entity_maps_msh = [sm_0_emap]
 
 # Create meshtags to mark the Neumann boundary
 mt = meshtags(msh, msh_fdim, submesh_0_entities, np.ones_like(submesh_0_entities))
 ds_msh = ufl.Measure("ds", subdomain_data=mt, domain=msh)
 
-a_msh = fem.form(inner(grad(u_msh), grad(v_msh)) * dx)
-L_msh = fem.form(
-    inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1),
+a_msh = inner(grad(u_msh), grad(v_msh)) * dx
+L_msh = inner(f_msh, v_msh) * dx + inner(u_sm_0, v_msh) * ds_msh(1)
+
+problem = LinearProblem(
+    a_msh,
+    L_msh,
+    bcs=[bc],
+    petsc_options_prefix="nested_submeshes_msh_",
+    petsc_options=petsc_opts,
     entity_maps=entity_maps_msh,
 )
-
-# Assemble matrix and vector
-A_msh = assemble_matrix(a_msh, bcs=[bc])
-A_msh.assemble()
-b_msh = assemble_vector(L_msh)
-fem.petsc.apply_lifting(b_msh, [a_msh], bcs=[[bc]])
-b_msh.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-fem.petsc.set_bc(b_msh, [bc])
-
-# Solve
-ksp = PETSc.KSP().create(comm)
-ksp.setOperators(A_msh)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-u_msh = fem.Function(V_msh)
-u_msh.name = "u_msh"
-ksp.solve(b_msh, u_msh.x.petsc_vec)
-u_msh.x.scatter_forward()
+u_msh = problem.solve()
 
 # Write to file
 with io.VTXWriter(comm, "u_msh.bp", u_msh, "BP4") as f:

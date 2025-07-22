@@ -23,16 +23,15 @@ from mpi4py import MPI
 import ufl
 from ufl import inner, grad, dot, avg, div, jump
 import numpy as np
-from petsc4py import PETSc
 from utils import (
     norm_L2,
     convert_facet_tags,
     interface_int_entities,
     interior_facet_int_entities,
 )
-from dolfinx.fem.petsc import assemble_matrix, create_vector, assemble_vector, apply_lifting, set_bc
+from dolfinx.fem.petsc import LinearProblem
 from meshing import create_divided_square
-from poisson_domain_decomp import jump_i, grad_avg_i
+from utils import jump_i, grad_avg_i
 
 
 def u_e(x, module=np):
@@ -55,8 +54,10 @@ msh, ct, ft, vol_ids, bound_ids = create_divided_square(comm, h)
 # Create sub-meshes of omega_0 and omega_1 so that we can create
 # different function spaces over each part of the domain
 tdim = msh.topology.dim
-submesh_0, sm_0_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_0"]))[:2]
-submesh_1, sm_1_to_msh = mesh.create_submesh(msh, tdim, ct.find(vol_ids["omega_1"]))[:2]
+domain_0_cells = ct.find(vol_ids["omega_0"])
+domain_1_cells = ct.find(vol_ids["omega_1"])
+submesh_0, sm_0_emap = mesh.create_submesh(msh, tdim, domain_0_cells)[:2]
+submesh_1, sm_1_emap = mesh.create_submesh(msh, tdim, domain_1_cells)[:2]
 
 # Define function spaces on each submesh
 V_0 = fem.functionspace(submesh_0, ("Discontinuous Lagrange", k_0))
@@ -67,22 +68,16 @@ W = ufl.MixedFunctionSpace(V_0, V_1)
 u = ufl.TrialFunctions(W)
 v = ufl.TestFunctions(W)
 
-# We use msh as the integration domain, so we require maps from
-# cells in msh to cells in submesh_0 and submesh_1
-cell_imap = msh.topology.index_map(tdim)
-num_cells = cell_imap.size_local + cell_imap.num_ghosts
-msh_to_sm_0 = np.full(num_cells, -1)
-msh_to_sm_0[sm_0_to_msh] = np.arange(len(sm_0_to_msh))
-msh_to_sm_1 = np.full(num_cells, -1)
-msh_to_sm_1[sm_1_to_msh] = np.arange(len(sm_1_to_msh))
+# We use msh as the integration domain, so we require maps relating cells
+# in msh to cells in submesh_0 and submesh_1. These are the entity maps
+# returned by `create_submesh`
+entity_maps = [sm_0_emap, sm_1_emap]
 
-# Create integration entities for the interface integral
+# Create interface integration entities. We provide a marker to identify which cells
+# correspond to the "+" restriction and which correspond to the "-" restriction
+marker = ct.values == vol_ids["omega_0"]
 interface_facets = ft.find(bound_ids["interface"])
-domain_0_cells = ct.find(vol_ids["omega_0"])
-domain_1_cells = ct.find(vol_ids["omega_1"])
-interface_entities, msh_to_sm_0, msh_to_sm_1 = interface_int_entities(
-    msh, interface_facets, msh_to_sm_0, msh_to_sm_1
-)
+interface_entities = interface_int_entities(msh, interface_facets, marker)
 
 # Compute integration entities for boundary terms
 boundary_entities = [
@@ -98,7 +93,7 @@ boundary_entities = [
 
 # Compute integration entities for the interior facet integrals
 # over omega_0. These are needed for the DG scheme
-omega_0_int_entities = interior_facet_int_entities(submesh_0, sm_0_to_msh)
+omega_0_int_entities = interior_facet_int_entities(submesh_0, sm_0_emap)
 
 # Create measures
 dx = ufl.Measure("dx", domain=msh, subdomain_data=ct)
@@ -163,10 +158,6 @@ a += (
     + gamma_int / avg(h) * inner(jump_i(u, n), jump_i(v, n)) * dS(bound_ids["interface"])
 )
 
-# Compile LHS forms
-entity_maps = {submesh_0: msh_to_sm_0, submesh_1: msh_to_sm_1}
-a = fem.form(ufl.extract_blocks(a), entity_maps=entity_maps)
-
 # Forms for the right-hand side
 # TODO Add time derivative for unsteady problems
 f_0 = alpha[0] * dot(w, grad(u_e(ufl.SpatialCoordinate(msh), module=ufl))) - div(
@@ -187,15 +178,12 @@ L = (
     + inner(alpha[1] * u_1_n / delta_t, v[1]) * dx(vol_ids["omega_1"])
 )
 
-# Compile RHS forms
-L = fem.form(ufl.extract_blocks(L), entity_maps=entity_maps)
-
 # Apply boundary condition. Since the boundary condition is applied on
 # V_1, we must convert the facet tags to submesh_1 in order to locate
 # the boundary degrees of freedom.
 # NOTE: We don't do this for V_0 since the Dirichlet boundary condition
 # is enforced weakly by the DG scheme.
-ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
+ft_sm_1 = convert_facet_tags(submesh_1, sm_1_emap, ft)
 bound_facets_sm_1 = ft_sm_1.find(bound_ids["boundary_1"])
 submesh_1.topology.create_connectivity(tdim - 1, tdim)
 bound_dofs = fem.locate_dofs_topological(V_1, tdim - 1, bound_facets_sm_1)
@@ -203,18 +191,18 @@ u_bc_1 = fem.Function(V_1)
 u_bc_1.interpolate(u_e)
 bc_1 = fem.dirichletbc(u_bc_1, bound_dofs)
 bcs = [bc_1]
-bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L), bcs)
 
-# Assemble the system of equations
-A = assemble_matrix(a, bcs=bcs)
-A.assemble()
-b = create_vector(L, kind=PETSc.Vec.Type.MPI)
-
-# Set up solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu"}
+problem = LinearProblem(
+    ufl.extract_blocks(a),
+    ufl.extract_blocks(L),
+    u=[u_0_n, u_1_n],
+    bcs=bcs,
+    kind="mpi",
+    petsc_options_prefix="cg_dg_advec_diffusion_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
 
 # Setup files for visualisation
 u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object], "BP4")
@@ -224,26 +212,12 @@ u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object], "BP4")
 t = 0.0
 u_0_file.write(t)
 u_1_file.write(t)
-x = A.createVecRight()
 for n in range(num_time_steps):
     t += delta_t
 
-    with b.localForm() as b_loc:
-        b_loc.set(0.0)
-    assemble_vector(b, L)
-    apply_lifting(b, a, bcs=bcs)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    set_bc(b, bcs0)
-
-    # Compute solution
-    ksp.solve(b, x)
-
-    # Recover solution
-    offset = V_0.dofmap.index_map.size_local * V_0.dofmap.index_map_bs
-    u_0_n.x.array[:offset] = x.array_r[:offset]
-    u_1_n.x.array[: (len(x.array_r) - offset)] = x.array_r[offset:]
-    u_0_n.x.scatter_forward()
-    u_1_n.x.scatter_forward()
+    # FIXME This reassembles the matrix at each stem, which is not
+    # necessary.
+    problem.solve()
 
     # Write to file
     u_0_file.write(t)

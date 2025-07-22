@@ -6,6 +6,7 @@ from petsc4py import PETSc
 from dolfinx import mesh
 import sys
 from dolfinx.cpp.mesh import cell_num_entities
+from dolfinx.cpp.fem import compute_integration_domains
 
 
 def par_print(comm, string):
@@ -34,44 +35,64 @@ def normal_jump_error(msh, v):
     return norm_L2(msh.comm, ufl.jump(v, n), measure=ufl.dS)
 
 
-# FIXME This should be a C++ helper function
-# TODO Simplify, make scalable, and document
-def convert_facet_tags(msh, submesh, cell_map, facet_tag):
-    msh_facets = facet_tag.indices
+def convert_facet_tags(submsh, cell_emap, facet_tags):
+    """Convert facet tags from a mesh to a submesh using an entity map."""
 
-    # Connectivities
-    tdim = msh.topology.dim
-    msh.topology.create_connectivity(tdim, tdim - 1)
-    msh.topology.create_connectivity(tdim - 1, tdim)
-    msh_c_to_f = msh.topology.connectivity(tdim, tdim - 1)
-    msh_f_to_c = msh.topology.connectivity(tdim - 1, tdim)
-    submesh.topology.create_connectivity(tdim, tdim - 1)
-    submesh_c_to_f = submesh.topology.connectivity(tdim, tdim - 1)
+    # Each tagged facet may be connected to up to two cells.
+    # We create arrays of cells and local facets to store the connected cells
+    # if they exist i.e. cells[i] corresponds to the first connected cell to facet
+    # facet_tags.indices[i] if it exists, and cells[i + 1] corresponds to the second
+    # connected cell if it exists.
+    cells = np.full(2 * len(facet_tags.indices), -1, dtype=np.int32)
+    # Similar array for local facets. # local_facets[i] corresponds to the local facet
+    # in cells[i]
+    local_facets = np.full(2 * len(facet_tags.indices), -1, dtype=np.int32)
 
-    # NOTE: Tagged facets mat not have a cell in the submesh, or may
-    # have more than one cell in the submesh
-    submesh_facets = []
-    submesh_values = []
-    for i, facet in enumerate(msh_facets):
-        cells = msh_f_to_c.links(facet)
-        for cell in cells:
-            if cell in cell_map:
-                local_facet = msh_c_to_f.links(cell).tolist().index(facet)
-                # FIXME Don't hardcode cell type
-                assert local_facet >= 0  # and local_facet <= 2
-                submesh_cell = np.where(cell_map == cell)[0][0]
-                submesh_facet = submesh_c_to_f.links(submesh_cell)[local_facet]
-                submesh_facets.append(submesh_facet)
-                submesh_values.append(facet_tag.values[i])
-    submesh_facets = np.array(submesh_facets)
-    submesh_values = np.array(submesh_values, dtype=np.intc)
+    tdim = cell_emap.topology.dim
+    fdim = tdim - 1
+
+    # Get required connectivities
+    cell_emap.topology.create_connectivity(fdim, tdim)
+    cell_emap.topology.create_connectivity(tdim, fdim)
+    f_to_c = cell_emap.topology.connectivity(fdim, tdim)
+    c_to_f = cell_emap.topology.connectivity(tdim, fdim)
+
+    cell_emap.sub_topology.create_connectivity(tdim, fdim)
+    c_to_f_sub = cell_emap.sub_topology.connectivity(tdim, fdim)
+
+    # Loop through all facets and get the (cell, local facet index) pairs
+    for i, facet in enumerate(facet_tags.indices):
+        # Each tagged facet may be connected to up to two cells in the mesh
+        cs = f_to_c.links(facet)
+        # Add the cells and local facets to the arrays
+        for j, c in enumerate(cs):
+            cells[2 * i + j] = c
+            local_facets[2 * i + j] = np.where(c_to_f.links(c) == facet)[0][0]
+
+    # Map cells to the submesh using the entity map. Note that some facets will only be
+    # connected to one cell, so we must only map the cells that are >= 0. Also note that
+    # not all cells in the mesh will be present in the submesh, so some of the returned
+    # cells may be -1.
+    cells[cells >= 0] = cell_emap.sub_topology_to_topology(cells[cells >= 0], inverse=True)
+
+    # Loop through facets and get the corresponding facets in the submesh. Add the index
+    # and corresponding value to the lists
+    facets_sub = []
+    values_sub = []
+    for i in range(len(facet_tags.indices)):
+        for j in range(2):
+            if cells[2 * i + j] >= 0:
+                facet_sub = c_to_f_sub.links(cells[2 * i + j])[local_facets[2 * i + j]]
+                facets_sub.append(facet_sub)
+                values_sub.append(facet_tags.values[i])
+
     # Sort and make unique
-    submesh_facets, ind = np.unique(submesh_facets, return_index=True)
-    submesh_values = submesh_values[ind]
-    submesh_meshtags = mesh.meshtags(
-        submesh, submesh.topology.dim - 1, submesh_facets, submesh_values
-    )
-    return submesh_meshtags
+    facets_sub = np.array(facets_sub)
+    values_sub = np.array(values_sub, dtype=np.intc)
+    facets_sub, ind = np.unique(facets_sub, return_index=True)
+    values_sub = values_sub[ind]
+    facet_tags_sub = mesh.meshtags(submsh, fdim, facets_sub, values_sub)
+    return facet_tags_sub
 
 
 def create_random_mesh(corners, n, ghost_mode):
@@ -171,36 +192,20 @@ class TimeDependentExpression:
         return self.expression(x, self.t)
 
 
-def interface_int_entities(
-    msh,
-    interface_facets,
-    domain_to_domain_0,
-    domain_to_domain_1,
-):
+def interface_int_entities(msh, interface_facets, marker):
     """
-    This function computes the integration entities (as a list of pairs of
-    (cell, local facet index) pairs) required to assemble mixed domain forms
-    over the interface. It assumes there is a domain with two sub-domains,
-    domain_0 and domain_1, that have a common interface. Cells in domain_0
-    correspond to the "+" restriction and cells in domain_1 correspond to
-    the "-" restriction.
+    This helper function computes the integration entities for interior facet
+    integrals (i.e. a list of (cell_0, local_facet_0, cell_1, local_facet_1))
+    over an interface. The integration entities are ordered consistently such
+    that cells for which `marker[cell] != 0` correspond to the "+" restriction,
+    and cells for which `marker[cell] == 0` correspond to the "-" restriction.
 
     Parameters:
         msh: the mesh
-        interface_facets: A list of facets on the interface
-        domain_to_domain_0: A map from cells in domain to cells in domain_0
-        domain_to_domain_1: A map from cells in domain to cells in domain_1
-
-    Returns:
-        A tuple containing:
-            1) The integration entities
-            2) A modified map from domain to domain_0 (see HACK below)
-            3) A modified map from domain to domain_1 (see HACK below)
+        interface_facets: Facet indices of interior facets on an interface
+        marker: If `marker[cell] != 0`, then that cell corresponds to a "+"
+            restriction. Otherwise, it corresponds to a negative restriction.
     """
-    # Create measure for integration. Assign the first (cell, local facet)
-    # pair to the cell in domain_0, corresponding to the "+" restriction.
-    # Assign the second pair to the domain_1 cell, corresponding to the "-"
-    # restriction.
     tdim = msh.topology.dim
     fdim = tdim - 1
     msh.topology.create_connectivity(tdim, fdim)
@@ -208,44 +213,24 @@ def interface_int_entities(
     facet_imap = msh.topology.index_map(fdim)
     c_to_f = msh.topology.connectivity(tdim, fdim)
     f_to_c = msh.topology.connectivity(fdim, tdim)
-    # FIXME This can be done more efficiently
+
     interface_entities = []
-    domain_to_domain_0_new = np.array(domain_to_domain_0)
-    domain_to_domain_1_new = np.array(domain_to_domain_1)
     for facet in interface_facets:
         # Check if this facet is owned
         if facet < facet_imap.size_local:
             cells = f_to_c.links(facet)
             assert len(cells) == 2
-            if domain_to_domain_0[cells[0]] >= 0:
-                cell_plus = cells[0]
-                cell_minus = cells[1]
+            if marker[cells[0]] == 0:
+                cell_plus, cell_minus = cells[1], cells[0]
             else:
-                cell_plus = cells[1]
-                cell_minus = cells[0]
-            assert domain_to_domain_0[cell_plus] >= 0 and domain_to_domain_0[cell_minus] < 0
-            assert domain_to_domain_1[cell_minus] >= 0 and domain_to_domain_1[cell_plus] < 0
+                cell_plus, cell_minus = cells[0], cells[1]
 
             local_facet_plus = np.where(c_to_f.links(cell_plus) == facet)[0][0]
             local_facet_minus = np.where(c_to_f.links(cell_minus) == facet)[0][0]
 
             interface_entities.extend([cell_plus, local_facet_plus, cell_minus, local_facet_minus])
 
-            # FIXME HACK cell_minus does not exist in the left submesh, so it
-            # will be mapped to index -1. This is problematic for the
-            # assembler, which assumes it is possible to get the full macro
-            # dofmap for the trial and test functions, despite the restriction
-            # meaning we don't need the non-existant dofs. To fix this, we just
-            # map cell_minus to the cell corresponding to cell plus. This will
-            # just add zeros to the assembled system, since there are no
-            # u("-") terms. Could map this to any cell in the submesh, but
-            # I think using the cell on the other side of the facet means a
-            # facet space coefficient could be used
-            domain_to_domain_0_new[cell_minus] = domain_to_domain_0[cell_plus]
-            # Same hack for the right submesh
-            domain_to_domain_1_new[cell_plus] = domain_to_domain_1[cell_minus]
-
-    return interface_entities, domain_to_domain_0_new, domain_to_domain_1_new
+    return np.array(interface_entities, dtype=np.int32)
 
 
 def interior_facet_int_entities(msh, cell_map):
@@ -254,35 +239,27 @@ def interior_facet_int_entities(msh, cell_map):
 
     Parameters:
         msh: The mesh
-        cell_map: A map to apply to the cells in the integration entities
+        cell_map: An EntityMap for the cells in msh where msh is the
+            sub-topology and the EntityMap's topology is the target
+            topology to map to
 
     Returns:
         A (flattened) list of pairs of (cell, local facet index) pairs
     """
-    # FIXME Do this more efficiently
+
     tdim = msh.topology.dim
     fdim = tdim - 1
     msh.topology.create_entities(fdim)
-    msh.topology.create_connectivity(tdim, fdim)
     msh.topology.create_connectivity(fdim, tdim)
-    c_to_f = msh.topology.connectivity(tdim, fdim)
-    f_to_c = msh.topology.connectivity(fdim, tdim)
-    integration_entities = []
-    for facet in range(msh.topology.index_map(fdim).size_local):
-        cells = f_to_c.links(facet)
-        if len(cells) == 2:
-            # FIXME Don't use tolist
-            local_facet_plus = np.where(c_to_f.links(cells[0]) == facet)[0][0]
-            local_facet_minus = np.where(c_to_f.links(cells[1]) == facet)[0][0]
 
-            integration_entities.extend(
-                [
-                    cell_map[cells[0]],
-                    local_facet_plus,
-                    cell_map[cells[1]],
-                    local_facet_minus,
-                ]
-            )
+    facets = np.arange(msh.topology.index_map(fdim).size_local, dtype=np.int32)
+    integration_entities = compute_integration_domains(
+        fem.IntegralType.interior_facet, msh.topology._cpp_object, facets
+    )
+
+    cells = integration_entities[::2]
+    mapped_cells = cell_map.sub_topology_to_topology(cells, inverse=False)
+    integration_entities[::2] = mapped_cells
     return integration_entities
 
 
@@ -355,3 +332,13 @@ def markers_to_meshtags(msh, tags, markers, dim):
     values = np.hstack(values, dtype=np.intc)
     perm = np.argsort(entities)
     return mesh.meshtags(msh, dim, entities[perm], values[perm])
+
+
+def jump_i(v, n):
+    return v[0]("+") * n("+") + v[1]("-") * n("-")
+
+
+def grad_avg_i(v, kappa):
+    return kappa[1] / (kappa[0] + kappa[1]) * kappa[0] * ufl.grad(v[0]("+")) + kappa[0] / (
+        kappa[0] + kappa[1]
+    ) * kappa[1] * ufl.grad(v[1]("-"))

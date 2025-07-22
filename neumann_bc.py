@@ -9,9 +9,8 @@ import ufl
 from dolfinx import fem, io, mesh
 from ufl import grad, inner
 from mpi4py import MPI
-from petsc4py import PETSc
 from utils import norm_L2, markers_to_meshtags
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting
+from dolfinx.fem.petsc import LinearProblem
 
 
 def u_e_expr(x, module=np):
@@ -44,7 +43,7 @@ ft = markers_to_meshtags(msh, boundaries.values(), markers, fdim)
 
 # Create a submesh of the Neumann boundary
 neumann_boundary_facets = ft.find(boundaries["neumann"])
-submesh, submesh_to_mesh = mesh.create_submesh(msh, fdim, neumann_boundary_facets)[:2]
+submesh, submesh_emap = mesh.create_submesh(msh, fdim, neumann_boundary_facets)[:2]
 
 # Create function spaces
 k = 3  # Polynomial degree
@@ -53,17 +52,6 @@ V = fem.functionspace(msh, ("Lagrange", k))
 # only over the Neumann boundary
 W = fem.functionspace(submesh, ("Lagrange", k))
 u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-
-# Create integration measure and entity maps
-ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
-# We take msh to be the integration domain, so we must provide a map from
-# facets in msh to cells in submesh. This is simply the "inverse" of
-# submesh_to_mesh
-facet_imap = msh.topology.index_map(fdim)
-num_facets = facet_imap.size_local + facet_imap.num_ghosts
-msh_to_submesh = np.full(num_facets, -1)
-msh_to_submesh[submesh_to_mesh] = np.arange(len(submesh_to_mesh))
-entity_maps = {submesh: msh_to_submesh}
 
 # Interpolate the source term and Neumann boundary condition
 f = fem.Function(V)
@@ -76,12 +64,18 @@ g.interpolate(g_expr)
 with io.VTXWriter(msh.comm, "g.bp", g, "BP4") as file:
     file.write(0.0)
 
-# Define forms. Since the Neumann boundary term involves funcriotns defined over
+# Create integration measure, taking mesh to be the integration domain
+ds = ufl.Measure("ds", domain=msh, subdomain_data=ft)
+
+# Since our boundary data is defined over a different mesh, we must pass a map
+# relating entities in the integration domain mesh (`msh`) to the mesh our
+# boundary data is defined over (`submesh`)
+entity_maps = [submesh_emap]
+
+# Define forms. Since the Neumann boundary term involves functions defined over
 # different meshes, we must provide entity maps
-a = fem.form(inner(grad(u), grad(v)) * ufl.dx)
-L = fem.form(
-    inner(f, v) * ufl.dx + inner(g, v) * ds(boundaries["neumann"]), entity_maps=entity_maps
-)
+a = inner(grad(u), grad(v)) * ufl.dx
+L = inner(f, v) * ufl.dx + inner(g, v) * ds(boundaries["neumann"])
 
 # Dirichlet boundary condition
 dirichlet_facets = ft.find(boundaries["dirichlet"])
@@ -90,25 +84,16 @@ u_d = fem.Function(V)
 u_d.interpolate(u_e_expr)
 bc = fem.dirichletbc(u_d, dirichlet_dofs)
 
-# Assemble matrix and vector
-A = assemble_matrix(a, bcs=[bc])
-A.assemble()
-b = assemble_vector(L)
-apply_lifting(b, [a], bcs=[[bc]])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-bc.set(b.array_w)
-
-# Create solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("superlu_dist")
-
-# Solve
-u = fem.Function(V)
-ksp.solve(b, u.x.petsc_vec)
-u.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "superlu_dist"}
+problem = LinearProblem(
+    a,
+    L,
+    bcs=[bc],
+    petsc_options_prefix="neumann_bc_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+u = problem.solve()
 
 # Write to file
 with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as file:

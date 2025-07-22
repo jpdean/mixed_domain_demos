@@ -6,8 +6,7 @@ from dolfinx import mesh, fem, io
 from mpi4py import MPI
 import numpy as np
 import ufl
-from petsc4py import PETSc
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector
+from dolfinx.fem.petsc import LinearProblem
 
 # Create a mesh
 comm = MPI.COMM_WORLD
@@ -30,15 +29,12 @@ facets = mesh.locate_entities_boundary(
     | np.isclose(x[1], 0.0)
     | np.isclose(x[1], 1.0),
 )
-submsh, sm_to_msh = mesh.create_submesh(msh, fdim, facets)[:2]
+submsh, sm_emap = mesh.create_submesh(msh, fdim, facets)[:2]
 
-# We take msh to be the integration domain and thus need to provide
-# a map from the facets in msh to the cells in submesh. This is the
-# "inverse" of sm_to_msh.
-num_facets = msh.topology.index_map(fdim).size_local + msh.topology.index_map(fdim).num_ghosts
-msh_to_sm = np.full(num_facets, -1)
-msh_to_sm[sm_to_msh] = np.arange(len(sm_to_msh))
-entity_maps = {submsh: msh_to_sm}
+# We take msh to be the integration domain (we will pass this mess as the domain
+# when creating the measure). We need to provide entity maps relating entities in
+# `msh` to each other mesh in the form (here just `submsh`)
+entity_maps = [sm_emap]
 
 # Create function space on the boundary
 Vbar = fem.functionspace(submsh, ("Lagrange", 1))
@@ -46,26 +42,19 @@ ubar, vbar = ufl.TrialFunction(Vbar), ufl.TestFunction(Vbar)
 
 # Define forms for the projection
 ds = ufl.Measure("ds", domain=msh)
-a = fem.form(ufl.inner(ubar, vbar) * ds, entity_maps=entity_maps)
-L = fem.form(ufl.inner(u, vbar) * ds, entity_maps=entity_maps)
+a = ufl.inner(ubar, vbar) * ds
+L = ufl.inner(u, vbar) * ds
 
-# Assemble matrix and vector
-A = assemble_matrix(a)
-A.assemble()
-b = assemble_vector(L)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-# Setup solver
-ksp = PETSc.KSP().create(msh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-
-# Compute projection
-ubar = fem.Function(Vbar)
-ksp.solve(b, ubar.x.petsc_vec)
-ubar.x.scatter_forward()
+petsc_opts = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+problem = LinearProblem(
+    a,
+    L,
+    bcs=[],
+    petsc_options_prefix="projection_",
+    petsc_options=petsc_opts,
+    entity_maps=entity_maps,
+)
+ubar = problem.solve()
 
 # Compute error and check it's zero to machine precision
 e = u - ubar
