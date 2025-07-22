@@ -340,14 +340,7 @@ nu = mu / rho  # Kinematic viscosity
 fdim = tdim - 1
 submesh_f.topology.create_connectivity(fdim, tdim)
 
-# FIXME Use new function
-# ft_f = convert_facet_tags(submesh_f, sm_f_emap, ft)
-ft_f = convert_facet_tags_1(msh, submesh_f, sm_f_emap, ft)
-
-# assert np.allclose(ft_f.values, ft_f1.values)
-# assert np.allclose(ft_f.indices, ft_f1.indices)
-
-# exit()
+ft_f = convert_facet_tags(submesh_f, sm_f_emap, ft)
 
 a, L, bcs, bc_funcs = hdg_navier_stokes.create_forms(
     V,
