@@ -85,14 +85,7 @@ L = inner(f[0], v[0]) * dx(vol_ids["omega_0"]) + inner(f[1], v[1]) * dx(vol_ids[
 # Apply boundary conditions. We require the DOFs of V_0 on the domain
 # boundary. These can be identified via that facets of submesh_0 that
 # lie on the domain boundary.
-# FIXME Update function
-smhs0_cell_imap = submesh_0.topology.index_map(tdim)
-smsh_0_num_cells = smhs0_cell_imap.size_local + smhs0_cell_imap.num_ghosts
-sm_0_to_msh = sm_0_emap.sub_topology_to_topology(
-    np.arange(smsh_0_num_cells, dtype=np.int32), inverse=False
-)
-# print(sm_0_to_msh)
-ft_sm_0 = convert_facet_tags(msh, submesh_0, sm_0_to_msh, ft)
+ft_sm_0 = convert_facet_tags(submesh_0, sm_0_emap, ft)
 bound_facets_sm_0 = ft_sm_0.find(surf_ids["boundary"])
 submesh_0.topology.create_connectivity(fdim, tdim)
 bound_dofs = fem.locate_dofs_topological(V_0, fdim, bound_facets_sm_0)
