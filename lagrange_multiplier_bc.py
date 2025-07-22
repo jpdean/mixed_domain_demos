@@ -7,7 +7,6 @@ import ufl
 from dolfinx import fem, io, mesh
 from ufl import grad, inner, div, extract_blocks
 from mpi4py import MPI
-from petsc4py import PETSc
 from utils import norm_L2
 from dolfinx.fem.petsc import LinearProblem
 

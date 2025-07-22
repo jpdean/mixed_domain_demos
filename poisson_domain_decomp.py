@@ -9,7 +9,6 @@ from mpi4py import MPI
 import ufl
 from ufl import inner, grad, avg, div
 import numpy as np
-from petsc4py import PETSc
 from utils import norm_L2, convert_facet_tags, interface_int_entities
 from dolfinx.fem.petsc import LinearProblem
 from meshing import create_square_with_circle

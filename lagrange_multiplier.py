@@ -5,7 +5,6 @@
 # NOTE: the Schur complement behaves like a Neumann-to-Dirichlet
 # map, which is important for designing a good preconditioner
 
-import numpy as np
 import ufl
 from dolfinx import fem, io, mesh
 from ufl import grad, inner, div
