@@ -183,13 +183,7 @@ L = (
 # the boundary degrees of freedom.
 # NOTE: We don't do this for V_0 since the Dirichlet boundary condition
 # is enforced weakly by the DG scheme.
-# FIXME Temporarily get the map
-smsh_1_imap = submesh_1.topology.index_map(tdim)
-num_cells_smsh_1 = smsh_1_imap.size_local + smsh_1_imap.num_ghosts
-sm_1_to_msh = sm_1_emap.sub_topology_to_topology(
-    np.arange(num_cells_smsh_1, dtype=np.int32), inverse=False
-)
-ft_sm_1 = convert_facet_tags(msh, submesh_1, sm_1_to_msh, ft)
+ft_sm_1 = convert_facet_tags(submesh_1, sm_1_emap, ft)
 bound_facets_sm_1 = ft_sm_1.find(bound_ids["boundary_1"])
 submesh_1.topology.create_connectivity(tdim - 1, tdim)
 bound_dofs = fem.locate_dofs_topological(V_1, tdim - 1, bound_facets_sm_1)
