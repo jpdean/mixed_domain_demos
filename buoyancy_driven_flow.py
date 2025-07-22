@@ -41,7 +41,6 @@ from utils import (
     par_print,
     interface_int_entities,
     interior_facet_int_entities,
-    convert_facet_tags_1,
 )
 from dolfinx.fem.petsc import (
     create_matrix,
