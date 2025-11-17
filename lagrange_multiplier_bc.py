@@ -83,9 +83,9 @@ problem = LinearProblem(
 problem.solve()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
+with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
-with io.VTXWriter(msh.comm, "lmbda.bp", lmbda, "BP4") as f:
+with io.VTXWriter(msh.comm, "lmbda.bp", lmbda) as f:
     f.write(0.0)
 
 # Compute L^2-norm of error

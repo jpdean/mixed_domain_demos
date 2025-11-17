@@ -137,9 +137,9 @@ problem = LinearProblem(
 problem.solve()
 
 # Write solution to file
-with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as f:
+with io.VTXWriter(msh.comm, "u.bp", u) as f:
     f.write(0.0)
-with io.VTXWriter(msh.comm, "ubar.bp", ubar, "BP4") as f:
+with io.VTXWriter(msh.comm, "ubar.bp", ubar) as f:
     f.write(0.0)
 
 # Compute the error

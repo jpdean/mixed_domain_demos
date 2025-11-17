@@ -61,7 +61,7 @@ g = fem.Function(W)
 g.interpolate(g_expr)
 
 # Let's write g to file to visualise it
-with io.VTXWriter(msh.comm, "g.bp", g, "BP4") as file:
+with io.VTXWriter(msh.comm, "g.bp", g) as file:
     file.write(0.0)
 
 # Create integration measure, taking mesh to be the integration domain
@@ -96,7 +96,7 @@ problem = LinearProblem(
 u = problem.solve()
 
 # Write to file
-with io.VTXWriter(msh.comm, "u.bp", u, "BP4") as file:
+with io.VTXWriter(msh.comm, "u.bp", u) as file:
     file.write(0.0)
 
 # Compute the error

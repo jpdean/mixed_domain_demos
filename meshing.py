@@ -143,7 +143,7 @@ def create_fenics_logo_msh(comm, h):
         gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
+    mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids
 
@@ -192,7 +192,7 @@ def create_box_with_sphere_msh(comm, h):
         gmsh.model.mesh.generate(d)
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
-    msh, ct, ft = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
+    msh, ct, ft = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return msh, ct, ft, vol_ids, bound_ids
 
@@ -233,7 +233,7 @@ def create_dome_mesh(comm, h):
         # Use second-order geometry
         model.mesh.setOrder(2)
 
-    msh = io.gmshio.model_to_mesh(model, comm, 0)[0]
+    msh = io.gmsh.model_to_mesh(model, comm, 0)[0]
     msh.name = model_name
     return msh
 
@@ -316,7 +316,7 @@ def create_square_with_circle(comm, h, c=0.5, r=0.25):
 
     # Create dolfinx mesh
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
+    mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, surf_ids
 
@@ -393,6 +393,6 @@ def create_divided_square(comm, h):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
+    mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids

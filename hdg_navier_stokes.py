@@ -29,7 +29,7 @@ from utils import (
 )
 from enum import Enum
 import gmsh
-from dolfinx.io import gmshio
+from dolfinx.io import gmsh as gmshio
 from dolfinx.fem.petsc import (
     assemble_matrix,
     assemble_vector,
@@ -290,7 +290,7 @@ def solve(
         A.assemble()
 
     # Create vectors for RHS and solution
-    b = create_vector(L, kind=PETSc.Vec.Type.MPI)
+    b = create_vector(fem.extract_function_spaces(L), kind=PETSc.Vec.Type.MPI)
     x = A.createVecRight()
 
     bcs1 = fem.bcs_by_block(fem.extract_function_spaces(a, 1), bcs)
@@ -335,7 +335,7 @@ def solve(
 
     # Set up files for visualisation
     vis_files = [
-        io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
+        io.VTXWriter(msh.comm, file_name, [func])
         for (file_name, func) in [
             ("u.bp", u_vis),
             ("p.bp", p_h),

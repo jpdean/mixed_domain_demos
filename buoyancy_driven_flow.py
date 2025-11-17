@@ -229,7 +229,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         # gmsh.fltk.run()
 
     partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
-    mesh_data = io.gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
+    mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     mesh_data.facet_tags.name = "Facet markers"
 
     return (
@@ -466,7 +466,7 @@ L_T = fem.form(extract_blocks(L_T), entity_maps=entity_maps)
 
 # Assemble matrix and vector for thermal problem
 A_T = create_matrix(a_T)
-b_T = create_vector(L_T, kind=PETSc.Vec.Type.MPI)
+b_T = create_vector(fem.extract_function_spaces(L_T), kind=PETSc.Vec.Type.MPI)
 
 # Set-up matrix and vectors for fluid problem
 if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
@@ -474,7 +474,7 @@ if solver_type == hdg_navier_stokes.SolverType.NAVIER_STOKES:
 else:
     A = assemble_matrix(a, bcs=bcs)
     A.assemble()
-b = create_vector(L, kind=PETSc.Vec.Type.MPI)
+b = create_vector(fem.extract_function_spaces(L), kind=PETSc.Vec.Type.MPI)
 x = A.createVecRight()
 
 # Set-up solver for thermal problem
@@ -519,7 +519,7 @@ pbar_h.name = "pbar"
 
 # Set-up files for visualisation
 vis_files = [
-    io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
+    io.VTXWriter(msh.comm, file_name, [func])
     for (file_name, func) in [
         ("u.bp", u_vis),
         ("p.bp", p_h),

@@ -205,8 +205,8 @@ problem = LinearProblem(
 )
 
 # Setup files for visualisation
-u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n._cpp_object], "BP4")
-u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n._cpp_object], "BP4")
+u_0_file = io.VTXWriter(msh.comm, "u_0.bp", [u_0_n])
+u_1_file = io.VTXWriter(msh.comm, "u_1.bp", [u_1_n])
 
 # Time stepping loop
 t = 0.0
