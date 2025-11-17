@@ -330,7 +330,7 @@ def solve(
 
     # Set up files for visualisation
     vis_files = [
-        io.VTXWriter(msh.comm, file_name, [func._cpp_object], "BP4")
+        io.VTXWriter(msh.comm, file_name, [func._cpp_object])
         for (file_name, func) in [
             ("u.bp", u_vis),
             ("p.bp", p_h),

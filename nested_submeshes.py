@@ -41,7 +41,7 @@ u_sm_1.name = "u_sm_1"
 u_sm_1.interpolate(lambda x: x[1] ** 2)
 
 # Write the function to file
-with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1, "BP4") as f:
+with io.VTXWriter(comm, "u_sm_1.bp", u_sm_1) as f:
     f.write(0.0)
 
 # Create a function space over submesh_0 and define trial and test
@@ -78,7 +78,7 @@ problem = LinearProblem(
 u_sm_0 = problem.solve()
 
 # Write to file
-with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0, "BP4") as f:
+with io.VTXWriter(comm, "u_sm_0.bp", u_sm_0) as f:
     f.write(0.0)
 
 # Create function spaces over the mesh and define trial and test functions
@@ -115,5 +115,5 @@ problem = LinearProblem(
 u_msh = problem.solve()
 
 # Write to file
-with io.VTXWriter(comm, "u_msh.bp", u_msh, "BP4") as f:
+with io.VTXWriter(comm, "u_msh.bp", u_msh) as f:
     f.write(0.0)
