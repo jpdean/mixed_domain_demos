@@ -1,7 +1,6 @@
 # Mixed domain demos
 This repository contains examples of how mixed-domain problems can be solved in FEniCSx.
 
-NOTE: Mixed-domain functionality in FEniCSx is under active development and is **not** ready for production use.
+The repository has tags for DOLFINx release versions.
 
-# Running the demos
-The demos in this repository currently require FEniCSx main to run. After the 0.10.0 release of DOLFINx, I will update and tidy the demos and start tagging with release numbers.
+NOTE: Mixed-domain functionality in FEniCSx relatively new. The API may lack polish and change frequently. Some of the demos may be a work in progress.
