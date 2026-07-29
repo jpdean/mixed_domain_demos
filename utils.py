@@ -15,9 +15,17 @@ def par_print(comm, string):
         sys.stdout.flush()
 
 
-def norm_L2(comm, v, measure=ufl.dx):
+def norm_L2(comm, v, measure=ufl.dx, entity_maps=None):
+    """Compute the L^2-norm of v over the given measure.
+
+    If v involves functions defined over a mesh other than the
+    integration domain of `measure`, `entity_maps` must be provided.
+    """
     return np.sqrt(
-        comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(v, v) * measure)), op=MPI.SUM)
+        comm.allreduce(
+            fem.assemble_scalar(fem.form(ufl.inner(v, v) * measure, entity_maps=entity_maps)),
+            op=MPI.SUM,
+        )
     )
 
 
