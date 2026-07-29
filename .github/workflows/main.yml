@@ -47,6 +47,7 @@ jobs:
           python3 cg_dg_advec_diffusion.py
           python3 buoyancy_driven_flow.py
           python3 projection.py
+          python3 hdg_conv_diff.py
 
       - name: Run demos (parallel)
         run: |
@@ -60,3 +61,4 @@ jobs:
           mpirun -n 2 python3 cg_dg_advec_diffusion.py
           mpirun -n 2 python3 buoyancy_driven_flow.py
           mpirun -n 2 python3 projection.py
+          mpirun -n 2 python3 hdg_conv_diff.py
