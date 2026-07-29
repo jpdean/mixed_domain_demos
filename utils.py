@@ -1,12 +1,14 @@
-import numpy as np
-from dolfinx import fem
-import ufl
+import sys
+
 from mpi4py import MPI
 from petsc4py import PETSc
-from dolfinx import mesh
-import sys
-from dolfinx.cpp.mesh import cell_num_entities
+
+import numpy as np
+
+import ufl
+from dolfinx import fem, mesh
 from dolfinx.cpp.fem import compute_integration_domains
+from dolfinx.cpp.mesh import cell_num_entities
 
 
 def par_print(comm, string):
@@ -151,7 +153,7 @@ def create_trap_mesh(comm, n, corners, offset_scale=0.25, ghost_mode=mesh.GhostM
         mesh: A dolfinx mesh object
     """
     if n[1] % 2 != 0:
-        raise Exception("n[1] must be even")
+        raise ValueError("n[1] must be even")
 
     if comm.rank == 0:
         # Width of each element

@@ -1,5 +1,6 @@
 import gmsh
-from dolfinx import mesh, io
+
+from dolfinx import io, mesh
 
 
 def create_fenics_logo_msh(comm, h):
@@ -170,7 +171,7 @@ def create_box_with_sphere_msh(comm, h):
         gmsh.model.add("box_with_sphere")
         box = gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
         sphere = gmsh.model.occ.addSphere(0.5, 0.5, 0.5, 0.25)
-        ov, ovv = gmsh.model.occ.fragment([(3, box)], [(3, sphere)])
+        ov, _ovv = gmsh.model.occ.fragment([(3, box)], [(3, sphere)])
 
         gmsh.model.occ.synchronize()
 

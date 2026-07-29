@@ -4,15 +4,16 @@
 # Stenberg. See also "A finite element method for domain
 # decomposition with non-matching grids" by Becker et al.
 
-from dolfinx import mesh, fem, io
 from mpi4py import MPI
-import ufl
-from ufl import inner, grad, avg, div
+
 import numpy as np
-from utils import norm_L2, convert_facet_tags, interface_int_entities
+
+import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import LinearProblem
 from meshing import create_square_with_circle
-from utils import jump_i, grad_avg_i
+from ufl import avg, div, grad, inner
+from utils import convert_facet_tags, grad_avg_i, interface_int_entities, jump_i, norm_L2
 
 
 def u_e(x, module=np):

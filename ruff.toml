@@ -1,1 +1,19 @@
 line-length = 100
+
+# Keep mpi4py/petsc4py in their own section ahead of third-party imports,
+# matching the DOLFINx convention, so that MPI and PETSc are initialised
+# before the packages that depend on them
+[lint.isort]
+known-first-party = ["basix", "dolfinx", "ffcx", "ufl"]
+known-third-party = ["gmsh", "numba", "numpy", "pytest", "pyvista"]
+section-order = [
+    "future",
+    "standard-library",
+    "mpi",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[lint.isort.sections]
+"mpi" = ["mpi4py", "petsc4py"]

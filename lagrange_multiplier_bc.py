@@ -2,12 +2,13 @@
 # enforced via a Lagrange multiplier. See "The finite element method with
 # Lagrangian multipliers" by Babuška (1973)
 
+from mpi4py import MPI
+
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner, div, extract_blocks
-from mpi4py import MPI
-from utils import norm_L2
 from dolfinx.fem.petsc import LinearProblem
+from ufl import div, extract_blocks, grad, inner
+from utils import norm_L2
 
 
 # Manufactured solution. The exact Lagrange multiplier is its normal

@@ -5,14 +5,15 @@
 # NOTE: the Schur complement behaves like a Neumann-to-Dirichlet
 # map, which is important for designing a good preconditioner
 
-import ufl
-from dolfinx import fem, io, mesh
-from ufl import grad, inner, div
 from mpi4py import MPI
 from petsc4py import PETSc
-from utils import norm_L2, one_sided_int_entities
+
+import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import LinearProblem
-from meshing import create_fenics_logo_msh, create_box_with_sphere_msh
+from meshing import create_box_with_sphere_msh, create_fenics_logo_msh
+from ufl import div, grad, inner
+from utils import norm_L2, one_sided_int_entities
 
 
 def u_e(x):

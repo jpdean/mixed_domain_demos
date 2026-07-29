@@ -13,41 +13,42 @@
 # approach is fully coupled and yields exactly divergence free velocity field
 # and magnetic induction.
 
-import hdg_navier_stokes
-from hdg_navier_stokes import SolverType, Scheme, TimeDependentExpression
 from mpi4py import MPI
+from petsc4py import PETSc
+
 import gmsh
 import numpy as np
-from dolfinx import mesh, fem, io
-from dolfinx.io import gmshio
-from hdg_navier_stokes import BCType
-from petsc4py import PETSc
-from utils import (
-    norm_L2,
-    normal_jump_error,
-    convert_facet_tags,
-    par_print,
-    compute_cell_boundary_int_entities,
-)
+
+import hdg_navier_stokes
 import ufl
-from ufl import (
-    div,
-    TrialFunction,
-    TestFunction,
-    inner,
-    curl,
-    cross,
-    as_vector,
-    grad,
-    outer,
-    dot,
-)
+from dolfinx import fem, io, mesh
 from dolfinx.cpp.fem import compute_integration_domains
 from dolfinx.fem.petsc import (
-    create_vector_block,
-    create_matrix_block,
-    assemble_vector_block,
     assemble_matrix_block,
+    assemble_vector_block,
+    create_matrix_block,
+    create_vector_block,
+)
+from dolfinx.io import gmshio
+from hdg_navier_stokes import BCType, Scheme, SolverType, TimeDependentExpression
+from ufl import (
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    cross,
+    curl,
+    div,
+    dot,
+    grad,
+    inner,
+    outer,
+)
+from utils import (
+    compute_cell_boundary_int_entities,
+    convert_facet_tags,
+    norm_L2,
+    normal_jump_error,
+    par_print,
 )
 
 

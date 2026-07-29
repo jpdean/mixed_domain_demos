@@ -18,20 +18,23 @@
 # the coupling is due only to the diffusion. No advective interface
 # terms have been added
 
-from dolfinx import mesh, fem, io
 from mpi4py import MPI
-import ufl
-from ufl import inner, grad, dot, avg, div, jump
+
 import numpy as np
-from utils import (
-    norm_L2,
-    convert_facet_tags,
-    interface_int_entities,
-    interior_facet_int_entities,
-)
+
+import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import LinearProblem
 from meshing import create_divided_square
-from utils import jump_i, grad_avg_i
+from ufl import avg, div, dot, grad, inner, jump
+from utils import (
+    convert_facet_tags,
+    grad_avg_i,
+    interface_int_entities,
+    interior_facet_int_entities,
+    jump_i,
+    norm_L2,
+)
 
 
 def u_e(x, module=np):

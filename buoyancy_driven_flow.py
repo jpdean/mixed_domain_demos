@@ -11,46 +11,49 @@
 # coupled at the fluid-solid interface using Nitsche's method (see
 # cg_dg_advec_diffusion.py).
 
-import hdg_navier_stokes
-from dolfinx import fem, io, mesh
 from mpi4py import MPI
 from petsc4py import PETSc
-import numpy as np
-from ufl import (
-    TrialFunctions,
-    TestFunctions,
-    CellDiameter,
-    FacetNormal,
-    inner,
-    grad,
-    avg,
-    div,
-    conditional,
-    gt,
-    dot,
-    Measure,
-    as_vector,
-    MixedFunctionSpace,
-    extract_blocks,
-)
-from ufl import jump as jump_T
+
 import gmsh
-from utils import (
-    convert_facet_tags,
-    norm_L2,
-    par_print,
-    interface_int_entities,
-    interior_facet_int_entities,
-)
+import numpy as np
+
+import hdg_navier_stokes
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import (
-    create_matrix,
-    create_vector,
+    apply_lifting,
     assemble_matrix,
     assemble_vector,
-    apply_lifting,
+    create_matrix,
+    create_vector,
     set_bc,
 )
-from utils import jump_i, grad_avg_i
+from ufl import (
+    CellDiameter,
+    FacetNormal,
+    Measure,
+    MixedFunctionSpace,
+    TestFunctions,
+    TrialFunctions,
+    as_vector,
+    avg,
+    conditional,
+    div,
+    dot,
+    extract_blocks,
+    grad,
+    gt,
+    inner,
+)
+from ufl import jump as jump_T
+from utils import (
+    convert_facet_tags,
+    grad_avg_i,
+    interface_int_entities,
+    interior_facet_int_entities,
+    jump_i,
+    norm_L2,
+    par_print,
+)
 
 
 def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):

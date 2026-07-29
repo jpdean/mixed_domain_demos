@@ -4,16 +4,17 @@
 # sub-mesh. We then solve a hierarchy of Poisson problems on the meshes.
 
 
-import numpy as np
-import ufl
-from dolfinx import fem, io, mesh
-from ufl import grad, inner, dx
 from mpi4py import MPI
 from petsc4py import PETSc
-from dolfinx.mesh import meshtags, exterior_facet_indices
-from dolfinx.fem.petsc import LinearProblem
-from meshing import create_dome_mesh
 
+import numpy as np
+
+import ufl
+from dolfinx import fem, io, mesh
+from dolfinx.fem.petsc import LinearProblem
+from dolfinx.mesh import exterior_facet_indices, meshtags
+from meshing import create_dome_mesh
+from ufl import dx, grad, inner
 
 # Create a mesh
 comm = MPI.COMM_WORLD

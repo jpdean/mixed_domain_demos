@@ -2,15 +2,17 @@
 # https://epubs.siam.org/doi/10.1137/090775464
 
 
-from dolfinx import mesh, fem, io
 from mpi4py import MPI
-import ufl
-from ufl import inner, grad, dot, div
-import numpy as np
 from petsc4py import PETSc
+
+import numpy as np
+
+import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.cpp.mesh import cell_num_entities
-from utils import norm_L2, compute_cell_boundary_int_entities
 from dolfinx.fem.petsc import LinearProblem
+from ufl import div, dot, grad, inner
+from utils import compute_cell_boundary_int_entities, norm_L2
 
 
 def u_e(x):

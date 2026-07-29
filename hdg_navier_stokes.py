@@ -12,31 +12,34 @@
 #      finite element method for the Stokes equations" by S. Rhebergen
 #      and G. N. Wells
 
-from dolfinx import mesh, fem, io
-from mpi4py import MPI
-import ufl
-from ufl import inner, grad, dot, div, outer
-import numpy as np
-from petsc4py import PETSc
-from utils import (
-    norm_L2,
-    domain_average,
-    normal_jump_error,
-    TimeDependentExpression,
-    par_print,
-    compute_cell_boundary_int_entities,
-    markers_to_meshtags,
-)
 from enum import Enum
+
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import gmsh
-from dolfinx.io import gmsh as gmshio
+import numpy as np
+
+import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import (
+    apply_lifting,
     assemble_matrix,
     assemble_vector,
     create_matrix,
     create_vector,
-    apply_lifting,
     set_bc,
+)
+from dolfinx.io import gmsh as gmshio
+from ufl import div, dot, grad, inner, outer
+from utils import (
+    TimeDependentExpression,
+    compute_cell_boundary_int_entities,
+    domain_average,
+    markers_to_meshtags,
+    norm_L2,
+    normal_jump_error,
+    par_print,
 )
 
 

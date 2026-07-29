@@ -2,10 +2,12 @@
 # function space defined over the boundary of a mesh
 
 
-from dolfinx import mesh, fem, io
 from mpi4py import MPI
+
 import numpy as np
+
 import ufl
+from dolfinx import fem, io, mesh
 from dolfinx.fem.petsc import LinearProblem
 
 # Create a mesh
@@ -24,10 +26,12 @@ fdim = tdim - 1
 facets = mesh.locate_entities_boundary(
     msh,
     fdim,
-    lambda x: np.isclose(x[0], 0.0)
-    | np.isclose(x[0], 1.0)
-    | np.isclose(x[1], 0.0)
-    | np.isclose(x[1], 1.0),
+    lambda x: (
+        np.isclose(x[0], 0.0)
+        | np.isclose(x[0], 1.0)
+        | np.isclose(x[1], 0.0)
+        | np.isclose(x[1], 1.0)
+    ),
 )
 submsh, sm_emap = mesh.create_submesh(msh, fdim, facets)[:2]
 

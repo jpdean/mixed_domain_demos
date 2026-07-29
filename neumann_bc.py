@@ -4,13 +4,15 @@
 # more computationally efficient.
 
 
+from mpi4py import MPI
+
 import numpy as np
+
 import ufl
 from dolfinx import fem, io, mesh
-from ufl import grad, inner
-from mpi4py import MPI
-from utils import norm_L2, markers_to_meshtags
 from dolfinx.fem.petsc import LinearProblem
+from ufl import grad, inner
+from utils import markers_to_meshtags, norm_L2
 
 
 def u_e_expr(x, module=np):
