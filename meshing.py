@@ -143,7 +143,7 @@ def create_fenics_logo_msh(comm, h):
         # Generate the mesh
         gmsh.model.mesh.generate(d)
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none, 2)
     mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids
@@ -192,7 +192,7 @@ def create_box_with_sphere_msh(comm, h):
 
         gmsh.model.mesh.generate(d)
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none, 2)
     msh, ct, ft = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
     return msh, ct, ft, vol_ids, bound_ids
@@ -316,7 +316,7 @@ def create_square_with_circle(comm, h, c=0.5, r=0.25):
         # gmsh.fltk.run()
 
     # Create dolfinx mesh
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet, 2)
     mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, surf_ids
@@ -393,7 +393,7 @@ def create_divided_square(comm, h):
         gmsh.model.mesh.generate(2)
         # gmsh.fltk.run()
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet, 2)
     mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     return mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags, vol_ids, bound_ids

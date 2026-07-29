@@ -231,7 +231,7 @@ def generate_mesh(comm, h, cell_type=mesh.CellType.triangle):
         gmsh.model.mesh.generate(d)
         # gmsh.fltk.run()
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.shared_facet, 2)
     mesh_data = io.gmsh.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     mesh_data.facet_tags.name = "Facet markers"
 

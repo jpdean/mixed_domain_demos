@@ -620,7 +620,7 @@ def run_gaussian_bump():
             gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(order)
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none, 2)
     msh, _, mt = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=2, partitioner=partitioner)
     gmsh.finalize()
     boundaries = {"left": 4, "bottom": 1, "top": 3, "right": 2}
@@ -811,7 +811,7 @@ def run_cylinder_problem():
         gmsh.model.mesh.generate(d)
         gmsh.model.mesh.setOrder(order)
 
-    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none)
+    partitioner = mesh.create_cell_partitioner(mesh.GhostMode.none, 2)
     msh, _, mt = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=d, partitioner=partitioner)
     gmsh.finalize()
 

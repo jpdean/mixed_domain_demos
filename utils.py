@@ -136,7 +136,7 @@ def create_random_mesh(corners, n, ghost_mode):
     import basix.ufl_wrapper
 
     domain = ufl.Mesh(basix.ufl_wrapper.create_vector_element("Lagrange", "triangle", 1))
-    partitioner = mesh.create_cell_partitioner(ghost_mode)
+    partitioner = mesh.create_cell_partitioner(ghost_mode, 2)
     return mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain, partitioner=partitioner)
 
 
@@ -185,7 +185,7 @@ def create_trap_mesh(comm, n, corners, offset_scale=0.25, ghost_mode=mesh.GhostM
         cells, x = np.empty([0, 3]), np.empty([0, 2])
 
     ufl_mesh = ufl.Mesh(ufl.VectorElement("Lagrange", "quadrilateral", 1))
-    partitioner = mesh.create_cell_partitioner(ghost_mode)
+    partitioner = mesh.create_cell_partitioner(ghost_mode, 2)
     msh = mesh.create_mesh(comm, cells, x, ufl_mesh, partitioner=partitioner)
 
     return msh
